@@ -151,15 +151,14 @@ flowchart TD
   but **only over tokens the LP declared** in the Config — anything else sitting in the wallet
   (by accident or an intentional donation) is ignored by this read. This is the mitigation for
   "watched wallet ≠ guaranteed-clean wallet" (the wallet is real, so anyone can transfer into
-  it — see the threat-model register in bleu-brain's `critique.md`, issue 1.6, and
-  [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
+  it — see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
 - **Exposure Smoothing** — an EMA/TWAP over the raw reading, plus a tolerance band and a rate
   cap (max rebalance frequency/amount), so a single-block balance change can't move the quoted
   price instantly. This is necessary, not sufficient, for donation resistance — see Invariant
   below. See [ADR-0006](adr/0006-exposure-smoothing.md).
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was
   considered and rejected specifically because the taker could choose which still-valid price
-  to post — see `critique.md` issue 1.1 and [ADR-0005](adr/0005-chainlink-push-oracles.md)).
+  to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)).
 - **Pricing Engine** — the constant-mean weighted curve, i.e. Balancer's weighted-pool
   formula (the 80/20 BAL/WETH pool is the best-known public example of this exact math with
   unequal weights), *reimplemented from scratch*. See
@@ -174,7 +173,7 @@ flowchart TD
   not yet demonstrated with numbers.** See
   [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
 - **Fee Accounting** — the 2 bps protocol fee must be computed *inside* the same cost model
-  used to evaluate the mechanism against baselines (see `critique.md` issue B3 and
+  used to evaluate the mechanism against baselines (see
   [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)) — comparing the strategy's
   all-in cost including this fee against a fee-free naive baseline would overstate how well the
   mechanism performs.
