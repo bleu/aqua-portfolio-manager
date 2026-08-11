@@ -2,15 +2,11 @@
 
 **Status: proposed, pre-Milestone 1.** The exact on-chain form — a pure `AquaApp`, a new
 swapVM instruction, or a hybrid — is formally a Milestone 1 decision (mechanism research +
-spec + simulation, per the grant's decision record; see
-[`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)).
-This document assumes the `AquaApp` path, since that's what the decision record currently
-leans toward ("needs multi-token portfolio state + cross-group logic"), and is grounded
-against the real interfaces in `lib/aqua/src/interfaces/IAqua.sol` and
-`lib/aqua/src/AquaApp.sol`. Treat it as the current working assumption, not a closed decision.
-
-Every other design choice reflected in the diagrams below has its own ADR in
-[`adr/`](adr/README.md) — see the component notes for links.
+spec + simulation, per the grant's decision record). This document assumes the `AquaApp`
+path, since that's what the decision record currently leans toward ("needs multi-token
+portfolio state + cross-group logic"), and is grounded against the real interfaces in
+`lib/aqua/src/interfaces/IAqua.sol` and `lib/aqua/src/AquaApp.sol`. Treat it as the current
+working assumption, not a closed decision.
 
 ## System context (L1)
 
@@ -143,59 +139,45 @@ flowchart TD
 - **Universe/Group Config** — part of the `strategy` bytes payload passed to
   [`IAqua.ship()`](../lib/aqua/src/interfaces/IAqua.sol), hashed into the immutable
   `strategyHash`. There is no update path; changing a parameter means shipping a new strategy
-  and docking the old one via [`IAqua.dock()`](../lib/aqua/src/interfaces/IAqua.sol). See
-  [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) and
-  [ADR-0003](adr/0003-oracle-valued-token-groups.md).
+  and docking the old one via [`IAqua.dock()`](../lib/aqua/src/interfaces/IAqua.sol).
 - **Exposure Reader** — reads via
   [`AQUA.safeBalances(maker, app, strategyHash, token0, token1)`](../lib/aqua/src/interfaces/IAqua.sol),
   but **only over tokens the LP declared** in the Config — anything else sitting in the wallet
   (by accident or an intentional donation) is ignored by this read. This is the mitigation for
   "watched wallet ≠ guaranteed-clean wallet" (the wallet is real, so anyone can transfer into
-  it — see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
+  it — see the threat-model register in bleu-brain's `critique.md`, issue 1.6).
 - **Exposure Smoothing** — an EMA/TWAP over the raw reading, plus a tolerance band and a rate
   cap (max rebalance frequency/amount), so a single-block balance change can't move the quoted
   price instantly. This is necessary, not sufficient, for donation resistance — see Invariant
-  below. See [ADR-0006](adr/0006-exposure-smoothing.md).
+  below.
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was
   considered and rejected specifically because the taker could choose which still-valid price
-  to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)).
+  to post — see `critique.md` issue 1.1).
 - **Pricing Engine** — the constant-mean weighted curve, i.e. Balancer's weighted-pool
   formula (the 80/20 BAL/WETH pool is the best-known public example of this exact math with
   unequal weights), *reimplemented from scratch*. See
-  [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and
-  [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for why the formula is fine to
-  reuse but Balancer's GPL-licensed Solidity is not.
+  [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) for why the formula is fine to reuse
+  but Balancer's GPL-licensed Solidity is not.
 - **Curve invariant** — not its own contract or function, a *property* the Pricing Engine's
   math must satisfy: any closed round-trip trade ends slightly in the strategy's favor. That
   property is what turns a "donation attack" (transferring tokens into the wallet to skew the
   reading) into an irreversible gift rather than an extractable profit. **Proving this formally
   is Milestone 1's headline security deliverable — it is asserted here as a design requirement,
-  not yet demonstrated with numbers.** See
-  [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+  not yet demonstrated with numbers.**
 - **Fee Accounting** — the 2 bps protocol fee must be computed *inside* the same cost model
-  used to evaluate the mechanism against baselines (see
-  [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)) — comparing the strategy's
-  all-in cost including this fee against a fee-free naive baseline would overstate how well the
-  mechanism performs.
+  used to evaluate the mechanism against baselines (see `critique.md` issue B3) — comparing
+  the strategy's all-in cost including this fee against a fee-free naive baseline would
+  overstate how well the mechanism performs.
 - **Reentrancy** — `AquaApp` requires swap-handling functions to be wrapped in its
   `nonReentrantStrategy(maker, strategyHash)` modifier before calling `_safeCheckAquaPush`;
   this is a hard requirement from the base contract, not a project-specific choice.
 
 ## Open decisions (Milestone 1)
 
-- **On-chain form**: `AquaApp` (assumed here) vs. a new swapVM instruction vs. a hybrid. See
-  [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) — the only ADR in this
-  repo still `Proposed` rather than `Accepted`.
+- **On-chain form**: `AquaApp` (assumed here) vs. a new swapVM instruction vs. a hybrid.
 - **Formal proof** of the round-trip/donation-resistance invariant — currently a design
-  requirement, not yet proven. See [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+  requirement, not yet proven.
 - **Concrete parameter values** — EMA window, tolerance band width, rate caps — depend on the
-  Milestone 1 simulation comparing candidates against naive rebalancing baselines. See
-  [ADR-0006](adr/0006-exposure-smoothing.md) and
-  [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md).
-- **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and
-  [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source"
-  actually means for this repo's own contracts, independent of the mechanism design.
-
-See [`adr/README.md`](adr/README.md) for the full decision log, including chain choice
-([ADR-0009](adr/0009-deploy-on-base-at-launch.md)) and the group/pricing/oracle decisions
-behind the diagrams above.
+  Milestone 1 simulation comparing candidates against naive rebalancing baselines.
+- **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md). This affects what "open
+  source" actually means for this repo's own contracts, independent of the mechanism design.
