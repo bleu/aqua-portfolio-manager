@@ -4,23 +4,21 @@
 
 ## Context
 
-Two pricing designs were on the table (bleu-brain context.md, "Design A" vs. the original
-decision 5):
+Two pricing designs were on the table:
 
 - **Design B (original):** execute at the oracle reference price ± a capped, explicitly
   computed rebalancing spread — a discount for skew-reducing trades, a surcharge for
   skew-worsening ones, bounded at `C_rebate`. This requires proving, separately, that the
-  rebate can never be gamed into a round-trip profit (critique.md, 1.3) — not automatically
-  safe, since the rebate is a payment layered on top of a reference price, not a property of
-  an invariant.
+  rebate can never be gamed into a round-trip profit — not automatically safe, since the
+  rebate is a payment layered on top of a reference price, not a property of an invariant.
 - **Design A (adopted):** a constant-mean weighted curve — Balancer's weighted-pool math — where
   the oracle only sets *relative* token value, and the curve's own invariant does the pricing.
   Big trades get worse prices on their own (price impact), and a closed round-trip can never
   reduce the pool's value, by construction of the invariant — the round-trip-profit proof
   reduces to a standard weighted-pool proof instead of a bespoke one.
 
-This reversed the original scope defense (context.md decision 10 was originally "not Balancer's
-weighted math") and reopened a scope conflict: the grant's out-of-scope list bans "AMM
+This reversed the original scope defense and reopened a scope conflict: the grant's
+out-of-scope list bans "AMM
 formulas/mechanisms licensed by third parties." That conflict is resolved by separating the
 *formula* (public, from Balancer's 2019 whitepaper, unpatented as far as known) from Balancer's
 *Solidity* (GPL-3.0) — this repo implements the formula from scratch and never imports
@@ -45,17 +43,13 @@ design.
   inherited for free just by citing Balancer's whitepaper.
 - Reframes what "the innovation" is: not the curve itself (that's the settlement engine), but
   the layer above it — group targets, the declared-universe exposure read (ADR-0002/0003), and
-  Chainlink-anchored valuation (ADR-0005). The scope defense in bleu-brain's
-  `application.md`/`context.md` decision 10 was rewritten to argue exactly this.
+  Chainlink-anchored valuation (ADR-0005). The grant application's own scope defense was
+  rewritten to argue exactly this.
 - Team has prior Balancer-contributor experience, which strengthens the implementation and
   audit story for M3/M4 — but this ADR's decision doesn't depend on that continuing to be true.
 - Precision/edge behavior near an empty pool needs the same handling as any weighted pool
-  (minimum-liquidity floor, round in the pool's favor — critique.md, 1.11).
+  (minimum-liquidity floor, round in the pool's favor).
 
 ## References
 
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/context.md`, decision 5 (superseded) and
-  decision 10 (rewritten)
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/critique.md`, "Decisions locked" and
-  "Design decided: Balancer weighted math" sections, issues 1.2, 1.3, 1.11
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — Pricing Engine component notes

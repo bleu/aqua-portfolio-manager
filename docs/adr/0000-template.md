@@ -19,4 +19,4 @@ just good ones.
 
 ## References
 
-Links to the bleu-brain decision record / critique / external docs this ADR is grounded in.
+Links to the interfaces, whitepapers, or other ADRs this decision is grounded in.

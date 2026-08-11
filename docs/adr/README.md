@@ -6,9 +6,8 @@ delete a merged ADR — mark it **Superseded by ADR-XXXX** instead and let the n
 why.
 
 Most of these decisions were made before this repo existed, during the grant proposal's design
-process (bleu-brain `1inch-aqua-incubator/portfolio-manager/{context.md,critique.md}`). Each
-ADR here is the durable, code-repo-local record of one of those decisions, grounded against the
-Aqua/swapVM interfaces — not a duplicate of the full reasoning, which stays in bleu-brain.
+process. Each ADR here is the durable, code-repo-local record of one of those decisions,
+grounded against the Aqua/swapVM interfaces.
 
 | # | Title | Status |
 |---|---|---|
