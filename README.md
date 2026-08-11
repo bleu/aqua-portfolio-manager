@@ -38,7 +38,8 @@ real portfolio, not five separate positions, and nobody's watching the combined 
   and cost of rebalancing (what it costs the LP to stay there) — this is a portfolio
   *maintenance* tool, not a volume/fee product.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams and the component breakdown.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams and the component breakdown,
+and [`docs/adr/`](docs/adr/) for the decision record behind each choice above.
 
 ## ⚠️ Licensing — read this before assuming "MIT"
 
@@ -55,6 +56,7 @@ test/                   Forge tests
 script/                 Deployment scripts
 docs/ARCHITECTURE.md    System diagrams + component breakdown
 docs/LICENSING-RISK.md  The Aqua-Source-1.1 finding above, in full
+docs/adr/               Architecture decision records
 lib/aqua/               1inch Aqua core (submodule) — AquaApp base contract, IAqua interface
 lib/swap-vm/            1inch swapVM (submodule) — only relevant if M1 picks a swapVM instruction
 lib/balancer-v3-monorepo/  Reference-only (GPL-3.0) — study the weighted-math formula, never import
