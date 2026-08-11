@@ -4,7 +4,7 @@
 
 ## Context
 
-Because the exposure reader reads a real wallet's real balance (ADR-0002), anyone can transfer
+Because the exposure reader reads a real wallet's balance (ADR-0002), anyone can transfer
 tokens into that wallet to skew the reading — the same family of attack as Uniswap `sync()` or
 ERC-4626 inflation attacks. Two mitigations were considered:
 

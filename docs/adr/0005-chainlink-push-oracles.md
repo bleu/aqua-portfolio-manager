@@ -32,8 +32,8 @@ expansion is a later GTM step, not a launch requirement.
 
 - Closes the pull-oracle gaming vector (critique.md 1.1) and the one-bad-price contagion risk
   (1.5.1) outright, by removing the attack surface rather than bounding it.
-- Caps the initial addressable universe to bluechip pairs — a real GTM constraint, not just a
-  technical footnote (bleu-brain critique.md, "GTM = bluechip pairs first, longtail later").
+- Caps the initial addressable universe to bluechip pairs (bleu-brain critique.md, "GTM =
+  bluechip pairs first, longtail later").
 - Leaves residual staleness LVR between Chainlink updates as an accepted, bounded cost
   (critique.md, 1.2) rather than something this ADR eliminates.
 - A dead or bad oracle has no on-chain pause path today (strategies are immutable) — the only

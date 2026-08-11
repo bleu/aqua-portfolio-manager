@@ -8,7 +8,7 @@ why.
 Most of these decisions were made before this repo existed, during the grant proposal's design
 process (bleu-brain `1inch-aqua-incubator/portfolio-manager/{context.md,critique.md}`). Each
 ADR here is the durable, code-repo-local record of one of those decisions, grounded against the
-real Aqua/swapVM interfaces — not a duplicate of the full reasoning, which stays in bleu-brain.
+Aqua/swapVM interfaces — not a duplicate of the full reasoning, which stays in bleu-brain.
 
 | # | Title | Status |
 |---|---|---|

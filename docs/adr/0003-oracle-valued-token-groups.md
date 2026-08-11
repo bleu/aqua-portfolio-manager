@@ -7,10 +7,10 @@
 The LP could declare a target weight per individual token, or per a coarser bucket. Per-token
 targets force a decision this design wants to avoid: if the LP says "30% longtail," which
 specific longtail token should the pool buy? That's an active allocation call, not portfolio
-maintenance, and it's not something an immutable, un-updatable strategy should be making.
+maintenance, and it's not something an immutable strategy should be making.
 
 Grouping by asset class (e.g. "majors", "stablecoins") lets the LP set a target at the level
-they actually care about, and leaves intra-group composition unmanaged and un-opinionated.
+they care about, and leaves intra-group composition unmanaged.
 
 ## Decision
 
@@ -20,7 +20,7 @@ to group-weight impact, not individual-token impact. Intra-group drift is allowe
 
 ## Consequences
 
-- Sidesteps "which longtail token to buy" — a real simplification, not a workaround.
+- Sidesteps deciding which specific longtail token to buy.
 - Makes the LP's own curation quality load-bearing: a group is only as safe as its
   weakest-oracle member (critique.md, 1.8), and a depeg inside a group can leak value if the
   feed lags (critique.md, 1.9). Both are accepted as curation responsibilities, not code bugs —
