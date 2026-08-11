@@ -21,17 +21,16 @@ decision 5):
 
 This reversed the original scope defense (context.md decision 10 was originally "not Balancer's
 weighted math") and reopened a scope conflict: the grant's out-of-scope list bans "AMM
-formulas/mechanisms licensed by third parties." That conflict is resolved, not avoided, by
-separating the *formula* (public, from Balancer's 2019 whitepaper, unpatented as far as known)
-from Balancer's *Solidity* (GPL-3.0) — this repo implements the formula from scratch and never
-imports Balancer's code (see `lib/balancer-v3-monorepo`'s reference-only status in
+formulas/mechanisms licensed by third parties." That conflict is resolved by separating the
+*formula* (public, from Balancer's 2019 whitepaper, unpatented as far as known) from Balancer's
+*Solidity* (GPL-3.0) — this repo implements the formula from scratch and never imports
+Balancer's code (see `lib/balancer-v3-monorepo`'s reference-only status in
 [`ADR-0001`](0001-license-under-aqua-source-not-mit.md) / `THIRD_PARTY_NOTICES.md`). 1inch
 confirmed (via Tanner) that an independently-implemented, new-to-Aqua weighted curve is in
 scope — swapVM currently ships xy=k, concentrated, pegged, and stable-swap curves, not
 constant-mean.
 
-The public example most people will recognize this math from: Balancer's 80/20 BAL/WETH pool,
-the best-known live use of unequal-weight constant-mean pricing.
+The best-known public example of this math: Balancer's 80/20 BAL/WETH pool.
 
 ## Decision
 

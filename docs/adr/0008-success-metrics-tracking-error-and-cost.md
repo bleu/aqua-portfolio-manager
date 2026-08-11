@@ -7,7 +7,7 @@
 The original design (bleu-brain context.md decision 8) framed a north star where surcharges on
 skew-worsening flow could fund rebates on skew-reducing flow enough that "cost can go negative"
 — implicitly, a fee/volume product. The threat-model review (critique.md, 1.4) challenged this:
-this strategy doesn't expect, and doesn't need, much two-way flow to succeed. Its job is holding
+this strategy doesn't need much two-way flow to succeed. Its job is holding
 the LP's declared target near the LP's own chosen allocation, cheaply — not generating trading
 volume. Flow arrives when it's more profitable for a taker/solver than any other venue; that's
 expected to be mostly one-directional, and that's fine.
@@ -38,8 +38,7 @@ included) + gas + slippage the LP pays to stay on target, benchmarked against na
   the case for funding — the real argument is that unmanaged net exposure taxes Aqua's own
   capital-efficiency pitch, and this tool is what lets LPs commit more capital and run more
   strategies safely, benefiting every other strategy's volume (critique.md, B1).
-- One-directional flow is now an accepted, expected outcome rather than a failure mode to
-  explain away.
+- One-directional flow is now an expected outcome rather than a failure mode to explain away.
 - Revenue projections in bleu-brain's `application.md` were rederived bottom-up from an assumed
   managed-TVL × drift-rate model rather than an unsupported flat volume number (critique.md,
   B4) — this ADR's KPI choice is what makes that derivation the right one to use.
