@@ -25,10 +25,9 @@ Aqua's deployment or 1inch's routing footprint points elsewhere by the time this
 
 - Locks in the L2-first cost assumption used in the Milestone 1 tracking-error/cost frontier
   (ADR-0008) and in any oracle per-update-fee accounting (ADR-0005/0006).
-- Explicitly not a hard commitment — if Aqua's actual deployment sequence or 1inch's routing
-  reach diverges from Base by the time this reaches M2/M3, the chain choice should revisit
-  without treating that as a broken decision, since the application language already flags this
-  as conditional.
+- Not a hard commitment — if Aqua's actual deployment sequence or 1inch's routing reach
+  diverges from Base by the time this reaches M2/M3, revisit the chain choice; the application
+  language already flags this as conditional.
 - Reachability still gates rebalancing regardless of chain: the pool only corrects when a taker
   or solver actually trades through it, directly or via 1inch routing (critique.md, 1.12) — a
   chain choice with no adoption is not sufficient on its own.

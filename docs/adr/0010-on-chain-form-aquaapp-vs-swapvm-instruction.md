@@ -43,8 +43,8 @@ justifies the form with numbers.
 - Every ADR in this log written against the `AquaApp` assumption may need a follow-up ADR (or an
   amendment noted here) once M1 concludes, if the chosen form is the swapVM-instruction or
   hybrid path instead.
-- `lib/swap-vm` is vendored specifically to keep the swapVM-instruction and hybrid paths live
-  options, not dead weight — see `foundry.toml`'s `swap-vm/` remapping.
+- `lib/swap-vm` is vendored to keep the swapVM-instruction and hybrid paths live options, not
+  dead weight — see `foundry.toml`'s `swap-vm/` remapping.
 - This ADR should flip to **Accepted** (or split into a superseding ADR) once M1's writeup picks
   a form — until then, treat the architecture doc's L2 component diagram as illustrative of the
   AquaApp case, not as a settled contract boundary.
