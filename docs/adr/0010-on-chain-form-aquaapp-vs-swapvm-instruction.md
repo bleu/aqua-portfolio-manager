@@ -5,8 +5,7 @@
 ## Context
 
 The strategy needs multi-token portfolio state (groups, targets, smoothing state) and
-cross-group pricing logic. Three shapes were named as candidates (bleu-brain context.md,
-decision 2; critique.md / context.md decision 12):
+cross-group pricing logic. Three shapes were named as candidates:
 
 - **A pure `AquaApp`** — holds all portfolio state and policy itself, calling into Aqua for
   balance reads and pull/push. Leans toward this option today because it naturally holds
@@ -18,9 +17,9 @@ decision 2; critique.md / context.md decision 12):
   pricing math.
 
 A **keeper/controller** design (an off-chain-triggered contract that ships/docks/trades) was
-already rejected in context.md decision 2: strategies are immutable once shipped, so a
-controller can only ship/dock/trade — it has no on-chain IP of its own and is a materially
-weaker technical contribution for the grant's evaluation.
+already rejected: strategies are immutable once shipped, so a controller can only
+ship/dock/trade — it has no on-chain IP of its own and is a materially weaker technical
+contribution for the grant's evaluation.
 
 Everything else in this ADR log — the maker-wallet scope (ADR-0002), the group model
 (ADR-0003), the pricing curve (ADR-0004), the oracle (ADR-0005), smoothing (ADR-0006), and the
@@ -51,9 +50,6 @@ justifies the form with numbers.
 
 ## References
 
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/context.md`, decisions 2 and 12
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/critique.md`, "What M1 must decide or
-  prove"
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — explicit "working assumption, not a closed
   decision" note
 - `lib/aqua/src/AquaApp.sol`, `lib/swap-vm/src/` — the two base paths

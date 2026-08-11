@@ -22,14 +22,9 @@ to group-weight impact, not individual-token impact. Intra-group drift is allowe
 
 - Sidesteps deciding which specific longtail token to buy.
 - Makes the LP's own curation quality load-bearing: a group is only as safe as its
-  weakest-oracle member (critique.md, 1.8), and a depeg inside a group can leak value if the
-  feed lags (critique.md, 1.9). Both are accepted as curation responsibilities, not code bugs —
-  default to well-fed tokens, warn on thin ones, guard divergence inside stable groups.
+  weakest-oracle member, and a depeg inside a group can leak value if the feed lags. Both are
+  accepted as curation responsibilities, not code bugs — default to well-fed tokens, warn on
+  thin ones, guard divergence inside stable groups.
 - Because grouping is baked into the immutable strategy config at `ship()` time, changing a
   group assignment means shipping a new strategy and docking the old one (same cost as any
   other config change — see ADR-0002 and ADR-0010).
-
-## References
-
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/context.md`, decision 6
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/critique.md`, issues 1.8, 1.9

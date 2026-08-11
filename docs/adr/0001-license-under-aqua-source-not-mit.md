@@ -33,8 +33,8 @@ This repo's root `LICENSE` is the full text of `Aqua-Source-1.1`, and
 - `lib/balancer-v3-monorepo` stays reference-only (GPL-3.0, separately incompatible with
   shipping proprietary code) — never imported from `src/`, per
   [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
-- The grant application's "MIT, open source" language in bleu-brain is now inaccurate and
-  should be corrected to name `Aqua-Source-1.1` specifically — not yet done, tracked in
+- The grant application's "MIT, open source" language is now inaccurate and should be
+  corrected to name `Aqua-Source-1.1` specifically — not yet done, tracked in
   [`../LICENSING-RISK.md`](../LICENSING-RISK.md).
 - Does not resolve the §5 commercial-trigger business risk (the $30M base-case LUC projection
   vs. the $10M trigger) — that's a decision for whoever owns the grant relationship, not

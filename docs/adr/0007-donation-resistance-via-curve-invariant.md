@@ -29,19 +29,15 @@ tracking only self-attributed balance changes.
 
 - The honest residual is pure vandalism: burning your own tokens into someone else's wallet to
   nudge their weights, for zero extractable gain. Accepted as unpreventable but economically
-  irrational, and further blunted by smoothing (critique.md, 1.5.3).
+  irrational, and further blunted by smoothing.
 - This is not automatically true — it's true *given the invariant holds for this specific
   implementation*. Proving "no donation attack is ever profitable" is named a project MUST and
-  the headline security deliverable for Milestone 1 (critique.md, 1.5, MoSCoW item 5), combining
-  the invariant proof with a bound on smoothed-reading movement. Not yet demonstrated with
-  numbers — this ADR records the design intent, not a completed proof.
-- The same round-trip proof also closes the "round-trip drain via the rebate" concern
-  (critique.md, 1.3) and the near-empty-pool precision concern (1.11) — one proof obligation,
-  three issues.
+  the headline security deliverable for Milestone 1, combining the invariant proof with a bound
+  on smoothed-reading movement. Not yet demonstrated with numbers — this ADR records the
+  design intent, not a completed proof.
+- The same round-trip proof also closes the "round-trip drain via the rebate" concern and the
+  near-empty-pool precision concern — one proof obligation, three issues.
 
 ## References
 
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/context.md`, decision 11
-- bleu-brain `1inch-aqua-incubator/portfolio-manager/critique.md`, issues 1.3, 1.5, 1.5.2, 1.5.3,
-  1.11, and "What M1 must decide or prove" item 5
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — Curve invariant component notes

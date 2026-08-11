@@ -1,9 +1,9 @@
 # Licensing risk — read before assuming this project is "MIT, open source"
 
-Found 2026-08-11 while scaffolding this repo, reading the actual license file shipped in
-`lib/aqua/LICENSES/Aqua-Source-1.1.txt` (not previously documented in the grant proposal's
-`context.md` / `application.md` / `critique.md` in bleu-brain). Not yet reviewed by counsel.
-Flagging clearly here rather than quietly defaulting this repo's `LICENSE` to MIT.
+Found 2026-08-11 while scaffolding this repo, reading the license file shipped in
+`lib/aqua/LICENSES/Aqua-Source-1.1.txt` (not previously documented anywhere in the grant
+proposal). Not yet reviewed by counsel. Flagging clearly here rather than defaulting this
+repo's `LICENSE` to MIT.
 
 ## The core fact
 
@@ -42,9 +42,9 @@ either:
 - Charged Fees exceed **US$100,000** in any rolling 12 months, or
 - "Liquidity Under Control" (LUC) exceeds **US$10,000,000** at any time.
 
-The application's own base-case projection (see bleu-brain `application.md`, Post-Launch
-Targets) assumes **$30M under management** six months after mainnet — three times the LUC
-trigger, on the base case, not the upside scenario.
+The grant application's own base-case projection (Post-Launch Targets) assumes **$30M under
+management** six months after mainnet — three times the LUC trigger, on the base case, not the
+upside scenario.
 
 §5.3 currently waives enforcement for "Volume Activities" (routing, arbitrage,
 market-making — including charging fees, including with third-party capital), which is
@@ -57,13 +57,12 @@ specific counterparty (Degensoft), not on the license's own permanent terms.
 ## What this changes, concretely
 
 1. **`LICENSE`** in this repo is Aqua-Source-1.1, not MIT (done, see root).
-2. **The grant application's "MIT" language should be corrected** to name the actual
-   license, in bleu-brain — not done yet, flagging here for whoever owns that doc next.
-3. **A new risk item belongs in `critique.md`'s register** (bleu-brain
-   `1inch-aqua-incubator/portfolio-manager/critique.md`): the revocable §5.3 waiver, alongside
-   a decision on whether to budget for a possible Degensoft Commercial License negotiation if
-   the base-case $30M LUC projection is taken seriously. Not added there yet — this file is
-   where the finding lives until someone decides where it belongs in the shared doc.
+2. **The grant application's "MIT" language should be corrected** to name the license
+   specifically — not done yet, flagging here for whoever owns the application text next.
+3. **The revocable §5.3 waiver needs its own risk-register entry** in the grant proposal's
+   threat model, alongside a decision on whether to budget for a possible Degensoft Commercial
+   License negotiation if the base-case $30M LUC projection is taken seriously. Not added
+   there yet — this file is where the finding lives until someone moves it.
 4. **Worth a direct question to Tanner** (the 1inch contact who already confirmed the
    weighted-math scope question) given the base case crosses the LUC trigger by design, not
    as an edge case.

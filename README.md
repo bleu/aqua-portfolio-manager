@@ -6,10 +6,8 @@ ordinary trading — not a scheduled manual rebalance.
 
 **Status: pre-Milestone 1.** This repo is the scaffold; the mechanism, its on-chain form
 (AquaApp vs. a swapVM instruction vs. a hybrid), and the security proof are Milestone 1
-deliverables under a proposed 1inch Aqua Incubator grant. See
-[bleu-brain](https://github.com/bleu/bleu-brain)'s
-`bleu/reference/grants/1inch-aqua-incubator/portfolio-manager/` for the full proposal,
-threat-model critique, and decision record this repo implements.
+deliverables under a proposed 1inch Aqua Incubator grant. See [`docs/adr/`](docs/adr/) for the
+decision record this repo implements.
 
 ## The problem
 
@@ -75,4 +73,3 @@ forge fmt
 
 - [1inch Aqua](https://github.com/1inch/aqua) · [1inch swapVM](https://github.com/1inch/swap-vm)
 - [Aqua white paper](https://1inch.com/assets/1inch-aqua-white-paper.pdf)
-- Full grant proposal, threat model, and decision record: bleu-brain (internal)
