@@ -7,8 +7,7 @@ tasks are pulled from open items already named in [`adr/`](adr/README.md); an AD
 **Dates below are first-pass estimates, not commitments.** They assume a start of
 **2026-08-11** and back-to-back milestones with no slack for the team's other work. M4's
 duration is the least reliable of the four: external audit scheduling and turnaround isn't
-something engineering effort estimates control. Revisit this table once M1 is actually
-underway.
+something engineering effort estimates control. Revisit this table once M1 is underway.
 
 | Milestone | Disbursement | Status | Estimated duration | Estimated window |
 |---|---|---|---|---|
@@ -52,12 +51,12 @@ non-profitability proven, not just asserted.
 **Why this short:** by M2, the mechanism and parameters are already decided in M1 — this is
 "build the minimal version of a known design," not open design work. Testnet deploy and wiring
 the maker-wallet convention end to end are mechanical once the component logic exists.
-**Goal:** the mechanism chosen in M1 actually runs, end to end, against real (test) chain state.
+**Goal:** the mechanism chosen in M1 actually runs, end to end, against testnet chain state.
 
 - [ ] Implement a minimal version of every L2 component in [`ARCHITECTURE.md`](ARCHITECTURE.md):
       group config, declared-universe exposure reader, smoothing, oracle adapter, pricing
       engine.
-- [ ] Wire the dedicated maker wallet convention end to end: ship a real strategy from a fresh
+- [ ] Wire the dedicated maker wallet convention end to end: ship a strategy from a fresh
       wallet, execute real trades, verify `AQUA.safeBalances()` reads match expectations
       ([ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
 - [ ] Deploy to a public testnet on the chosen chain ([ADR-0009](adr/0009-deploy-on-base-at-launch.md) —
@@ -70,10 +69,9 @@ cycle demonstrated end to end, with the exposure reading behaving as the M1 mode
 ## M3 — Full implementation
 
 **Estimated duration:** ~3 weeks (2026-08-25 → 2026-09-15)
-**Why this is the biggest engineering chunk:** production Solidity plus a real Forge suite
-(fuzz tests, same-block interaction scenarios, depeg guards, precision edge cases) takes real
-time, and this milestone is what an auditor will actually read in M4 — worth not rushing this
-one specifically.
+**Why this is the biggest engineering chunk:** production Solidity plus a Forge suite (fuzz
+tests, same-block interaction scenarios, depeg guards, precision edge cases) takes time, and
+this milestone is what an auditor will read in M4.
 **Goal:** production-grade code and a test suite that would survive an audit, not just the PoC.
 
 - [ ] Full Solidity implementation of every component named in the M1 writeup and the
@@ -100,7 +98,7 @@ scheduling an auditor's availability and their turnaround on findings is not und
 control the way M1–M3's effort is. Routing integration, onboarding docs, and deployment are
 fast; the audit is the pacing item, and 3 weeks assumes an auditor is lined up in advance, not
 found cold after M3 ships.
-**Goal:** live, audited, and actually reachable through 1inch — not just deployed.
+**Goal:** live, audited, and reachable through 1inch — not just deployed.
 
 - [ ] External audit of the M3-frozen implementation.
 - [ ] Confirm the strategy is reachable through 1inch's own routing, not only via direct calls
