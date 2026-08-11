@@ -12,6 +12,54 @@ against the real interfaces in `lib/aqua/src/interfaces/IAqua.sol` and
 Every other design choice reflected in the diagrams below has its own ADR in
 [`adr/`](adr/README.md) — see the component notes for links.
 
+## Key technical decisions
+
+| Decision | Status | ADR |
+|---|---|---|
+| License this repo's code under Aqua-Source-1.1, not MIT | Accepted | [0001](adr/0001-license-under-aqua-source-not-mit.md) |
+| Dedicated maker wallet as portfolio scope, zero Aqua protocol changes | Accepted | [0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) |
+| Oracle-valued token groups, not per-token targets | Accepted | [0003](adr/0003-oracle-valued-token-groups.md) |
+| Constant-mean weighted curve pricing, reimplemented independently | Accepted | [0004](adr/0004-constant-mean-weighted-curve-pricing.md) |
+| Chainlink-style push oracles, bluechip-first | Accepted | [0005](adr/0005-chainlink-push-oracles.md) |
+| EMA/TWAP + tolerance band + rate caps for exposure smoothing | Accepted | [0006](adr/0006-exposure-smoothing.md) |
+| Donation resistance via curve invariant, not internal accounting | Accepted | [0007](adr/0007-donation-resistance-via-curve-invariant.md) |
+| Success = tracking error + cost of rebalancing, not fee/volume | Accepted | [0008](adr/0008-success-metrics-tracking-error-and-cost.md) |
+| Deploy on Base at launch | Accepted | [0009](adr/0009-deploy-on-base-at-launch.md) |
+| On-chain form: `AquaApp` vs. swapVM instruction vs. hybrid | **Proposed** | [0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) |
+
+**On the open one — should this use swapVM at all?** Reading the actual `lib/swap-vm` source
+changes what this question means:
+
+- **A swapVM instruction isn't something a strategy author can add unilaterally.** The opcode
+  table (`AquaOpcodes._opcodes()` in `lib/swap-vm/src/opcodes/AquaOpcodes.sol`) is a fixed-size
+  array of internal function pointers baked into whichever router contract deploys it —
+  currently `AquaSwapVMRouter`, holding 1inch's own opcode set (`XYCSwap`, `XYCConcentrate`,
+  `Decay`, `Fee`, `PeggedSwap`, `Extruction` — no weighted/constant-mean curve). Adding our own
+  opcode to *that* router means 1inch merging and redeploying it. Deploying *our own* router
+  (inheriting `SwapVM` with a custom opcode set) is technically possible but pulls in the
+  entire `SwapVM.sol` plumbing (EIP-712 order signing, taker-traits parsing, WETH unwrap,
+  maker hooks/callbacks) as part of our own deployed, audited surface — most of it irrelevant
+  to a single-strategy portfolio manager.
+- **Instructions can hold persistent storage** — `Invalidators.sol` proves this (per-maker,
+  per-order mappings, gated by `!ctx.vm.isStaticContext` so `quote()` calls don't mutate
+  state). The earlier assumption that swapVM instructions are necessarily stateless/pure
+  (true of `XYCSwap._xycSwapXD`, which is `pure`) doesn't generalize — the framework supports
+  exactly the kind of persistent EMA/smoothing state [ADR-0006](adr/0006-exposure-smoothing.md)
+  needs. This removes one presumed blocker, but not the router-deployment problem above.
+- **A real "hybrid" is narrower than it first sounds.** `SwapVM.swap()`/`quote()` are full
+  external entrypoints built around taker-initiated calls with their own order/signature
+  semantics — an external `AquaApp` can't cheaply "call into" the deployed router for just the
+  pricing math; the instruction functions (like `_xycSwapXD`) are `internal`, reachable only by
+  inheriting the instruction contract directly. That's really the `AquaApp` path with an
+  optional pure-math import — not meaningfully different from ADR-0010's first option, since
+  swapVM ships no weighted curve to import in the first place.
+
+None of this closes ADR-0010 — the M1 simulation still has to produce real gas/frontier
+numbers — but it does mean the "new swapVM instruction" and "hybrid" options carry a
+dependency on 1inch's own router (redeployment, or a competing router nobody uses yet) that
+`AquaApp` doesn't. See [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) for
+the full record.
+
 ## System context (L1)
 
 ```mermaid
