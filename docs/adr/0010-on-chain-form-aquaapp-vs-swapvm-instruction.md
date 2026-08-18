@@ -1,6 +1,7 @@
 # ADR-0010: On-chain form — AquaApp, a swapVM instruction, or a hybrid
 
-**Status:** Proposed — this is a named Milestone 1 deliverable, not yet decided
+**Status:** Accepted — an independent router inheriting `SwapVM`, with our own weighted-curve
+opcode
 
 ## Context
 
@@ -11,8 +12,9 @@ cross-group pricing logic. Three shapes were named as candidates:
   balance reads and pull/push. Leans toward this option today because it naturally holds
   multi-token state and cross-group logic, which a single swapVM instruction (designed around
   per-swap pricing, not persistent multi-asset policy) doesn't fit as directly.
-- **A new swapVM instruction** — per-swap pricing logic only; would need portfolio state to
-  live somewhere else it can read from.
+- **A new swapVM instruction** — per-swap pricing logic only; the concern that it can't hold or
+  read portfolio state was a presumed limitation, not a confirmed one — see fact 2 below and the
+  PoC's direct multi-token balance read.
 - **A hybrid** — `AquaApp` holds portfolio state/policy, a swapVM instruction handles per-swap
   pricing math.
 
@@ -52,6 +54,15 @@ Read directly rather than assumed, three facts change how the three options comp
    EMA/smoothing state [ADR-0006](0006-exposure-smoothing.md) needs. This removes a presumed
    blocker on the swapVM-instruction path, but doesn't touch the router-deployment problem in
    (1).
+
+   This also answers a related question raised in review: swapVM's `Context` struct exposes
+   only two token slots (`isAToB`-style fields), seemingly built for pairwise swaps, not
+   multi-token groups — does that block a multi-token portfolio strategy? No: an instruction
+   isn't limited to the two tokens in `Context`. `src/poc/BasketXYCSwap.sol` proves this
+   concretely — it reads a third token's balance directly via `_AQUA.rawBalances(maker, app,
+   strategyHash, thirdToken)`, entirely independent of the two-token swap `Context` describes.
+   `Context`'s two token fields describe the swap being settled, not the full set of state an
+   instruction can read.
 3. **The "hybrid" is narrower than it sounds.** `SwapVM.swap()`/`quote()` are full external
    entrypoints built around taker-initiated calls with their own order/signature/transfer
    semantics — an external `AquaApp` can't cheaply call into the deployed router just for
@@ -63,32 +74,42 @@ Read directly rather than assumed, three facts change how the three options comp
 
 ## Decision
 
-Not yet made. This is Milestone 1's named research deliverable: a bounded design-space search
-(not open-ended discovery — the candidate knobs are already named: EMA window, tolerance band,
-rate caps, TWAP-of-rebalancing, discount/surcharge curve shape, and this AquaApp-vs-instruction-
-vs-hybrid fork) evaluated against pre-declared criteria — the tracking-error/cost frontier from
-simulation, gas per rebalance, scope-fit, and donation-attack resistance (ADR-0007), **plus one
-criterion added by the findings above: does this option depend on 1inch redeploying shared
-infrastructure we don't control, or is it deployable unilaterally?** `AquaApp` scores cleanly
-on that added criterion; the instruction and hybrid paths don't. That's a real point in
-`AquaApp`'s favor, but not on its own a substitute for the simulation's gas/frontier numbers —
-it doesn't close this ADR by itself. Deliverable is a simulation notebook plus an
-architecture-decision writeup that picks the mechanism and justifies the form with numbers.
+**A new swapVM instruction, deployed via our own independent router** (inheriting `SwapVM` with
+a custom opcode set), not `AquaApp` and not the hybrid.
+
+Made on the unilateral-deployability criterion and the PoC investment already made
+(`src/poc/PoCRouter.sol`, `PoCOpcodes.sol`, `BasketXYCSwap.sol` — proving the multi-token-balance
+read this form needs, tests passing), **ahead of the full simulation-based gas/frontier
+comparison** this ADR originally scoped as the closing evidence. That comparison hasn't been
+run — this is a strategic call, not a numbers-driven one, and it's recorded as such rather than
+retroactively justified with numbers that don't exist yet. The remaining Milestone 1 simulation
+work (tracking-error/cost frontier, parameter selection) proceeds against this chosen form,
+not as a re-litigation of the form itself.
+
+Rejected the merged-opcode-into-1inch's-router path specifically because it depends on 1inch
+merging and redeploying `AquaSwapVMRouter` — a timeline and cooperation dependency outside this
+project's control, and not yet discussed with Tanner. Own-router means owning ~300 lines of
+`SwapVM.sol`'s taker-facing plumbing (EIP-712 signing, taker-traits parsing, WETH unwrap,
+callbacks) as new audited surface instead — a real cost, accepted in exchange for not being
+blocked on an external party.
 
 ## Consequences
 
-- Every ADR in this log written against the `AquaApp` assumption may need a follow-up ADR (or an
-  amendment noted here) once M1 concludes, if the chosen form is the swapVM-instruction or
-  hybrid path instead.
-- `lib/swap-vm` is vendored to keep the swapVM-instruction and hybrid paths live options, not
-  dead weight — see `foundry.toml`'s `swap-vm/` remapping.
-- If M1 leans toward the instruction or hybrid path despite the unilateral-deployability gap,
-  the writeup needs to name who owns getting the opcode into 1inch's router (a PR to
-  `1inch/swap-vm`? a direct ask via the Tanner relationship?) as an explicit, tracked
-  dependency — not something to discover after M2 is already underway.
-- This ADR should flip to **Accepted** (or split into a superseding ADR) once M1's writeup picks
-  a form — until then, treat the architecture doc's L2 component diagram as illustrative of the
-  AquaApp case, not as a settled contract boundary.
+- Every ADR in this log written against the `AquaApp` assumption (ADR-0002 through ADR-0008)
+  describes logic/data-shape decisions (group model, pricing curve, oracle, smoothing, KPIs)
+  that don't actually depend on which contract holds them — only *where* the state and pricing
+  math live changes. `ARCHITECTURE.md` needs its L2 diagram and component notes updated from the
+  `AquaApp` framing to the instruction/own-router framing (tracked separately, not blocking this
+  ADR).
+- New audited surface this decision takes on: our own router's EIP-712 order signing,
+  taker-traits parsing, WETH unwrap, and maker hooks/callbacks — needs the same audit scrutiny
+  as the pricing/smoothing logic itself, not treated as "vendor code we can trust."
+- Getting a future opcode into 1inch's own shared router remains a live option later (not
+  pursued now) — if revisited, whoever owns that needs to actually talk to Tanner or open a PR
+  against `1inch/swap-vm`, not assume it happens passively.
+- `LICENSING-RISK.md`'s Aqua-Source-1.1 copyleft/commercial-trigger analysis applies to this
+  path too (it's not AquaApp-specific) and remains open, unresolved with counsel — this decision
+  doesn't close it.
 
 ## References
 

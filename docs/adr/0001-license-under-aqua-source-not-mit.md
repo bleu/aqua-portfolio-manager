@@ -15,10 +15,12 @@ Defaulting to MIT, as `forge init` does, would misstate which license governs th
 the grant proposal's own "MIT, open source" language, written before this license was found,
 repeats that mistake externally.
 
-Separately: §5 also creates a conditional Commercial License trigger (Charged Fees >
-$100k/12mo, or Liquidity Under Control > $10M), currently covered by a revocable §5.3
-enforcement waiver — see [`../LICENSING-RISK.md`](../LICENSING-RISK.md). That's a business-risk
-question, not part of this ADR's decision.
+Separately, §5 creates a Commercial License trigger if usage crosses either of two thresholds:
+**Charged Fees** (protocol fees collected) above $100k over any 12-month period, or **Liquidity
+Under Control** (LUC — total value routed through strategies built on this license) above $10M.
+Both are currently covered by a revocable §5.3 enforcement waiver — see
+[`../LICENSING-RISK.md`](../LICENSING-RISK.md). That's a business-risk question, not part of
+this ADR's decision.
 
 ## Decision
 
@@ -27,18 +29,9 @@ This repo's root `LICENSE` is the full text of `Aqua-Source-1.1`, and
 
 ## Consequences
 
-- Any code in `src/` is subject to Aqua-Source-1.1's copyleft: publishing it (which the
-  grant's own milestones already plan from M2 onward) must carry attribution, marked changes,
-  and reproducible build instructions.
-- `lib/balancer-v3-monorepo` stays reference-only (GPL-3.0, separately incompatible with
-  shipping proprietary code) — never imported from `src/`, per
-  [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
-- The grant application's "MIT, open source" language is now inaccurate and should be
-  corrected to name `Aqua-Source-1.1` specifically — not yet done, tracked in
-  [`../LICENSING-RISK.md`](../LICENSING-RISK.md).
-- Does not resolve the §5 commercial-trigger business risk (the $30M base-case LUC projection
-  vs. the $10M trigger) — that's a decision for whoever owns the grant relationship, not
-  something this repo's license choice can fix.
+- Any code in `src/` is subject to Aqua-Source-1.1's copyleft: publishing it must carry attribution, marked changes, and reproducible build instructions.
+- `lib/balancer-v3-monorepo` stays reference-only (GPL-3.0, separately incompatible with shipping proprietary code) — never imported from `src/`, per [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md).
+- Doesn't resolve the §5 commercial-trigger business risk — that's a decision for whoever owns the grant relationship, tracked in [`../LICENSING-RISK.md`](../LICENSING-RISK.md).
 
 ## References
 

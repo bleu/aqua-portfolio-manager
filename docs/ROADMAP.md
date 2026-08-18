@@ -11,7 +11,7 @@ something engineering effort estimates control. Revisit this table once M1 is un
 
 | Milestone | Disbursement | Status | Estimated duration | Estimated window |
 |---|---|---|---|---|
-| [M1 — Research & Spec](#m1--research--spec) | 5% ($2,500) | Not started | ~1 week | 2026-08-11 → 2026-08-18 |
+| [M1 — Research & Spec](#m1--research--spec) | 5% ($2,500) | In progress | ~1 week | 2026-08-11 → 2026-08-18 |
 | [M2 — PoC on testnet](#m2--poc-on-testnet) | 10% ($5,000) | Not started | ~1 week | 2026-08-18 → 2026-08-25 |
 | [M3 — Full implementation](#m3--full-implementation) | 35% ($17,500) | Not started | ~3 weeks | 2026-08-25 → 2026-09-15 |
 | [M4 — 1inch integration & audit gate](#m4--1inch-integration--audit-gate) | 50% ($25,000) | Not started | ~3 weeks | 2026-09-15 → 2026-10-06 |
@@ -29,16 +29,18 @@ real work, but they're bounded (the candidate knobs are already named), not open
 - [ ] Build the simulation notebook (flow modeled in two tiers: endogenous rebalancing/arb
       flow + exogenous organic flow) producing a tracking-error/cost-of-rebalancing frontier,
       protocol fee included on the cost side ([ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)).
-- [ ] From the frontier, pick concrete parameter values: EMA window, tolerance band width,
-      rate-cap thresholds ([ADR-0006](adr/0006-exposure-smoothing.md)).
-- [ ] Prove the round-trip-always-favors-the-pool invariant for this specific curve
-      implementation — the headline security deliverable — combined with a bound on how far a
-      patient donation can move the smoothed reading before it self-corrects
-      ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)).
-- [ ] Resolve the on-chain form: `AquaApp` vs. a new swapVM instruction vs. a hybrid, evaluated
-      against the frontier, gas per rebalance, scope-fit, and the invariant proof above
-      ([ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) — flip to `Accepted`
-      or split into a superseding ADR once this is decided).
+- [ ] From the frontier, pick concrete parameter values: tolerance band width, rate-cap
+      thresholds — no EMA window, dropped from scope ([ADR-0006](adr/0006-exposure-smoothing.md)).
+- [x] Prove the round-trip-always-favors-the-pool invariant for this specific curve
+      implementation — the headline security deliverable. Closed by the curve invariant alone,
+      unconditionally (no smoothing/lag bound needed) — see
+      [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and
+      [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+- [x] Resolve the on-chain form: decided for an independent router deploying a new swapVM
+      instruction (not `AquaApp`, not merged into 1inch's router) — made on the
+      unilateral-deployability criterion and the PoC investment already made, ahead of the
+      frontier/gas comparison below ([ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md),
+      now `Accepted`).
 - [ ] Write up the architecture decision: mechanism + form + numbers, in a form reviewable
       against the grant's pre-declared M1 criteria.
 
@@ -72,7 +74,7 @@ cycle demonstrated end to end, with the exposure reading behaving as the M1 mode
 **Why this is the biggest engineering chunk:** production Solidity plus a Forge suite (fuzz
 tests, same-block interaction scenarios, depeg guards, precision edge cases) takes time, and
 this milestone is what an auditor will read in M4.
-**Goal:** production-grade code and a test suite that would survive an audit, not just the PoC.
+      **Goal:** production-grade code and a test suite that would survive an audit, not just the PoC.
 
 - [ ] Full Solidity implementation of every component named in the M1 writeup and the
       [`ARCHITECTURE.md`](ARCHITECTURE.md) L2 diagram.
