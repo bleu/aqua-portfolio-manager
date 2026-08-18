@@ -1,13 +1,15 @@
 # Architecture
 
-**Status: proposed, pre-Milestone 1.** The exact on-chain form — a pure `AquaApp`, a new
-swapVM instruction, or a hybrid — is formally a Milestone 1 decision (mechanism research +
-spec + simulation, per the grant's decision record; see
-[`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)).
-This document assumes the `AquaApp` path, since that's what the decision record currently
-leans toward ("needs multi-token portfolio state + cross-group logic"), and is grounded
-against the real interfaces in `lib/aqua/src/interfaces/IAqua.sol` and
-`lib/aqua/src/AquaApp.sol`. Treat it as the current working assumption, not a closed decision.
+**Status: on-chain form decided (ADR-0010, Accepted); rest of Milestone 1 in progress.** The
+strategy ships as a new swapVM instruction, deployed via an independent router we own
+(inheriting `SwapVM` with our own opcode set) — not a pure `AquaApp`, not a hybrid, and not
+merged into 1inch's own `AquaSwapVMRouter`. See
+[`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)
+for the full decision and why: it was made on the unilateral-deployability criterion and the
+PoC investment already in `src/poc/`, ahead of the simulation-based gas/frontier comparison
+this ADR originally scoped — that comparison still isn't done, and picking the form first
+doesn't substitute for it. The formal round-trip/donation-resistance proof and the
+tracking-error/cost simulation are still open Milestone 1 work.
 
 Every other design choice reflected in the diagrams below has its own ADR in
 [`adr/`](adr/README.md) — see the component notes for links.
@@ -21,14 +23,14 @@ Every other design choice reflected in the diagrams below has its own ADR in
 | Oracle-valued token groups, not per-token targets | Accepted | [0003](adr/0003-oracle-valued-token-groups.md) |
 | Constant-mean weighted curve pricing, reimplemented independently | Accepted | [0004](adr/0004-constant-mean-weighted-curve-pricing.md) |
 | Chainlink-style push oracles, bluechip-first | Accepted | [0005](adr/0005-chainlink-push-oracles.md) |
-| EMA/TWAP + tolerance band + rate caps for exposure smoothing | Accepted | [0006](adr/0006-exposure-smoothing.md) |
+| Tolerance band + rate caps for exposure guardrails (no EMA/TWAP) | Accepted | [0006](adr/0006-exposure-smoothing.md) |
 | Donation resistance via curve invariant, not internal accounting | Accepted | [0007](adr/0007-donation-resistance-via-curve-invariant.md) |
 | Success = tracking error + cost of rebalancing, not fee/volume | Accepted | [0008](adr/0008-success-metrics-tracking-error-and-cost.md) |
 | Deploy on Base at launch | Accepted | [0009](adr/0009-deploy-on-base-at-launch.md) |
-| On-chain form: `AquaApp` vs. swapVM instruction vs. hybrid | **Proposed** | [0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) |
+| On-chain form: independent router, new swapVM instruction (not `AquaApp`, not merged into 1inch's router) | Accepted | [0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) |
 
-**On the open one — should this use swapVM at all?** Reading the actual `lib/swap-vm` source
-changes what this question means:
+**Why an independent router, not `AquaApp` and not merged into 1inch's own router.** Reading
+the actual `lib/swap-vm` source is what settled this:
 
 - **A swapVM instruction isn't something a strategy author can add unilaterally.** The opcode
   table (`AquaOpcodes._opcodes()` in `lib/swap-vm/src/opcodes/AquaOpcodes.sol`) is a fixed-size
@@ -54,10 +56,12 @@ changes what this question means:
   optional pure-math import — not meaningfully different from ADR-0010's first option, since
   swapVM ships no weighted curve to import in the first place.
 
-None of this closes ADR-0010 — the M1 simulation still has to produce real gas/frontier
-numbers — but it does mean the "new swapVM instruction" and "hybrid" options carry a
-dependency on 1inch's own router (redeployment, or a competing router nobody uses yet) that
-`AquaApp` doesn't. See [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) for
+This is what decided it: merging into 1inch's own router carries a cooperation/timeline
+dependency neither of the other two paths do, and the PoC already proves the own-router path
+works for the multi-token-balance-read question. The M1 simulation still has to produce real
+gas numbers and the tracking-error/cost frontier — those weren't the basis for this decision,
+and still gate the rest of Milestone 1. See
+[ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) for
 the full record.
 
 ## System context (L1)
@@ -71,7 +75,7 @@ flowchart TD
     subgraph BleuScope["Built under this grant"]
         LPApp["<b>LP App</b><br/>Declare universe,<br/>set targets, monitor"]
         Dashboard["<b>Dashboard</b><br/>Protocol-wide<br/>monitoring"]
-        Strategy["<b>Portfolio Manager Strategy</b><br/>(AquaApp, Solidity)<br/>Pricing + exposure<br/>reading"]
+        Strategy["<b>Portfolio Manager Strategy</b><br/>(swapVM instruction,<br/>own router)<br/>Pricing + exposure<br/>reading"]
     end
 
     Wallet[("<b>Dedicated Maker Wallet</b><br/>LP's own EOA/Safe<br/>universe tokens only")]
@@ -138,12 +142,12 @@ flowchart TD
     Wallet[("Dedicated Maker Wallet<br/>(LP's EOA/Safe)")]
     Chainlink["Chainlink<br/>(price feeds)"]
 
-    subgraph Strategy["Portfolio Manager Strategy (AquaApp contract, immutable once shipped)"]
-        Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights, EMA window,<br/>tolerance band, rate caps<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
+    subgraph Strategy["Portfolio Manager Strategy (swapVM instruction, own router, immutable once shipped)"]
+        Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights, tolerance band,<br/>rate caps<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
 
         ExposureReader["<b>Exposure Reader</b><br/>reads the wallet's real balance,<br/>ONLY over declared tokens<br/>(guards against pollution)"]
 
-        Smoothing["<b>Exposure Smoothing</b><br/>moving average (EMA/TWAP)<br/>+ tolerance band<br/>+ rate cap"]
+        Smoothing["<b>Exposure Guardrails</b><br/>tolerance band<br/>+ rate cap<br/><i>(cost/UX, not security —<br/>no moving average)</i>"]
 
         OracleAdapter["<b>Oracle Adapter</b><br/>reads Chainlink,<br/>normalizes decimals,<br/>checks staleness"]
 
@@ -160,7 +164,7 @@ flowchart TD
     ExposureReader -->|"reads balance"| Wallet
     ExposureReader -->|"uses"| Config
     ExposureReader --> Smoothing
-    Smoothing -->|"smoothed<br/>group weight"| PricingEngine
+    Smoothing -->|"current<br/>group weight"| PricingEngine
     OracleAdapter --> Chainlink
     OracleAdapter -->|"price per token"| PricingEngine
     PricingEngine -->|"relies on"| Invariant
@@ -200,10 +204,11 @@ flowchart TD
   (by accident or an intentional donation) is ignored by this read. This is the mitigation for
   "watched wallet ≠ guaranteed-clean wallet" (the wallet is real, so anyone can transfer into
   it — see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
-- **Exposure Smoothing** — an EMA/TWAP over the raw reading, plus a tolerance band and a rate
-  cap (max rebalance frequency/amount), so a single-block balance change can't move the quoted
-  price instantly. This is necessary, not sufficient, for donation resistance — see Invariant
-  below. See [ADR-0006](adr/0006-exposure-smoothing.md).
+- **Exposure Guardrails** — a tolerance band and a rate cap (max rebalance frequency/amount) on
+  the *current* real reading, no moving average. Donation/cross-strategy resistance doesn't
+  depend on these — that's fully closed by the curve invariant alone (see Invariant below); the
+  guardrails exist to reduce unnecessary rebalancing churn and cost. See
+  [ADR-0006](adr/0006-exposure-smoothing.md).
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was
   considered and rejected specifically because the taker could choose which still-valid price
   to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)).
@@ -216,29 +221,29 @@ flowchart TD
 - **Curve invariant** — not its own contract or function, a *property* the Pricing Engine's
   math must satisfy: any closed round-trip trade ends slightly in the strategy's favor. That
   property is what turns a "donation attack" (transferring tokens into the wallet to skew the
-  reading) into an irreversible gift rather than an extractable profit. **Proving this formally
-  is Milestone 1's headline security deliverable — it is asserted here as a design requirement,
-  not yet demonstrated with numbers.** See
+  reading) into an irreversible gift rather than an extractable profit — proven, not just
+  asserted, and unconditionally (holds regardless of whether the pre-trade balance came from an
+  external donation, ordinary settlement, or same-LP cross-strategy interaction). See
+  [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and
   [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
 - **Fee Accounting** — the 2 bps protocol fee must be computed *inside* the same cost model
   used to evaluate the mechanism against baselines (see
   [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)) — comparing the strategy's
   all-in cost including this fee against a fee-free naive baseline would overstate how well the
   mechanism performs.
-- **Reentrancy** — `AquaApp` requires swap-handling functions to be wrapped in its
-  `nonReentrantStrategy(maker, strategyHash)` modifier before calling `_safeCheckAquaPush`;
-  this is a hard requirement from the base contract, not a project-specific choice.
+- **Reentrancy** — handled by `SwapVM.sol` itself, not `AquaApp`'s
+  `nonReentrantStrategy` modifier: a per-`orderHash` transient lock
+  (`_reentrancyGuards[orderHash]`) taken before the instruction runs and released after. Since
+  the strategy is a swapVM instruction on our own router (ADR-0010), this guard is inherited
+  from the base framework, not something the instruction itself has to implement.
 
 ## Open decisions (Milestone 1)
 
-- **On-chain form**: `AquaApp` (assumed here) vs. a new swapVM instruction vs. a hybrid. See
-  [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) — the only ADR in this
-  repo still `Proposed` rather than `Accepted`.
-- **Formal proof** of the round-trip/donation-resistance invariant — currently a design
-  requirement, not yet proven. See [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
-- **Concrete parameter values** — EMA window, tolerance band width, rate caps — depend on the
-  Milestone 1 simulation comparing candidates against naive rebalancing baselines. See
-  [ADR-0006](adr/0006-exposure-smoothing.md) and
+- **Formal proof** of the round-trip/donation-resistance invariant — done, see
+  [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+- **Concrete parameter values** — tolerance band width, rate caps (no EMA window — dropped, see
+  [ADR-0006](adr/0006-exposure-smoothing.md)) — depend on the Milestone 1 simulation comparing
+  candidates against naive rebalancing baselines. See
   [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md).
 - **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and
   [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source"

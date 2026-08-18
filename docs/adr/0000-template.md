@@ -4,12 +4,17 @@
 
 ## Context
 
-What forces are at play (technical, business, protocol constraints). What alternatives were
-considered. Enough for a reader with no prior context to see why this wasn't obvious.
+What forces are at play (technical, business, protocol constraints). Enough for a reader with
+no prior context to see why this wasn't obvious.
 
 ## Decision
 
 The choice, stated as a plain sentence. Not a survey of options — the one that was picked.
+
+## Alternatives considered
+
+What else was on the table and why it was ruled out. Keep this separate from Context so a
+reader gets the decision and its reasoning before the tour of rejected options.
 
 ## Consequences
 

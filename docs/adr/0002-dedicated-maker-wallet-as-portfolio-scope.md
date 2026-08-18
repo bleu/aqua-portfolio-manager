@@ -21,6 +21,11 @@ token0, token1)` already reads on-chain, settled state today. The cost is operat
 not technical — "the LP just segregates capital" undersells a real migration: a fresh wallet,
 moving capital, and re-shipping every existing strategy from it.
 
+This trades integration smoothness for signal quality: an LP already running strategies from
+an existing wallet can't adopt this without migrating first, which is real onboarding friction
+weighed against the alternative of a reading that's either polluted (raw `balanceOf`) or
+doesn't reflect the LP's actual settled position (Aqua's own virtual balances).
+
 ## Decision
 
 Portfolio scope = one dedicated maker wallet per LP, holding only a declared universe of

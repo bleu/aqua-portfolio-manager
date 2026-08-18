@@ -17,16 +17,15 @@ Two pricing designs were on the table:
   reduce the pool's value, by construction of the invariant — the round-trip-profit proof
   reduces to a standard weighted-pool proof instead of a bespoke one.
 
-This reversed the original scope defense and reopened a scope conflict: the grant's
-out-of-scope list bans "AMM
-formulas/mechanisms licensed by third parties." That conflict is resolved by separating the
-*formula* (public, from Balancer's 2019 whitepaper, unpatented as far as known) from Balancer's
-*Solidity* (GPL-3.0) — this repo implements the formula from scratch and never imports
-Balancer's code (see `lib/balancer-v3-monorepo`'s reference-only status in
-[`ADR-0001`](0001-license-under-aqua-source-not-mit.md) / `THIRD_PARTY_NOTICES.md`). 1inch
-confirmed (via Tanner) that an independently-implemented, new-to-Aqua weighted curve is in
-scope — swapVM currently ships xy=k, concentrated, pegged, and stable-swap curves, not
-constant-mean.
+Importing Balancer's actual Solidity (rather than reimplementing the formula) was considered
+and rejected: `lib/balancer-v3-monorepo` ships under GPL-3.0, incompatible with shipping this
+repo's code under Aqua-Source-1.1 ([`ADR-0001`](0001-license-under-aqua-source-not-mit.md)) —
+GPL's copyleft would force either relicensing this repo's own code or ring-fencing the imported
+files under a second, conflicting license. The formula itself is public (Balancer's 2019
+whitepaper) and unpatented as far as known, so this repo implements it from scratch instead —
+same math, no license conflict. `lib/balancer-v3-monorepo` stays reference-only, never imported
+from `src/` (`THIRD_PARTY_NOTICES.md`). This is new territory for Aqua either way: swapVM
+currently ships xy=k, concentrated, pegged, and stable-swap curves, not constant-mean.
 
 The best-known public example of this math: Balancer's 80/20 BAL/WETH pool.
 
@@ -43,8 +42,7 @@ design.
   inherited for free just by citing Balancer's whitepaper.
 - Reframes what "the innovation" is: not the curve itself (that's the settlement engine), but
   the layer above it — group targets, the declared-universe exposure read (ADR-0002/0003), and
-  Chainlink-anchored valuation (ADR-0005). The grant application's own scope defense was
-  rewritten to argue exactly this.
+  Chainlink-anchored valuation (ADR-0005).
 - Team has prior Balancer-contributor experience, which strengthens the implementation and
   audit story for M3/M4 — but this ADR's decision doesn't depend on that continuing to be true.
 - Precision/edge behavior near an empty pool needs the same handling as any weighted pool
