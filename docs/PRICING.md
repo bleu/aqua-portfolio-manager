@@ -12,11 +12,12 @@ matters for this repo's license.
 For a swap between token *i* (in) and token *o* (out), both belonging to declared groups in the
 strategy's config:
 
-- `B_i`, `B_o` — the group's **current, real** exposure reading, straight from
-  `AQUA.safeBalances()` (ADR-0002), valued via the Oracle Adapter (ADR-0005) if the group holds
-  more than one token (ADR-0003). No EMA/TWAP — ADR-0006 dropped the moving average (2026-08-18);
-  the tolerance band, where it applies, is a stateless function of this same current reading,
-  not a separate lagging variable.
+- `B_i`, `B_o` — the group's **current, real** exposure reading, straight from `balanceOf` on the
+  maker wallet (ADR-0002 — not `AQUA.safeBalances()`, which is a same-strategy-only ledger, not a
+  wallet-wide reading), valued via the Oracle Adapter (ADR-0005) if the group holds more than one
+  token (ADR-0003). No EMA/TWAP — ADR-0006 dropped the moving average (2026-08-18); the tolerance
+  band, where it applies, is a stateless function of this same current reading, not a separate
+  lagging variable.
 - `w_i`, `w_o` — the group's target weight, normalized so all weights in the strategy sum to 1.
   Fixed at `ship()` time (part of the immutable `strategyHash`), never updated in place.
 - `f` — the protocol fee, in scope for Milestone 1 as the flat 2 bps referenced in ADR-0008;

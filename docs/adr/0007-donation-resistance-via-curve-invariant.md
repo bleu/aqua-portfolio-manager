@@ -31,12 +31,23 @@ donation's effect on price shows up).
   nudge their weights, for zero extractable gain. Accepted as unpreventable but economically
   irrational.
 - "No donation attack is ever profitable" is proven, not just asserted — see
-  `../INVARIANT-PROOF.md` for the full proof, including why it holds unconditionally for
-  external donations, ordinary settlement, and same-LP cross-strategy interaction (ADR-0002)
-  alike, with no dependency on smoothing parameters.
+  `../INVARIANT-PROOF.md` for the full proof, covering PM's own trades and external donations,
+  with no dependency on smoothing parameters.
+- **Correction (2026-08-20):** an earlier version of this bullet claimed the proof covers
+  same-LP cross-strategy interaction "alike" — that was wrong. A trade by a *different* strategy
+  is not a donation (it's two-sided: it can remove value from one side while adding to another),
+  and `thoughts/cross-strategy-manipulation.md` found a concrete exploit this proof does not
+  cover on its own. What actually closes that gap is `ADR-0011`'s Basket Scope Guard: it confines
+  every other strategy to trading within one group, which *does* reduce to the donation-safe case
+  (a one-sided value change to a single group total), because ADR-0003 already treats intra-group
+  drift as a single scalar, not a two-sided ratio. The proof didn't get stronger — the boundary
+  it was implicitly assuming got enforced.
 - The same round-trip proof also closes the "round-trip drain via the rebate" concern and the
   near-empty-pool precision concern — one proof obligation, three issues.
 
 ## References
 
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — Curve invariant component notes
+- [`0011-safe-wallet-with-basket-scope-guard.md`](0011-safe-wallet-with-basket-scope-guard.md) —
+  what actually makes this proof's "only PM, or a donation" precondition true for cross-strategy
+  activity
