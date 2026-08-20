@@ -85,10 +85,13 @@ this milestone is what an auditor will read in M4.
 - [ ] Forge unit + fuzz test suite for the strategy contract, including intra-group drift by
       another strategy on the same wallet (accepted by design, ADR-0003) and a depeg divergence
       guard inside groups ([ADR-0003](adr/0003-oracle-valued-token-groups.md)).
-- [ ] Separately, a test suite for the Basket Scope Guard itself against a real Safe (not just
+- [x] Separately, a test suite for the Basket Scope Guard itself against a real Safe (not just
       the strategy contract): confirm it reverts every cross-group and outside-universe `ship()`
       attempt, allows PM's own re-ship, and behaves correctly through both `execTransaction` and
       a module path if any module is present ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)).
+      Done ahead of schedule (BLEUDEV-320, local Safe v1.5.0) — prioritized as the riskiest new
+      architectural bet, so the team could pivot early if it didn't hold up; still needs the
+      testnet check in M2 above and an external audit before this counts as M3-done.
 - [ ] Precision/edge-case handling near an empty pool: minimum-liquidity floor, round-in-the-
       pool's-favor ([ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md),
       [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)).

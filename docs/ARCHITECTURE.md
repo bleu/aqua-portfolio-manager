@@ -11,9 +11,10 @@ this ADR originally scoped — that comparison still isn't done, and picking the
 doesn't substitute for it. The formal round-trip/donation-resistance proof is done
 ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy
 manipulation gap it doesn't cover is closed structurally, not proven, by a Safe wallet
-requirement and a Basket Scope Guard ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md),
-still a design sketch, not built). The tracking-error/cost simulation is still open Milestone 1
-work.
+requirement and a Basket Scope Guard ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md);
+`src/BasketScopeGuard.sol`, compiled and tested against a real deployed Safe on both the
+`execTransaction` and module paths — see `test/BasketScopeGuard.t.sol`). The tracking-error/cost
+simulation is still open Milestone 1 work.
 
 Every other design choice reflected in the diagrams below has its own ADR in
 [`adr/`](adr/README.md) — see the component notes for links.
@@ -281,10 +282,11 @@ flowchart TD
   [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
 - **Cross-strategy manipulation** (a different strategy on the same wallet skewing the balance
   PM prices against) — closed structurally, not proven mathematically: see
-  [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). Still open before this can be
-  called done: the actual Guard contract needs writing, compiling, and auditing (today it's a
-  sketch, [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md)),
-  and the onboarding flow needs the one-time pre-existing-strategy check it depends on.
+  [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). The Guard contract is written,
+  compiled, and tested against a real deployed Safe (`src/BasketScopeGuard.sol`,
+  `test/BasketScopeGuard.t.sol`) — still needs an external audit before this is done. The
+  onboarding flow also still needs the one-time pre-existing-strategy check it depends on
+  (`thoughts/basket-scope-guard-design.md`).
 - **Concrete parameter values** — tolerance band width, rate caps (no EMA window — dropped, see
   [ADR-0006](adr/0006-exposure-smoothing.md)) — depend on the Milestone 1 simulation comparing
   candidates against naive rebalancing baselines. See

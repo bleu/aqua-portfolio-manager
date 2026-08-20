@@ -48,8 +48,11 @@ fixed at the Guard's construction, with no setter, so neither can be loosened la
 controls the Safe.
 
 This makes the assumption ADR-0003 and ADR-0007 already relied on ("only PM, or a pure
-donation, can move what PM prices") structurally true, rather than hoped-for. See
-`thoughts/basket-scope-guard-design.md` for the contract sketch and installation details.
+donation, can move what PM prices") structurally true, rather than hoped-for. Implemented and
+tested against a real deployed Safe (v1.5.0) on both the `execTransaction` and module paths —
+see `src/BasketScopeGuard.sol` and `test/BasketScopeGuard.t.sol` (BLEUDEV-320); still needs an
+external audit before production use. `thoughts/basket-scope-guard-design.md` has the
+installation details and the design history.
 
 ## Alternatives considered
 
@@ -101,7 +104,8 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
 
 ## References
 
-- `thoughts/basket-scope-guard-design.md` — the Guard's contract sketch and installation steps
+- `src/BasketScopeGuard.sol`, `test/BasketScopeGuard.t.sol` — the real, compiled, tested Guard
+- `thoughts/basket-scope-guard-design.md` — installation steps and design history
 - `thoughts/cross-strategy-manipulation.md`, `thoughts/cross-strategy-layered-defense.md` —
   superseded prior approaches, kept for their research and reasoning
 - `docs/adr/0002-dedicated-maker-wallet-as-portfolio-scope.md` — the Safe-only requirement this
