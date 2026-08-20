@@ -11,12 +11,17 @@ simulations (Monte Carlo sweeps, parameter search) far faster than Forge allows.
 
 ```
 simulation/
-├── src/aqua_sim/       — reusable simulation library (imported by every notebook)
-│   └── curve.py        — the weighted curve, mirroring docs/PRICING.md formula-for-formula
-├── notebooks/           — one notebook per concept, numbered in dependency order,
-│                          each a self-contained set of explanations + real assertions
-│                          (not just printed claims) + visualizations
-└── pyproject.toml       — uv-managed; numpy/pandas/matplotlib + jupyterlab
+├── src/aqua_sim/         — reusable simulation library (imported by every notebook)
+│   ├── curve.py          — the weighted curve, mirroring docs/PRICING.md formula-for-formula
+│   ├── market.py         — synthetic GBM price paths (price_a_in_b convention)
+│   ├── flows.py          — exogenous (organic) + endogenous (arbitrage) trade models
+│   ├── metrics.py        — tracking error + the frictionless-reference cost metric (ADR-0008)
+│   ├── baselines.py      — the two naive baselines the mechanism must beat
+│   └── simulate.py       — ties market+flows+metrics into one mechanism simulation run
+├── notebooks/            — one notebook per concept, numbered in dependency order,
+│                           each a self-contained set of explanations + real assertions
+│                           (not just printed claims) + visualizations
+└── pyproject.toml        — uv-managed; numpy/pandas/matplotlib + jupyterlab
 ```
 
 ### Notebooks
@@ -24,10 +29,23 @@ simulation/
 | # | Notebook | Status | Covers |
 |---|---|---|---|
 | 01 | `01_pricing_curve.ipynb` | Done | Implements + checks the curve against `PRICING.md`/`INVARIANT-PROOF.md`: equal-weight reduces to `xy=k`, spot-price direction, the round-trip invariant (200k random trades), the `fee=0` equality case, donation-only-increases, degenerate-balance rejection. Also records (not hides) a known float64 precision limit near an empty pool at extreme trade sizes — matches `BLEUDEV-263`/`BLEUDEV-296`'s planned minimum-liquidity floor. |
-| 02 | `02_exogenous_flow.ipynb` | Not started (`BLEUDEV-274`) | Organic trade arrivals unrelated to the pool's own skew. |
-| 03 | `03_endogenous_flow.ipynb` | Not started (`BLEUDEV-275`) | Arbitrageur/solver-driven corrective flow — the mechanism's actual rebalancing path. |
-| 04 | `04_naive_baselines.ipynb` | Not started (`BLEUDEV-276`) | Periodic manual rebalance + threshold rebalance via a generic DEX — what the mechanism must beat. |
-| 05 | `05_frontier_sweep.ipynb` | Not started (`BLEUDEV-276`/`277`) | The tracking-error/cost-of-rebalancing frontier; picks concrete tolerance-band/rate-cap values (`BLEUDEV-256`/`279`/`280`). |
+| 02 | `02_exogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Organic trade arrivals unrelated to the pool's own skew — Poisson arrival rate, unbiased direction (checked correctly, across many realizations, not one path), lognormal size distribution. |
+| 03 | `03_endogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Arbitrageur/solver-driven corrective flow. **Documents a real price-convention bug** this work found and fixed (see below) — kept in the notebook deliberately, not cleaned out of the record. Verifies arb direction both ways, tolerance band, rate cap, and a full year end-to-end. |
+| 04 | `04_naive_baselines.ipynb` | Done (`BLEUDEV-322`) | Periodic manual rebalance + threshold rebalance via a generic DEX — what the mechanism must beat, on the same cost/tracking-error metrics. |
+| 05 | `05_frontier_sweep.ipynb` | Done (`BLEUDEV-322`) | The tracking-error/cost-of-rebalancing frontier: mechanism (tolerance-band sweep) vs. both baselines (period/threshold sweeps), 15 Monte Carlo reps per point. **Result: the mechanism's frontier dominates both baselines' at every swept point** (10/10, checked as an explicit assertion, not eyeballed). Picking a final tolerance-band value from this frontier is separate, deliberately out-of-scope work (`BLEUDEV-256`/`279`/`280`). |
+
+### A real bug this work found (documented, not hidden)
+
+`simulate.py`'s first version fed `market.py`'s conventional price (`price_a_in_b`, "how
+many B is 1 A worth") directly into `flows.py`'s arbitrage logic, which expects
+`curve.py`'s reciprocal `SP(i->o)` convention ("units of `i` paid per unit of `o`
+received"). Every isolated unit test happened to use `market_price=1.0` (its own
+reciprocal), so nothing caught the mismatch until a full end-to-end run produced a
+95th-percentile tracking error of 43% — obviously wrong for a mechanism whose entire job
+is to hold tracking error small. Fixed, and locked in with a non-self-reciprocal
+regression check in `03_endogenous_flow.ipynb` §1. Left in the record as evidence this was
+actually checked end to end, not just assumed correct because the algebra looked right on
+paper.
 
 ## Running
 
