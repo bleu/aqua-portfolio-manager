@@ -1,14 +1,16 @@
 # Round-trip / donation-resistance proof
 
-Status: **closed.** A single proof (below) fully discharges ADR-0007's obligation — no smoothing,
-no additional bound, no open follow-up.
+Status: **closed for what this proof can prove.** A single proof (below) fully discharges
+ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no
+additional bound needed for either. **Cross-strategy interaction (a different strategy on the
+same wallet moving the balance) is a separate case this proof does not cover** — see the
+correction below. That gap is closed structurally instead, by `ADR-0011`'s Basket Scope Guard.
 
 ## What has to be shown
 
 ADR-0007's claim is: no sequence of trades against this strategy can extract value from the
 wallet, whether preceded by an external donation (an unsolicited transfer meant to skew the
-price), ordinary settlement, or a same-LP interaction across two of the LP's own strategies
-sharing the wallet (ADR-0002). The pricing formula (`PRICING.md`) reads the wallet's real,
+price) or ordinary settlement. The pricing formula (`PRICING.md`) reads the wallet's real,
 current balance directly — no EMA, no TWAP, no moving average of any kind (see "Why no
 smoothing" below for why that was cut).
 
@@ -58,14 +60,26 @@ included), the donor can never trade their way back to more value than they gave
 example with real numbers in the PR history / Linear BLEUDEV-254 if a concrete walkthrough is
 useful later.
 
-**Why this covers cross-strategy interaction too, with no extra argument needed.** The proof
-never refers to *how* the pre-trade balance came to be what it is — a donation, ordinary
-settlement, or another of the LP's own strategies (sharing the same dedicated wallet, ADR-0002)
-moving the balance as a side effect of its own, unrelated trading. Whatever moved `B_i`/`B_o`
-before this strategy's trade executes, the trade is still priced off the *current* real balance,
-and the proof applies unconditionally. Trading this strategy after moving the shared wallet's
-balance via a different strategy is the same thing an external arbitrageur does — it's the
-intended rebalancing mechanism (ADR-0008's "endogenous arb flow"), not an exploit.
+**Why this does NOT automatically cover cross-strategy interaction — a correction (2026-08-20).**
+An earlier version of this section argued the proof applies unconditionally regardless of how
+the pre-trade balance arose, including via another of the LP's own strategies trading on the
+shared wallet (ADR-0002). That was wrong: the proof above (lines
+17-40) shows `V` never decreases across a trade that follows *this strategy's own* formula
+(`PRICING.md`) — it says nothing about a trade against a *different* strategy's curve, which
+follows different math entirely and can move this strategy's `B_i`/`B_o` in a way that decreases
+`V` relative to where it stood a moment before. `thoughts/cross-strategy-manipulation.md` found a
+concrete, worked exploit through exactly this gap: another strategy's trade can leave this
+strategy's curve mispriced relative to true value, and a subsequent trade against *this*
+strategy — while still individually invariant-preserving relative to its own immediate input —
+extracts real value that was never actually available to begin with.
+
+What closes this instead is `ADR-0011`: a Safe Transaction Guard that prevents any strategy but
+this one from ever moving tokens across a group boundary (ADR-0003) or in from outside the
+declared universe. That confines any other strategy's activity to *within* one group — and
+because ADR-0003 already treats intra-group composition as unpriced (only the group's
+oracle-valued total feeds this curve), a within-group trade by another strategy reduces to
+exactly the one-sided "donation" case this proof already covers. The proof isn't stronger than it
+was; the boundary it needs now actually holds, enforced outside this contract entirely.
 
 ## Why no smoothing (EMA/TWAP removed from scope, 2026-08-18)
 
@@ -76,7 +90,8 @@ between "smoothed" and "raw" needed a second, harder proof that depended on simu
 parameters that don't exist yet (see git history on this file for the abandoned "Part 2"). Once
 the exposure reader feeds the *raw*, current balance directly with no averaging, that gap
 doesn't exist, and the single proof above is unconditionally sufficient — for external
-donations, ordinary settlement noise, and same-LP cross-strategy interaction alike.
+donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix
+entirely, not more of this proof — see the correction above and `ADR-0011`.)
 
 The tolerance band and rate cap (ADR-0006) stay in scope, but on a different footing now: they're
 not load-bearing for this proof (the proof holds with or without them), they exist to reduce

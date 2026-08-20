@@ -59,8 +59,12 @@ the maker-wallet convention end to end are mechanical once the component logic e
       group config, declared-universe exposure reader, smoothing, oracle adapter, pricing
       engine.
 - [ ] Wire the dedicated maker wallet convention end to end: ship a strategy from a fresh
-      wallet, execute real trades, verify `AQUA.safeBalances()` reads match expectations
+      **Safe**, execute real trades, verify `balanceOf` reads match expectations
       ([ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
+- [ ] Build and install the Basket Scope Guard on that Safe, and confirm it actually blocks a
+      cross-group/outside-universe `ship()` attempt on testnet, not just in a local test
+      ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md),
+      [`basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md)).
 - [ ] Deploy to a public testnet on the chosen chain ([ADR-0009](adr/0009-deploy-on-base-at-launch.md) —
       re-confirm Base is still the right call before deploying).
 - [ ] Exercise discount/surcharge pricing in both directions with manual or scripted trades.
@@ -78,9 +82,13 @@ this milestone is what an auditor will read in M4.
 
 - [ ] Full Solidity implementation of every component named in the M1 writeup and the
       [`ARCHITECTURE.md`](ARCHITECTURE.md) L2 diagram.
-- [ ] Forge unit + fuzz test suite, including same-block cross-strategy interaction on one
-      wallet ([ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)) and a depeg
-      divergence guard inside groups ([ADR-0003](adr/0003-oracle-valued-token-groups.md)).
+- [ ] Forge unit + fuzz test suite for the strategy contract, including intra-group drift by
+      another strategy on the same wallet (accepted by design, ADR-0003) and a depeg divergence
+      guard inside groups ([ADR-0003](adr/0003-oracle-valued-token-groups.md)).
+- [ ] Separately, a test suite for the Basket Scope Guard itself against a real Safe (not just
+      the strategy contract): confirm it reverts every cross-group and outside-universe `ship()`
+      attempt, allows PM's own re-ship, and behaves correctly through both `execTransaction` and
+      a module path if any module is present ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)).
 - [ ] Precision/edge-case handling near an empty pool: minimum-liquidity floor, round-in-the-
       pool's-favor ([ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md),
       [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)).

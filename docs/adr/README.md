@@ -21,3 +21,4 @@ grounded against the Aqua/swapVM interfaces.
 | [0008](0008-success-metrics-tracking-error-and-cost.md) | Success = tracking error + cost of rebalancing, not fee/volume | Accepted |
 | [0009](0009-deploy-on-base-at-launch.md) | Deploy on Base at launch | Accepted (held loosely) |
 | [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | On-chain form: independent router, new swapVM instruction (not AquaApp, not merged into 1inch's router) | Accepted |
+| [0011](0011-safe-wallet-with-basket-scope-guard.md) | Safe-only maker wallet with a Basket Scope Guard, instead of bounding cross-strategy risk | Accepted |

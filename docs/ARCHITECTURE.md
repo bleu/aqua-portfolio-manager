@@ -8,8 +8,12 @@ merged into 1inch's own `AquaSwapVMRouter`. See
 for the full decision and why: it was made on the unilateral-deployability criterion and the
 PoC investment already in `src/poc/`, ahead of the simulation-based gas/frontier comparison
 this ADR originally scoped — that comparison still isn't done, and picking the form first
-doesn't substitute for it. The formal round-trip/donation-resistance proof and the
-tracking-error/cost simulation are still open Milestone 1 work.
+doesn't substitute for it. The formal round-trip/donation-resistance proof is done
+([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy
+manipulation gap it doesn't cover is closed structurally, not proven, by a Safe wallet
+requirement and a Basket Scope Guard ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md),
+still a design sketch, not built). The tracking-error/cost simulation is still open Milestone 1
+work.
 
 Every other design choice reflected in the diagrams below has its own ADR in
 [`adr/`](adr/README.md) — see the component notes for links.
@@ -28,6 +32,7 @@ Every other design choice reflected in the diagrams below has its own ADR in
 | Success = tracking error + cost of rebalancing, not fee/volume | Accepted | [0008](adr/0008-success-metrics-tracking-error-and-cost.md) |
 | Deploy on Base at launch | Accepted | [0009](adr/0009-deploy-on-base-at-launch.md) |
 | On-chain form: independent router, new swapVM instruction (not `AquaApp`, not merged into 1inch's router) | Accepted | [0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) |
+| Safe-only maker wallet with a Basket Scope Guard, instead of bounding cross-strategy risk | Accepted | [0011](adr/0011-safe-wallet-with-basket-scope-guard.md) |
 
 **Why an independent router, not `AquaApp` and not merged into 1inch's own router.** Reading
 the actual `lib/swap-vm` source is what settled this:
@@ -71,6 +76,7 @@ the full record.
 flowchart TD
     LP(["<b>LP</b><br/>Owns the capital,<br/>declares group targets"])
     Taker(["<b>Taker / Solver</b><br/>Executes swaps via 1inch"])
+    OtherStrategy(["<b>Any other strategy</b><br/>the LP also runs<br/>(different app/strategyHash)"])
 
     subgraph BleuScope["Built under this grant"]
         LPApp["<b>LP App</b><br/>Declare universe,<br/>set targets, monitor"]
@@ -78,7 +84,10 @@ flowchart TD
         Strategy["<b>Portfolio Manager Strategy</b><br/>(swapVM instruction,<br/>own router)<br/>Pricing + exposure<br/>reading"]
     end
 
-    Wallet[("<b>Dedicated Maker Wallet</b><br/>LP's own EOA/Safe<br/>universe tokens only")]
+    subgraph WalletScope["Dedicated Maker Wallet — Safe only (ADR-0011)"]
+        Wallet[("<b>Safe</b><br/>universe tokens only")]
+        Guard{{"<b>Basket Scope Guard</b><br/>allows PM's exact strategy hash;<br/>anyone else must stay<br/>inside one group"}}
+    end
 
     subgraph AquaCore["Aqua (1inch protocol)"]
         Aqua["Aqua Core<br/>virtual balances,<br/>ship/dock/pull/push"]
@@ -90,16 +99,21 @@ flowchart TD
     DAO["<b>1inch DAO</b><br/>Receives a fee share"]
 
     LP -->|"declares universe,<br/>targets, config"| LPApp
-    LPApp -->|"ship() with the<br/>Strategy config"| Aqua
     LPApp -.->|"monitors via events"| Strategy
-    LP -->|"holds tokens in"| Wallet
+    LP -->|"controls (signs txs for)"| Wallet
+
+    LPApp -->|"prepares ship() tx for PM"| Wallet
+    OtherStrategy -.->|"also tries to ship()<br/>from the same wallet"| Wallet
+    Wallet -->|"every outgoing call<br/>checked by"| Guard
+    Guard -->|"ship() allowed:<br/>PM's exact hash, or a<br/>single-group strategy"| Aqua
+    Guard -.->|"reverts: cross-group or<br/>outside-universe token"| OtherStrategy
 
     Taker -->|"wants to swap TokenA for TokenB"| Routing
     Routing -->|"finds the best price"| Aqua
     Aqua -->|"runs the program"| SwapVM
     SwapVM -->|"calls the<br/>strategy logic"| Strategy
 
-    Strategy -->|"reads real balance<br/>(AQUA.safeBalances)"| Wallet
+    Strategy -->|"reads real balance<br/>(balanceOf, ADR-0002)"| Wallet
     Strategy -->|"reads current price"| Chainlink
     Strategy -->|"computes price,<br/>authorizes pull/push"| Aqua
     Aqua -->|"moves tokens to/from"| Wallet
@@ -111,27 +125,44 @@ flowchart TD
     classDef actor fill:#f1f5f9,stroke:#64748b,color:#0f172a
     classDef bleu fill:#2563eb,stroke:#1e40af,color:#ffffff,font-weight:bold
     classDef wallet fill:#d97706,stroke:#b45309,color:#ffffff,font-weight:bold
+    classDef guard fill:#dc2626,stroke:#991b1b,color:#ffffff,font-weight:bold
     classDef aqua fill:#16a34a,stroke:#15803d,color:#ffffff,font-weight:bold
     classDef external fill:#e2e8f0,stroke:#64748b,color:#0f172a
 
-    class LP,Taker actor
+    class LP,Taker,OtherStrategy actor
     class LPApp,Dashboard,Strategy bleu
     class Wallet wallet
+    class Guard guard
     class Aqua,SwapVM aqua
     class Chainlink,Routing,DAO external
 
     style BleuScope fill:#eff6ff,stroke:#1e40af,stroke-dasharray: 5 5
     style AquaCore fill:#f0fdf4,stroke:#15803d,stroke-dasharray: 5 5
+    style WalletScope fill:#fff7ed,stroke:#b45309,stroke-dasharray: 5 5
 ```
 
 **What this grant builds** (blue boxes): the strategy contract, the LP-facing web app, and the
 protocol-wide monitoring dashboard. Everything else — Aqua, swapVM, Chainlink, 1inch's own
 routing — already exists; we only integrate against it.
 
-**The dedicated maker wallet** (orange) is the load-bearing design choice: a fresh wallet
-(EOA or Safe) the LP creates and funds only with universe tokens. Every strategy shipped from
-it settles into it, so its real, on-chain, `AQUA.safeBalances()`-readable balance already *is*
-the true net exposure — no new accounting primitive needed, and zero protocol changes.
+**The dedicated maker wallet** (orange) is the load-bearing design choice: a fresh **Safe** —
+not an EOA, see [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) — the LP creates and
+funds only with universe tokens. Every strategy shipped from it settles into it, so its real,
+on-chain, `balanceOf`-readable balance already *is* the true net exposure — no new accounting
+primitive needed, and zero protocol changes (see
+[ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for why this reads
+`balanceOf` directly and not `AQUA.safeBalances()`, which is a same-strategy-only ledger, not a
+wallet-wide reading).
+
+**The Basket Scope Guard** (red) is what makes that safe to share with other strategies at all.
+It's a Safe Transaction Guard, not part of the strategy contract itself — installed on the
+wallet, it inspects every `ship()` call before the Safe makes it. PM's own, exact strategy hash
+is always allowed (it's the trusted mechanism meant to price across groups); anything else must
+stay within a single declared group, and can't touch a token outside the universe at all. See
+[ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) and
+[`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md) for the
+mechanism and its real limits (module-transaction coverage, pre-existing strategies, guard
+removal).
 
 ## Contract internals (L2)
 
@@ -198,16 +229,19 @@ flowchart TD
   and docking the old one via [`IAqua.dock()`](../lib/aqua/src/interfaces/IAqua.sol). See
   [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) and
   [ADR-0003](adr/0003-oracle-valued-token-groups.md).
-- **Exposure Reader** — reads via
-  [`AQUA.safeBalances(maker, app, strategyHash, token0, token1)`](../lib/aqua/src/interfaces/IAqua.sol),
-  but **only over tokens the LP declared** in the Config — anything else sitting in the wallet
-  (by accident or an intentional donation) is ignored by this read. This is the mitigation for
-  "watched wallet ≠ guaranteed-clean wallet" (the wallet is real, so anyone can transfer into
-  it — see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)).
+- **Exposure Reader** — reads via plain `balanceOf(token)` on the maker wallet, **not**
+  `AQUA.rawBalances`/`safeBalances` (those are the same per-`(maker, app, strategyHash)` ledger,
+  scoped to this one strategy only — not a wallet-wide reading; see
+  [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for the full correction),
+  and **only over tokens the LP declared** in the Config — anything else sitting in the wallet
+  (by accident or an intentional donation) is ignored by this read.
 - **Exposure Guardrails** — a tolerance band and a rate cap (max rebalance frequency/amount) on
-  the *current* real reading, no moving average. Donation/cross-strategy resistance doesn't
-  depend on these — that's fully closed by the curve invariant alone (see Invariant below); the
-  guardrails exist to reduce unnecessary rebalancing churn and cost. See
+  the *current* real reading, no moving average. Donation resistance doesn't depend on these —
+  that's fully closed by the curve invariant alone (see Invariant below). Cross-strategy
+  resistance also doesn't depend on these — it's not this contract's job at all: it's closed
+  structurally, at the wallet level, by the Basket Scope Guard (
+  [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md), see the L1 diagram above). These
+  guardrails exist only to reduce unnecessary rebalancing churn and cost. See
   [ADR-0006](adr/0006-exposure-smoothing.md).
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was
   considered and rejected specifically because the taker could choose which still-valid price
@@ -222,10 +256,14 @@ flowchart TD
   math must satisfy: any closed round-trip trade ends slightly in the strategy's favor. That
   property is what turns a "donation attack" (transferring tokens into the wallet to skew the
   reading) into an irreversible gift rather than an extractable profit — proven, not just
-  asserted, and unconditionally (holds regardless of whether the pre-trade balance came from an
-  external donation, ordinary settlement, or same-LP cross-strategy interaction). See
-  [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and
-  [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+  asserted (see [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and
+  [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)). This proof covers PM's own
+  trades and pure donations — it does **not**, by itself, cover a *different* strategy trading
+  against the same wallet (that's a two-sided balance change, not a donation, and
+  [`thoughts/cross-strategy-manipulation.md`](../thoughts/cross-strategy-manipulation.md) found a
+  concrete exploit through exactly that gap). What makes the invariant's precondition hold for
+  cross-strategy activity too is the Basket Scope Guard
+  ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)), not this proof.
 - **Fee Accounting** — the 2 bps protocol fee must be computed *inside* the same cost model
   used to evaluate the mechanism against baselines (see
   [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)) — comparing the strategy's
@@ -241,6 +279,12 @@ flowchart TD
 
 - **Formal proof** of the round-trip/donation-resistance invariant — done, see
   [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+- **Cross-strategy manipulation** (a different strategy on the same wallet skewing the balance
+  PM prices against) — closed structurally, not proven mathematically: see
+  [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). Still open before this can be
+  called done: the actual Guard contract needs writing, compiling, and auditing (today it's a
+  sketch, [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md)),
+  and the onboarding flow needs the one-time pre-existing-strategy check it depends on.
 - **Concrete parameter values** — tolerance band width, rate caps (no EMA window — dropped, see
   [ADR-0006](adr/0006-exposure-smoothing.md)) — depend on the Milestone 1 simulation comparing
   candidates against naive rebalancing baselines. See
