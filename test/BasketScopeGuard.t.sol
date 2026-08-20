@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: LicenseRef-Degensoft-Aqua-Source-1.1
 pragma solidity 0.8.30;
 
-import { Test } from "forge-std/Test.sol";
-import { BasketScopeGuard } from "../src/BasketScopeGuard.sol";
-import { Aqua } from "aqua/Aqua.sol";
-import { Safe } from "safe-smart-account/contracts/Safe.sol";
-import { SafeProxyFactory } from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
-import { Enum } from "safe-smart-account/contracts/libraries/Enum.sol";
+import {Test} from "forge-std/Test.sol";
+import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
+import {Aqua} from "aqua/Aqua.sol";
+import {Safe} from "safe-smart-account/contracts/Safe.sol";
+import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
+import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 
 /// @dev Minimal module that just forwards one call through `execTransactionFromModule`,
 ///      so the test can exercise the Guard's `checkModuleTransaction` path for real.
@@ -65,7 +65,17 @@ contract BasketScopeGuardTest is Test {
         tokens[3] = tokenD;
 
         guard.checkTransaction(
-            address(aqua), 0, _shipCalldata(pmStrategy, tokens), Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            address(aqua),
+            0,
+            _shipCalldata(pmStrategy, tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
         );
         // no revert = pass
     }
@@ -76,7 +86,17 @@ contract BasketScopeGuardTest is Test {
         tokens[1] = tokenB;
 
         guard.checkTransaction(
-            address(aqua), 0, _shipCalldata("some other strategy", tokens), Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            address(aqua),
+            0,
+            _shipCalldata("some other strategy", tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
         );
     }
 
@@ -87,7 +107,17 @@ contract BasketScopeGuardTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(BasketScopeGuard.CrossBasketStrategyForbidden.selector, tokenA, tokenC));
         guard.checkTransaction(
-            address(aqua), 0, _shipCalldata("some other strategy", tokens), Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            address(aqua),
+            0,
+            _shipCalldata("some other strategy", tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
         );
     }
 
@@ -98,7 +128,17 @@ contract BasketScopeGuardTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(BasketScopeGuard.TokenNotInAnyBasket.selector, tokenF));
         guard.checkTransaction(
-            address(aqua), 0, _shipCalldata("some other strategy", tokens), Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            address(aqua),
+            0,
+            _shipCalldata("some other strategy", tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
         );
     }
 
@@ -107,7 +147,17 @@ contract BasketScopeGuardTest is Test {
 
         vm.expectRevert(BasketScopeGuard.EmptyTokenList.selector);
         guard.checkTransaction(
-            address(aqua), 0, _shipCalldata("some other strategy", tokens), Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            address(aqua),
+            0,
+            _shipCalldata("some other strategy", tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
         );
     }
 
@@ -117,12 +167,23 @@ contract BasketScopeGuardTest is Test {
         tokens[1] = tokenC; // would be cross-basket, but target isn't Aqua
 
         guard.checkTransaction(
-            address(0xDEAD), 0, _shipCalldata("some other strategy", tokens), Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            address(0xDEAD),
+            0,
+            _shipCalldata("some other strategy", tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
         );
     }
 
     function test_IgnoresNonShipAquaCalls() public view {
-        bytes memory dockCall = abi.encodeWithSignature("dock(address,bytes32,address[])", address(0xAAAA), bytes32(0), new address[](0));
+        bytes memory dockCall =
+            abi.encodeWithSignature("dock(address,bytes32,address[])", address(0xAAAA), bytes32(0), new address[](0));
 
         guard.checkTransaction(
             address(aqua), 0, dockCall, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
@@ -142,9 +203,8 @@ contract BasketScopeGuardTest is Test {
         address[] memory owners = new address[](1);
         owners[0] = owner;
 
-        bytes memory setupData = abi.encodeCall(
-            Safe.setup, (owners, 1, address(0), "", address(0), address(0), 0, payable(address(0)))
-        );
+        bytes memory setupData =
+            abi.encodeCall(Safe.setup, (owners, 1, address(0), "", address(0), address(0), 0, payable(address(0))));
 
         safe = Safe(payable(address(factory.createProxyWithNonce(address(singleton), setupData, 0))));
     }
@@ -152,22 +212,30 @@ contract BasketScopeGuardTest is Test {
     /// @dev Signs, but does NOT execute — so callers that need `vm.expectRevert()` to target
     ///      the real `execTransaction` call (not one of the view calls used to build the
     ///      signature) can sign first and call `execTransaction` directly right after.
-    function _signFor(Safe safe, uint256 ownerPk, address to, bytes memory data) internal view returns (bytes memory signature) {
-        bytes32 txHash = safe.getTransactionHash(to, 0, data, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce());
+    function _signFor(Safe safe, uint256 ownerPk, address to, bytes memory data)
+        internal
+        view
+        returns (bytes memory signature)
+    {
+        bytes32 txHash = safe.getTransactionHash(
+            to, 0, data, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce()
+        );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPk, txHash);
         signature = abi.encodePacked(r, s, v);
     }
 
     function _execViaOwner(Safe safe, uint256 ownerPk, address to, bytes memory data) internal returns (bool) {
         bytes memory signature = _signFor(safe, ownerPk, to, data);
-        return safe.execTransaction(to, 0, data, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), signature);
+        return
+            safe.execTransaction(to, 0, data, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), signature);
     }
 
     function test_Integration_SafeBlocksCrossBasketShipViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0001;
-        (Safe safe, ) = _deploySafeWithOwner(ownerPk);
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
 
-        bool setGuardOk = _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        bool setGuardOk =
+            _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
         assertTrue(setGuardOk, "setGuard should succeed");
 
         address[] memory tokens = new address[](2);
@@ -181,12 +249,14 @@ contract BasketScopeGuardTest is Test {
         bytes memory signature = _signFor(safe, ownerPk, address(aqua), shipData);
 
         vm.expectRevert();
-        safe.execTransaction(address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), signature);
+        safe.execTransaction(
+            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), signature
+        );
     }
 
     function test_Integration_SafeAllowsWithinBasketShipViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0002;
-        (Safe safe, ) = _deploySafeWithOwner(ownerPk);
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
 
         _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
 
@@ -194,13 +264,14 @@ contract BasketScopeGuardTest is Test {
         tokens[0] = tokenA;
         tokens[1] = tokenB;
 
-        bool ok = _execViaOwner(safe, ownerPk, address(aqua), _shipCalldata("some legit single-basket strategy", tokens));
+        bool ok =
+            _execViaOwner(safe, ownerPk, address(aqua), _shipCalldata("some legit single-basket strategy", tokens));
         assertTrue(ok, "single-basket ship should succeed through a guarded Safe");
     }
 
     function test_Integration_SafeAllowsPmStrategyAcrossBasketsViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0003;
-        (Safe safe, ) = _deploySafeWithOwner(ownerPk);
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
 
         _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
 
@@ -216,7 +287,7 @@ contract BasketScopeGuardTest is Test {
 
     function test_Integration_ModuleGuardBlocksCrossBasketShip() public {
         uint256 ownerPk = 0xA11CE0004;
-        (Safe safe, ) = _deploySafeWithOwner(ownerPk);
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
         ForwardingModule module = new ForwardingModule();
 
         _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("enableModule(address)", address(module)));
@@ -232,7 +303,7 @@ contract BasketScopeGuardTest is Test {
 
     function test_Integration_ModuleGuardAllowsWithinBasketShip() public {
         uint256 ownerPk = 0xA11CE0005;
-        (Safe safe, ) = _deploySafeWithOwner(ownerPk);
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
         ForwardingModule module = new ForwardingModule();
 
         _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("enableModule(address)", address(module)));

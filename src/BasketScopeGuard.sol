@@ -3,9 +3,9 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
-import { BaseGuard } from "safe-smart-account/contracts/examples/guards/BaseGuard.sol";
-import { Enum } from "safe-smart-account/contracts/libraries/Enum.sol";
-import { IAqua } from "aqua/interfaces/IAqua.sol";
+import {BaseGuard} from "safe-smart-account/contracts/examples/guards/BaseGuard.sol";
+import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
+import {IAqua} from "aqua/interfaces/IAqua.sol";
 
 /// @title BasketScopeGuard
 /// @notice A Safe Transaction Guard (ADR-0011) installed on the LP's dedicated maker wallet.
@@ -78,7 +78,12 @@ contract BasketScopeGuard is BaseGuard {
         bytes memory data,
         Enum.Operation, /* operation */
         address /* module */
-    ) external view override returns (bytes32) {
+    )
+        external
+        view
+        override
+        returns (bytes32)
+    {
         _check(to, data);
         return bytes32(0);
     }
@@ -93,7 +98,7 @@ contract BasketScopeGuard is BaseGuard {
         if (to != AQUA) return;
         if (data.length < 4 || _selector(data) != IAqua.ship.selector) return;
 
-        (, bytes memory strategy, address[] memory tokens, ) =
+        (, bytes memory strategy, address[] memory tokens,) =
             abi.decode(_stripSelector(data), (address, bytes, address[], uint256[]));
 
         if (keccak256(strategy) == TRUSTED_PM_STRATEGY_HASH) return;
