@@ -1,0 +1,21 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.30"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+fs_permissions = [{ access = "read", path = "./" }]
+
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "aqua/=lib/aqua/src/",
+    "@1inch/aqua/=lib/aqua/",
+    "@1inch/solidity-utils/=lib/solidity-utils/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "safe-smart-account/=lib/safe-smart-account/",
+]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
