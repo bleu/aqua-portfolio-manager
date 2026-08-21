@@ -31,6 +31,11 @@ class MechanismSimConfig:
     exogenous: ExogenousFlowConfig
     arb: EndogenousArbConfig
     seed: int = 0
+    price_path: np.ndarray | None = None
+    """Overrides the internally-generated plain-GBM path when provided (e.g. a
+    jump-diffusion or deliberately-shocked path from `market.py`) — used by the
+    price-shock and adversarial-scenario notebooks. Must have length `n_steps + 1`
+    and start at `price_path[0]`, same as the internally-generated one would."""
 
 
 @dataclass
@@ -49,7 +54,14 @@ class SimulationResult:
 def run_mechanism_simulation(config: MechanismSimConfig) -> SimulationResult:
     """Runs one Monte Carlo path of the mechanism (this strategy's own curve) end to end."""
     weight_a, weight_b = config.target_weight_a, 1 - config.target_weight_a
-    price_path = simulate_price_path(config.n_steps, config.dt_years, config.sigma_annual, seed=config.seed)
+    if config.price_path is not None:
+        if len(config.price_path) != config.n_steps + 1:
+            raise ValueError(
+                f"price_path override must have length n_steps+1={config.n_steps + 1}, got {len(config.price_path)}"
+            )
+        price_path = config.price_path
+    else:
+        price_path = simulate_price_path(config.n_steps, config.dt_years, config.sigma_annual, seed=config.seed)
     rng = np.random.default_rng(config.seed)
 
     balance_a, balance_b = config.initial_balance_a, config.initial_balance_b
