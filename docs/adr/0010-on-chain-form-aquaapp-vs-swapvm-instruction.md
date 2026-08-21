@@ -58,7 +58,7 @@ Read directly rather than assumed, three facts change how the three options comp
    This also answers a related question raised in review: swapVM's `Context` struct exposes
    only two token slots (`isAToB`-style fields), seemingly built for pairwise swaps, not
    multi-token groups — does that block a multi-token portfolio strategy? No: an instruction
-   isn't limited to the two tokens in `Context`. `src/poc/BasketXYCSwap.sol` proves this
+   isn't limited to the two tokens in `Context`. `proofs-of-concept/swapvm-multi-token/src/BasketXYCSwap.sol` proves this
    concretely — it reads a third token's balance directly via `_AQUA.rawBalances(maker, app,
    strategyHash, thirdToken)`, entirely independent of the two-token swap `Context` describes.
    `Context`'s two token fields describe the swap being settled, not the full set of state an
@@ -78,7 +78,7 @@ Read directly rather than assumed, three facts change how the three options comp
 a custom opcode set), not `AquaApp` and not the hybrid.
 
 Made on the unilateral-deployability criterion and the PoC investment already made
-(`src/poc/PoCRouter.sol`, `PoCOpcodes.sol`, `BasketXYCSwap.sol` — proving the multi-token-balance
+(`proofs-of-concept/swapvm-multi-token/src/PoCRouter.sol`, `PoCOpcodes.sol`, `BasketXYCSwap.sol` — proving the multi-token-balance
 read this form needs, tests passing), **ahead of the full simulation-based gas/frontier
 comparison** this ADR originally scoped as the closing evidence. That comparison hasn't been
 run — this is a strategic call, not a numbers-driven one, and it's recorded as such rather than

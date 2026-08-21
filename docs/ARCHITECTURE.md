@@ -6,7 +6,7 @@ strategy ships as a new swapVM instruction, deployed via an independent router w
 merged into 1inch's own `AquaSwapVMRouter`. See
 [`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)
 for the full decision and why: it was made on the unilateral-deployability criterion and the
-PoC investment already in `src/poc/`, ahead of the simulation-based gas/frontier comparison
+PoC investment already in `proofs-of-concept/swapvm-multi-token/`, ahead of the simulation-based gas/frontier comparison
 this ADR originally scoped — that comparison still isn't done, and picking the form first
 doesn't substitute for it. The formal round-trip/donation-resistance proof is done
 ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy
