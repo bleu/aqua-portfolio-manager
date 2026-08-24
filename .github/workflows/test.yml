@@ -46,6 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         project:
+          - proofs-of-concept/basket-scope
           - proofs-of-concept/swapvm-multi-token
     defaults:
       run:
