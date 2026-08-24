@@ -47,6 +47,7 @@ jobs:
       matrix:
         project:
           - proofs-of-concept/basket-scope
+          - proofs-of-concept/swapvm-multi-token
     defaults:
       run:
         working-directory: ${{ matrix.project }}
