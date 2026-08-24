@@ -11,3 +11,6 @@ out/
 .env
 
 /thoughts
+
+# Node
+node_modules/
