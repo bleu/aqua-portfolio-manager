@@ -281,13 +281,21 @@ flowchart TD
   [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
 - **Cross-strategy manipulation** (a different strategy on the same wallet skewing the balance
   PM prices against) — closed structurally, not proven mathematically: see
-  [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). Still open before this can be
-  called done: the actual Guard contract needs writing, compiling, and auditing (today it's a
-  sketch, [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md)),
-  and the onboarding flow needs the one-time pre-existing-strategy check it depends on.
-- **Concrete parameter values** — tolerance band width, rate caps (no EMA window — dropped, see
-  [ADR-0006](adr/0006-exposure-smoothing.md)) — depend on the Milestone 1 simulation comparing
-  candidates against naive rebalancing baselines. See
+  [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). The Guard contract is now
+  written, compiled, and tested (`proofs-of-concept/basket-scope/`, standalone, own test
+  suite) — no longer the sketch in
+  [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md). Still
+  open: an external audit, and the onboarding flow's one-time pre-existing-strategy check it
+  depends on.
+- **Concrete parameter values** — resolved. `tolerance_band = 0.005`, `min_steps_between_trades
+  = 12` (1 hour at the simulation's 5-minute step resolution), picked in
+  `simulation/notebooks/10_parameter_decision.ipynb`. Every dimension that notebook measured
+  (cost, tracking error, shock-recovery time, stale-quote exploit exposure) gets monotonically
+  worse as either knob loosens — the chosen values are a deliberate step back from the
+  in-model mathematical optimum (`0.001`/`1`), trading real simulated performance for a >10x
+  reduction in worst-case correction frequency against gas cost this suite doesn't model
+  (placeholder pending gas-per-rebalance benchmarking). See
+  [ADR-0006](adr/0006-exposure-smoothing.md) and
   [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md).
 - **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and
   [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source"

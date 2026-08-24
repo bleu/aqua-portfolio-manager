@@ -1,6 +1,7 @@
 # ADR-0006: Exposure guardrails — a tolerance band and rate caps (no EMA/TWAP)
 
-**Status:** Accepted — revised 2026-08-18 to drop the EMA/TWAP moving average
+**Status:** Accepted — revised 2026-08-18 to drop the EMA/TWAP moving average, revised
+2026-08-24 to pick concrete parameter values
 
 ## Context
 
@@ -28,7 +29,21 @@ No moving average. The exposure reading feeds the pricing engine directly off th
 balance. Two guardrails remain, kept for cost/UX reasons, not security:
 
 - **Tolerance band** — small deviations from target are priced as neutral, not corrective.
-- **Rate cap** — a ceiling on rebalancing frequency and amount per period.
+  Chosen value: **0.5%**.
+- **Rate cap** — a ceiling on rebalancing frequency and amount per period. Chosen value:
+  **1 hour minimum between corrective trades**.
+
+Both values come from `simulation/notebooks/10_parameter_decision.ipynb`. Every dimension
+that notebook measured — cost, tracking error, shock-recovery time, stale-quote exploit
+exposure — gets monotonically worse as either knob loosens, so there's no genuine in-model
+trade-off pushing toward these particular numbers over tighter ones; the mathematical
+optimum found in that sweep is a 0.1% band with a 5-minute rate cap. The chosen values are a
+deliberate, documented step back from that optimum: correction frequency (and so, real gas
+cost — a placeholder throughout this whole simulation series) scales directly with
+tightness, and the chosen values allow up to 8,760 corrective transactions/year worst case
+versus 105,120/year at the mathematical optimum. Once a real gas-per-rebalance number exists
+(`BLEUDEV-265`), both knobs should tighten toward that optimum if the real cost supports it —
+this is a placeholder against a known unknown, not a final answer independent of it.
 
 ## Consequences
 
@@ -41,11 +56,11 @@ balance. Two guardrails remain, kept for cost/UX reasons, not security:
   which ADR-0003 already accepts by design) — not to bound an attack. Both are stateless
   functions of the *current* balance/timing, so neither reintroduces the lag problem EMA/TWAP
   had.
-- Still introduces parameters — band width, rate-cap thresholds — with no fixed values yet;
-  picking them is still a Milestone 1 simulation deliverable, benchmarked against a
-  tracking-error/cost-of-rebalancing frontier (see ADR-0008), just no longer a security-critical
-  choice.
+- Still introduces parameters — band width, rate-cap thresholds — picked from a
+  tracking-error/cost-of-rebalancing simulation frontier (see ADR-0008), not a
+  security-critical choice. Values above.
 
 ## References
 
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — Exposure Smoothing component notes
+- [`../../simulation/notebooks/10_parameter_decision.ipynb`](../../simulation/notebooks/10_parameter_decision.ipynb) — the sweep and decision behind the chosen values

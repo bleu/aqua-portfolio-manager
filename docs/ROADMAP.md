@@ -11,7 +11,7 @@ something engineering effort estimates control. Revisit this table once M1 is un
 
 | Milestone | Disbursement | Status | Estimated duration | Estimated window |
 |---|---|---|---|---|
-| [M1 — Research & Spec](#m1--research--spec) | 5% ($2,500) | In progress | ~1 week | 2026-08-11 → 2026-08-18 |
+| [M1 — Research & Spec](#m1--research--spec) | 5% ($2,500) | Done | ~1 week | 2026-08-11 → 2026-08-18 |
 | [M2 — PoC on testnet](#m2--poc-on-testnet) | 10% ($5,000) | Not started | ~1 week | 2026-08-18 → 2026-08-25 |
 | [M3 — Full implementation](#m3--full-implementation) | 35% ($17,500) | Not started | ~3 weeks | 2026-08-25 → 2026-09-15 |
 | [M4 — 1inch integration & audit gate](#m4--1inch-integration--audit-gate) | 50% ($25,000) | Not started | ~3 weeks | 2026-09-15 → 2026-10-06 |
@@ -26,11 +26,15 @@ hands-on swapVM context — this isn't a cold start. The invariant proof and par
 real work, but they're bounded (the candidate knobs are already named), not open-ended.
 **Goal:** pick the on-chain form and prove the mechanism is safe, with numbers — not code yet.
 
-- [ ] Build the simulation notebook (flow modeled in two tiers: endogenous rebalancing/arb
+- [x] Build the simulation notebook (flow modeled in two tiers: endogenous rebalancing/arb
       flow + exogenous organic flow) producing a tracking-error/cost-of-rebalancing frontier,
       protocol fee included on the cost side ([ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)).
-- [ ] From the frontier, pick concrete parameter values: tolerance band width, rate-cap
-      thresholds — no EMA window, dropped from scope ([ADR-0006](adr/0006-exposure-smoothing.md)).
+      Ten notebooks total — the frontier plus price-shock, adversarial-agent,
+      basket-interaction, and fee-recommendation extensions. See
+      [`../simulation/README.md`](../simulation/README.md).
+- [x] From the frontier, pick concrete parameter values: tolerance band width (0.5%),
+      rate-cap threshold (1 hour) — no EMA window, dropped from scope
+      ([ADR-0006](adr/0006-exposure-smoothing.md)).
 - [x] Prove the round-trip-always-favors-the-pool invariant for this specific curve
       implementation — the headline security deliverable. Closed by the curve invariant alone,
       unconditionally (no smoothing/lag bound needed) — see
@@ -41,11 +45,12 @@ real work, but they're bounded (the candidate knobs are already named), not open
       unilateral-deployability criterion and the PoC investment already made, ahead of the
       frontier/gas comparison below ([ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md),
       now `Accepted`).
-- [ ] Write up the architecture decision: mechanism + form + numbers, in a form reviewable
-      against the grant's pre-declared M1 criteria.
+- [x] Write up the architecture decision: mechanism + form + numbers, in a form reviewable
+      against the grant's pre-declared M1 criteria. See
+      [`M1-ARCHITECTURE-DECISION.md`](M1-ARCHITECTURE-DECISION.md).
 
 **Exit criteria:** simulation notebook and writeup delivered; ADR-0010 resolved; donation-attack
-non-profitability proven, not just asserted.
+non-profitability proven, not just asserted. **All met.**
 
 ## M2 — PoC on testnet
 
