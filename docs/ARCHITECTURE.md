@@ -1,19 +1,19 @@
 # Architecture
 
-**Status: on-chain form decided (ADR-0010, Accepted); rest of Milestone 1 in progress.** The
-strategy ships as a new swapVM instruction, deployed via an independent router we own
-(inheriting `SwapVM` with our own opcode set) — not a pure `AquaApp`, not a hybrid, and not
-merged into 1inch's own `AquaSwapVMRouter`. See
+**Status: Milestone 1 complete.** The strategy ships as a new swapVM instruction, deployed via
+an independent router we own (inheriting `SwapVM` with our own opcode set) — not a pure
+`AquaApp`, not a hybrid, and not merged into 1inch's own `AquaSwapVMRouter`. See
 [`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)
-for the full decision and why: it was made on the unilateral-deployability criterion and the
-PoC investment already in `proofs-of-concept/swapvm-multi-token/`, ahead of the simulation-based gas/frontier comparison
-this ADR originally scoped — that comparison still isn't done, and picking the form first
-doesn't substitute for it. The formal round-trip/donation-resistance proof is done
+for the full decision: made on the unilateral-deployability criterion and the PoC investment
+already in `proofs-of-concept/swapvm-multi-token/`, ahead of the gas/frontier comparison this
+ADR originally scoped as closing evidence — a strategic call, not a numbers-driven one. The
+frontier comparison is done now (see [Milestone 1](#milestone-1) below) and confirms the
+mechanism beats naive rebalancing baselines; real gas numbers are still a placeholder pending
+on-chain benchmarking. The round-trip/donation-resistance proof is done
 ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy
 manipulation gap it doesn't cover is closed structurally, not proven, by a Safe wallet
-requirement and a Basket Scope Guard ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md),
-still a design sketch, not built). The tracking-error/cost simulation is still open Milestone 1
-work.
+requirement and a Basket Scope Guard, now built and tested
+([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)).
 
 Every other design choice reflected in the diagrams below has its own ADR in
 [`adr/`](adr/README.md) — see the component notes for links.
@@ -251,7 +251,7 @@ flowchart TD
   unequal weights), *reimplemented from scratch*. See
   [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and
   [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for why the formula is fine to
-  reuse but Balancer's GPL-licensed Solidity is not.
+  reuse but Balancer's GPL-licensed Solidity is not. Full formula: [`PRICING.md`](PRICING.md).
 - **Curve invariant** — not its own contract or function, a *property* the Pricing Engine's
   math must satisfy: any closed round-trip trade ends slightly in the strategy's favor. That
   property is what turns a "donation attack" (transferring tokens into the wallet to skew the
@@ -275,15 +275,22 @@ flowchart TD
   the strategy is a swapVM instruction on our own router (ADR-0010), this guard is inherited
   from the base framework, not something the instruction itself has to implement.
 
-## Open decisions (Milestone 1)
+## Milestone 1
 
-- **Formal proof** of the round-trip/donation-resistance invariant — done, see
-  [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md).
+- **Formal proof** of the round-trip/donation-resistance invariant — done: any closed
+  round-trip ends at or above where it started, proven algebraically and independent of how
+  the pre-trade balance arose (the strategy's own trades or a donation), then checked against
+  the implementation across 200,000 random trades. See
+  [`INVARIANT-PROOF.md`](INVARIANT-PROOF.md),
+  [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md), and
+  [`01_pricing_curve.ipynb`](../simulation/notebooks/01_pricing_curve.ipynb).
 - **Cross-strategy manipulation** (a different strategy on the same wallet skewing the balance
   PM prices against) — closed structurally, not proven mathematically: see
   [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). The Guard contract is now
-  written, compiled, and tested (`proofs-of-concept/basket-scope/`, standalone, own test
-  suite) — no longer the sketch in
+  written, compiled, and tested —
+  [`proofs-of-concept/basket-scope/`](../proofs-of-concept/basket-scope/), standalone, 12/12
+  tests passing including integration tests against a real deployed Safe — no longer the
+  sketch in
   [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md). Still
   open: an external audit, and the onboarding flow's one-time pre-existing-strategy check it
   depends on.
@@ -292,7 +299,7 @@ flowchart TD
   `simulation/notebooks/10_parameter_decision.ipynb`. Every dimension that notebook measured
   (cost, tracking error, shock-recovery time, stale-quote exploit exposure) gets monotonically
   worse as either knob loosens — the chosen values are a deliberate step back from the
-  in-model mathematical optimum (`0.001`/`1`), trading real simulated performance for a >10x
+  in-model mathematical optimum (`0.001`/`1`), trading simulated performance for a >10x
   reduction in worst-case correction frequency against gas cost this suite doesn't model
   (placeholder pending gas-per-rebalance benchmarking). See
   [ADR-0006](adr/0006-exposure-smoothing.md) and
@@ -300,6 +307,47 @@ flowchart TD
 - **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and
   [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source"
   actually means for this repo's own contracts, independent of the mechanism design.
+
+### Simulation results
+
+Ten notebooks (`simulation/notebooks/`), each with real assertions checked in code — see
+[`simulation/README.md`](../simulation/README.md) for the full table.
+
+- The mechanism beats both naive rebalancing baselines (periodic and threshold) on the
+  tracking-error/cost-of-rebalancing frontier, at every one of 10 swept baseline settings
+  ([`05_frontier_sweep.ipynb`](../simulation/notebooks/05_frontier_sweep.ipynb)).
+- After a severe price shock (-30%), the mechanism recovers ~1183x faster than a
+  weekly-rebalance baseline (~25 minutes vs. ~20.5 days)
+  ([`06_price_shocks.ipynb`](../simulation/notebooks/06_price_shocks.ipynb)).
+- Sustained adversarial pressure doesn't raise the LP's realized cost — every attacking trade
+  pays the same fee the invariant proof shows always benefits the pool. A stale-quote exploit
+  right after a shock is bounded (~1.1% of portfolio for a severe shock) and controllable via
+  the rate cap
+  ([`07_adversarial_agent.ipynb`](../simulation/notebooks/07_adversarial_agent.ipynb)).
+- A basket association costs something structurally, even from a dormant co-strategy — a
+  finding the still-unbuilt multi-token group routing design (`BLEUDEV-75`) needs to account
+  for, not a safety issue
+  ([`08_basket_interaction.ipynb`](../simulation/notebooks/08_basket_interaction.ipynb)).
+- A recommended swap fee of ~30-32bps, derived from WETH/USDC volatility and independently
+  matching what the established Balancer 50/50 WETH/USDC pool already charges. Pool depth,
+  not fee, is usually the binding constraint on competitiveness at launch-stage size
+  ([`09_fee_recommendation.ipynb`](../simulation/notebooks/09_fee_recommendation.ipynb)).
+
+### What Milestone 1 does and doesn't establish
+
+**Established:** the pricing math is implemented correctly and is safe against round-trip
+draining, unconditionally. Under a synthetic-then-real-calibrated market model with an
+idealized always-available arbitrageur, the mechanism keeps a portfolio closer to target and
+cheaper than the naive alternatives, holds up under hostile trading pressure, recovers fast
+from shocks, and has concrete, evidenced parameter values.
+
+**Not established:** performance under live trading, gas costs (a placeholder throughout
+every cost number above, pending gas-per-rebalance benchmarking against the implementation),
+multi-token group routing beyond the two-token pair every notebook models, and aggregator
+routing behavior (the fee/competitiveness analysis compares quoted prices directly, not live
+1inch routing decisions). Closing that gap is M2 (testnet, real transactions) and M4
+(mainnet, real capital and unpredictable traders) — this milestone doesn't substitute for
+either.
 
 See [`adr/README.md`](adr/README.md) for the full decision log, including chain choice
 ([ADR-0009](adr/0009-deploy-on-base-at-launch.md)) and the group/pricing/oracle decisions

@@ -38,12 +38,12 @@ that notebook measured — cost, tracking error, shock-recovery time, stale-quot
 exposure — gets monotonically worse as either knob loosens, so there's no genuine in-model
 trade-off pushing toward these particular numbers over tighter ones; the mathematical
 optimum found in that sweep is a 0.1% band with a 5-minute rate cap. The chosen values are a
-deliberate, documented step back from that optimum: correction frequency (and so, real gas
-cost — a placeholder throughout this whole simulation series) scales directly with
-tightness, and the chosen values allow up to 8,760 corrective transactions/year worst case
-versus 105,120/year at the mathematical optimum. Once a real gas-per-rebalance number exists
-(`BLEUDEV-265`), both knobs should tighten toward that optimum if the real cost supports it —
-this is a placeholder against a known unknown, not a final answer independent of it.
+deliberate, documented step back from that optimum: correction frequency (and so, gas cost —
+a placeholder throughout this whole simulation series) scales directly with tightness, and
+the chosen values allow up to 8,760 corrective transactions/year worst case versus
+105,120/year at the mathematical optimum. Once a gas-per-rebalance number exists
+(`BLEUDEV-265`), both knobs should tighten toward that optimum if the cost supports it — this
+is a placeholder, not a final answer.
 
 ## Consequences
 

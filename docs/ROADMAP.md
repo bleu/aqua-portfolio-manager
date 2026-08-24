@@ -47,7 +47,7 @@ real work, but they're bounded (the candidate knobs are already named), not open
       now `Accepted`).
 - [x] Write up the architecture decision: mechanism + form + numbers, in a form reviewable
       against the grant's pre-declared M1 criteria. See
-      [`M1-ARCHITECTURE-DECISION.md`](M1-ARCHITECTURE-DECISION.md).
+      [`ARCHITECTURE.md`](ARCHITECTURE.md#milestone-1).
 
 **Exit criteria:** simulation notebook and writeup delivered; ADR-0010 resolved; donation-attack
 non-profitability proven, not just asserted. **All met.**
