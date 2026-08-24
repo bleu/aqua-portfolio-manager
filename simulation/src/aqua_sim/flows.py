@@ -68,11 +68,19 @@ class EndogenousArbConfig:
     this fraction are priced as neutral, not corrective; no arb fires inside it.
     `min_steps_between_trades` — ADR-0006's rate cap, expressed as a step count here
     (converted from a real time interval by the caller).
+
+    Defaults are the values notebook 10 (`10_parameter_decision.ipynb`) picked: every
+    dimension that notebook measured (cost, tracking error, shock-recovery time,
+    stale-quote exploit exposure) gets monotonically worse as either knob loosens, so
+    tighter is always better *in-model* — these defaults are a deliberate step back from
+    that mathematical optimum (`tolerance_band=0.001`, `min_steps_between_trades=1`)
+    to bound correction frequency (and so, real gas cost, not modeled here) until
+    `BLEUDEV-265`'s real benchmark exists to make that trade-off precisely.
     """
 
-    tolerance_band: float = 0.002
+    tolerance_band: float = 0.005
     fee: float = 0.0002
-    min_steps_between_trades: int = 1
+    min_steps_between_trades: int = 12
 
 
 def _target_balance_in_for_price(
