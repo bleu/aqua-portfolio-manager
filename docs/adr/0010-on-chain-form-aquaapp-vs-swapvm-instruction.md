@@ -97,7 +97,7 @@ blocked on an external party.
 
 - Every ADR in this log written against the `AquaApp` assumption (ADR-0002 through ADR-0008)
   describes logic/data-shape decisions (group model, pricing curve, oracle, smoothing, KPIs)
-  that don't actually depend on which contract holds them — only *where* the state and pricing
+  that don't depend on which contract holds them — only *where* the state and pricing
   math live changes. `ARCHITECTURE.md` needs its L2 diagram and component notes updated from the
   `AquaApp` framing to the instruction/own-router framing (tracked separately, not blocking this
   ADR).
@@ -105,8 +105,8 @@ blocked on an external party.
   taker-traits parsing, WETH unwrap, and maker hooks/callbacks — needs the same audit scrutiny
   as the pricing/smoothing logic itself, not treated as "vendor code we can trust."
 - Getting a future opcode into 1inch's own shared router remains a live option later (not
-  pursued now) — if revisited, whoever owns that needs to actually talk to Tanner or open a PR
-  against `1inch/swap-vm`, not assume it happens passively.
+  pursued now) — if revisited, whoever owns that needs to talk to Tanner or open a PR against
+  `1inch/swap-vm`, not assume it happens passively.
 - `LICENSING-RISK.md`'s Aqua-Source-1.1 copyleft/commercial-trigger analysis applies to this
   path too (it's not AquaApp-specific) and remains open, unresolved with counsel — this decision
   doesn't close it.

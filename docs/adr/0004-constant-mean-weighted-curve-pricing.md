@@ -17,7 +17,7 @@ Two pricing designs were on the table:
   reduce the pool's value, by construction of the invariant — the round-trip-profit proof
   reduces to a standard weighted-pool proof instead of a bespoke one.
 
-Importing Balancer's actual Solidity (rather than reimplementing the formula) was considered
+Importing Balancer's Solidity (rather than reimplementing the formula) was considered
 and rejected: `lib/balancer-v3-monorepo` ships under GPL-3.0, incompatible with shipping this
 repo's code under Aqua-Source-1.1 ([`ADR-0001`](0001-license-under-aqua-source-not-mit.md)) —
 GPL's copyleft would force either relicensing this repo's own code or ring-fencing the imported

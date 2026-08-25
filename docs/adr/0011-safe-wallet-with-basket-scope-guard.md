@@ -4,7 +4,7 @@
 
 ## Context
 
-`ADR-0002`'s exposure reader uses real `balanceOf(maker)`, which is genuinely shared across
+`ADR-0002`'s exposure reader uses real `balanceOf(maker)`, which is shared across
 every strategy the LP runs from that wallet. `ADR-0003` already assumed a boundary exists —
 *"the pricing curve reacts to group-weight impact, not individual-token impact. Intra-group
 drift is allowed by design"* — but nothing enforced that boundary. Any other strategy sharing
@@ -73,7 +73,7 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
   check (scanning `Shipped` events for that address) confirming no pre-existing strategy already
   violates the group boundary. The Guard has no way to see or undo the past; it only governs
   transactions that pass through it after installation.
-- **Module coverage is a real, versioned gap.** Safe's `IModuleGuard` (the mechanism covering
+- **Module coverage is a versioned gap.** Safe's `IModuleGuard` (the mechanism covering
   module-executed transactions, as opposed to the normal multisig path) only exists from v1.5.0,
   and a real integration bug in that exact mechanism was found in a Code4rena audit. Until that
   matures, the safer default is: **no module capable of an arbitrary call may be installed on a
@@ -91,10 +91,10 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
   before the Guard is deployed), not the router's identity. Consequence: every time an LP's PM
   weights/groups are reconfigured (a new `ship()`, per ADR-0003's already-accepted cost) or PM
   itself is redeployed, the Guard's trusted hash goes stale and a new Guard must be deployed and
-  installed — this isn't fixable post-construction by design (no setter, on purpose). Real
-  migration cost worth flagging for Milestone 4, symmetric to the immutability cost `ADR-0010`
+  installed — this isn't fixable post-construction by design (no setter, on purpose). Migration
+  cost worth flagging for Milestone 4, symmetric to the immutability cost `ADR-0010`
   already accepted for `ship()`.
-- Closes the residual `ADR-0002` flagged as open ("strategies sharing one wallet can genuinely
+- Closes the residual `ADR-0002` flagged as open ("strategies sharing one wallet can
   change the balance PM prices against") for the cross-group case specifically. Intra-group
   drift by other strategies remains possible and remains accepted — that was ADR-0003's decision
   from the start, not a new gap this ADR introduces.

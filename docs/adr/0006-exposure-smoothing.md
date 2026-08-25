@@ -17,9 +17,9 @@ vector.
 for this strategy's own trades and for pure donations, as long as pricing reads the *current*
 real balance directly. Smoothing didn't add donation resistance; it *cost* some, by introducing a
 lag between the real balance and the quoted price that a patient attacker could trade against
-during convergence — a genuinely harder, still-unresolved proof obligation (the abandoned "Part
+during convergence — a harder, still-unresolved proof obligation (the abandoned "Part
 2", see that file's git history) that the plain, un-smoothed curve never needed in the first
-place. **Cross-strategy interaction turned out to need its own, separate fix** (`ADR-0011`'s
+place. **Cross-strategy interaction turned out to need its own fix** (`ADR-0011`'s
 Basket Scope Guard) — dropping smoothing didn't close that gap by itself; see the correction in
 `../INVARIANT-PROOF.md`.
 
