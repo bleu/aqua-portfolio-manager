@@ -72,7 +72,16 @@ contract BasketScopeGuardE2ETest is Test {
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(DEPLOYER_KEY, txHash);
         return safe.execTransaction(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), abi.encodePacked(r, s, v)
+            address(aqua),
+            0,
+            shipData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            abi.encodePacked(r, s, v)
         );
     }
 
@@ -114,7 +123,16 @@ contract BasketScopeGuardE2ETest is Test {
 
         vm.expectRevert();
         safe.execTransaction(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), abi.encodePacked(r, s, v)
+            address(aqua),
+            0,
+            shipData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            abi.encodePacked(r, s, v)
         );
     }
 
@@ -131,7 +149,16 @@ contract BasketScopeGuardE2ETest is Test {
 
         vm.expectRevert();
         safe.execTransaction(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), abi.encodePacked(r, s, v)
+            address(aqua),
+            0,
+            shipData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            abi.encodePacked(r, s, v)
         );
     }
 }
