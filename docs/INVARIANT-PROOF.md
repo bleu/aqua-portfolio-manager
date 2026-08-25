@@ -1,4 +1,4 @@
-# Round-trip / donation-resistance proof
+# Invariant proof
 
 Status: **closed for what this proof can prove.** A single proof (below) fully discharges
 ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no
