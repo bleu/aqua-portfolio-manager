@@ -11,11 +11,14 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  check:
-    name: Foundry project
+  check-contracts:
+    name: Contracts
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v5
         with:
@@ -38,13 +41,13 @@ jobs:
         run: forge test -vvv
 
   check-onboarding-check:
-    name: Proof of concept (proofs-of-concept/onboarding-check)
+    name: Proof of concept (packages/onboarding-check)
     runs-on: ubuntu-latest
     permissions:
       contents: read
     defaults:
       run:
-        working-directory: proofs-of-concept/onboarding-check
+        working-directory: packages/onboarding-check
     steps:
       - uses: actions/checkout@v5
         with:
@@ -62,7 +65,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: proofs-of-concept/onboarding-check/pnpm-lock.yaml
+          cache-dependency-path: packages/onboarding-check/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -72,38 +75,3 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-  check-pocs:
-    name: Proof of concept (${{ matrix.project }})
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - proofs-of-concept/basket-scope
-          - proofs-of-concept/swapvm-multi-token
-    defaults:
-      run:
-        working-directory: ${{ matrix.project }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Show Forge version
-        run: forge --version
-
-      - name: Run Forge fmt
-        run: forge fmt --check
-
-      - name: Run Forge build
-        run: forge build --sizes
-
-      - name: Run Forge tests
-        run: forge test -vvv
