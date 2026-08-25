@@ -77,21 +77,25 @@ Read directly rather than assumed, three facts change how the three options comp
 **A new swapVM instruction, deployed via our own independent router** (inheriting `SwapVM` with
 a custom opcode set), not `AquaApp` and not the hybrid.
 
-Made on the unilateral-deployability criterion and the PoC investment already made
-(`proofs-of-concept/swapvm-multi-token/src/PoCRouter.sol`, `PoCOpcodes.sol`, `BasketXYCSwap.sol` — proving the multi-token-balance
-read this form needs, tests passing), **ahead of the full simulation-based gas/frontier
-comparison** this ADR originally scoped as the closing evidence. That comparison hasn't been
+Made on the unilateral-deployability criterion — the PoC
+(`proofs-of-concept/swapvm-multi-token/src/PoCRouter.sol`, `PoCOpcodes.sol`, `BasketXYCSwap.sol`)
+is what gave confidence to make this call, not itself the decision: it's the evidence proving
+the multi-token-balance read this form needs actually works (tests passing), made **ahead of
+the full simulation-based gas/frontier comparison** this ADR originally scoped as the closing
+evidence. That comparison hasn't been
 run — this is a strategic call, not a numbers-driven one, and it's recorded as such rather than
 retroactively justified with numbers that don't exist yet. The remaining Milestone 1 simulation
 work (tracking-error/cost frontier, parameter selection) proceeds against this chosen form,
 not as a re-litigation of the form itself.
 
-Rejected the merged-opcode-into-1inch's-router path specifically because it depends on 1inch
-merging and redeploying `AquaSwapVMRouter` — a timeline and cooperation dependency outside this
-project's control, and not yet discussed with Tanner. Own-router means owning ~300 lines of
-`SwapVM.sol`'s taker-facing plumbing (EIP-712 signing, taker-traits parsing, WETH unwrap,
-callbacks) as new audited surface instead — a real cost, accepted in exchange for not being
-blocked on an external party.
+Not choosing the merged-opcode-into-1inch's-router path **for now** — it stays the longer-term
+goal (see Consequences), just not this decision, because it depends on 1inch merging and
+redeploying `AquaSwapVMRouter` — a timeline and cooperation dependency outside this project's
+control, and not yet discussed with Tanner. Whether 1inch is willing to merge/redeploy is exactly
+the open question that should turn this from "not chosen yet" into a real blocker on revisiting
+it, once asked. Own-router means owning ~300 lines of `SwapVM.sol`'s taker-facing plumbing
+(EIP-712 signing, taker-traits parsing, WETH unwrap, callbacks) as new audited surface instead —
+a real cost, accepted in exchange for not being blocked on an external party right now.
 
 ## Consequences
 

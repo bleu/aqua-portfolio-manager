@@ -2,7 +2,9 @@
 
 Tracks execution against the 1inch Aqua Incubator grant's four milestones. Each milestone's
 tasks are pulled from open items already named in [`adr/`](adr/README.md); an ADR link means
-"this task is what closes that ADR's open question," not new scope.
+"this task is what closes that ADR's open question," not new scope. Linear is where individual
+task status/assignees/dates actually live day-to-day; this file is the milestone-level view for
+the grant, not a second place to update per-task.
 
 **Dates below are first-pass estimates, not commitments.** They assume a start of
 **2026-08-11** and back-to-back milestones with no slack for the team's other work. M4's

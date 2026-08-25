@@ -12,17 +12,8 @@ the wallet could move tokens between groups (or in from outside the declared uni
 PM's curve would price the result as if it were legitimate. `thoughts/cross-strategy-manipulation.md`
 worked this out in full with a concrete numeric exploit.
 
-Two families of fix were explored before this one:
-
-- An oracle-informed reward mechanism (virtual weight anchored to a live oracle price, plus a
-  rebalancing reward capped at a provably-real surplus) — mathematically sound, but leans on a
-  live oracle for a safety-critical property, which the LVR literature (Milionis et al.) warns
-  against.
-- A set of layered guardrails modeled on Balancer's own Managed Pool circuit breaker, an
-  oracle-informed reward, and a time-decay surcharge modeled on mutual-fund redemption fees
-  (`thoughts/cross-strategy-layered-defense.md`) — each layer individually well-precedented, but
-  the team decided against carrying three separate mechanisms, each with its own parameters and
-  failure modes, when the underlying problem might be closable structurally instead.
+Two families of fix were explored and rejected before this one — see Alternatives Considered
+below for both.
 
 The team's direction (2026-08-20): **don't bound the risk — remove the capability.** No strategy
 other than PM's own should be able to cross a group boundary or touch a token outside the
@@ -53,6 +44,18 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
 
 ## Alternatives considered
 
+- **An oracle-informed reward mechanism** (virtual weight anchored to a live oracle price, plus
+  a rebalancing reward capped at a provably-real surplus) — mathematically sound, but leans on a
+  live oracle for a safety-critical property, which the LVR literature (Milionis et al.) warns
+  against. Left as a documented, superseded exploration rather than deleted — the reasoning and
+  precedent research may be useful again if a future design needs to bound rather than eliminate
+  a risk.
+- **A set of layered guardrails** modeled on Balancer's own Managed Pool circuit breaker, an
+  oracle-informed reward, and a time-decay surcharge modeled on mutual-fund redemption fees
+  (`thoughts/cross-strategy-layered-defense.md`) — each layer individually well-precedented, but
+  the team decided against carrying three separate mechanisms, each with its own parameters and
+  failure modes, when the underlying problem might be closable structurally instead. Same
+  reasoning for keeping it documented rather than deleting it.
 - **EOA maker wallet:** ruled out outright — an EOA has no code, so there is nowhere to attach
   any check. Nothing in the grant proposal requires EOA support; `ADR-0002`'s original "EOA or
   Safe" wording was our own choice, not a constraint, and is narrowed here.
@@ -61,10 +64,6 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
   LP who wants it, but it gives up ADR-0002's stated value (visibility across the LP's *other*
   strategies) entirely. The Guard is strictly more permissive: other strategies are welcome, as
   long as they stay within one group.
-- **The oracle-informed reward and the layered-guardrail designs** (above) — both left as
-  documented, superseded explorations rather than deleted, since the reasoning (and the
-  precedent research behind each) may be useful again if a future design needs to bound rather
-  than eliminate a risk.
 
 ## Consequences
 

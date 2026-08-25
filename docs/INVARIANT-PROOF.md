@@ -2,9 +2,8 @@
 
 Status: **closed for what this proof can prove.** A single proof (below) fully discharges
 ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no
-additional bound needed for either. **Cross-strategy interaction (a different strategy on the
-same wallet moving the balance) is a separate case this proof does not cover** — see the
-correction below. That gap is closed structurally instead, by `ADR-0011`'s Basket Scope Guard.
+additional bound needed for either. Cross-strategy interaction is a separate case, closed
+structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
 
 ## What has to be shown
 
@@ -60,10 +59,7 @@ included), the donor can never trade their way back to more value than they gave
 example with real numbers in the PR history / Linear BLEUDEV-254 if a concrete walkthrough is
 useful later.
 
-**Why this does NOT automatically cover cross-strategy interaction — a correction (2026-08-20).**
-An earlier version of this section argued the proof applies unconditionally regardless of how
-the pre-trade balance arose, including via another of the LP's own strategies trading on the
-shared wallet (ADR-0002). That was wrong: the proof above (lines
+**Why this does NOT automatically cover cross-strategy interaction.** The proof above (lines
 17-40) shows `V` never decreases across a trade that follows *this strategy's own* formula
 (`PRICING.md`) — it says nothing about a trade against a *different* strategy's curve, which
 follows different math entirely and can move this strategy's `B_i`/`B_o` in a way that decreases
@@ -83,15 +79,13 @@ was; the boundary it needs now actually holds, enforced outside this contract en
 
 ## Why no smoothing (EMA/TWAP removed from scope, 2026-08-18)
 
-ADR-0006 originally proposed feeding the exposure reading through an EMA or TWAP before pricing.
-That turned out to be exactly what made this proof incomplete: smoothing means the price no
-longer reflects the *current* real balance, only a lagging function of it, and closing the gap
-between "smoothed" and "raw" needed a second, harder proof that depended on simulation
-parameters that don't exist yet (see git history on this file for the abandoned "Part 2"). Once
-the exposure reader feeds the *raw*, current balance directly with no averaging, that gap
-doesn't exist, and the single proof above is unconditionally sufficient — for external
-donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix
-entirely, not more of this proof — see the correction above and `ADR-0011`.)
+See `ADR-0006`'s Context for why the EMA/TWAP was dropped. For this proof specifically: it only
+holds because the exposure reader feeds the *raw*, current balance directly with no averaging —
+a lagging, smoothed reading would have needed a second, harder proof (see git history on this
+file for the abandoned "Part 2"). With no averaging, the single proof above is unconditionally
+sufficient for external donations and ordinary settlement noise. (Cross-strategy interaction
+needed a different fix entirely, not more of this proof — see the correction above and
+`ADR-0011`.)
 
 The tolerance band and rate cap (ADR-0006) stay in scope, but on a different footing now: they're
 not load-bearing for this proof (the proof holds with or without them), they exist to reduce

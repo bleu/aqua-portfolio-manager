@@ -1,11 +1,10 @@
 # Pricing formula
 
-The constant-mean weighted curve this strategy prices with (ADR-0004), stated precisely enough
-to implement and to prove the round-trip invariant against (ADR-0007). This is the published
+The constant-mean weighted curve this strategy prices with (ADR-0004, ADR-0007) — the published
 Balancer weighted-pool formula (Martinelli & Mushegian, 2019, "Balancer: A non-custodial
-portfolio manager, liquidity provider, and price sensor") — public math, reimplemented from
-scratch here, not Balancer's GPL Solidity. See ADR-0001/ADR-0004 for why that distinction
-matters for this repo's license.
+portfolio manager, liquidity provider, and price sensor"), reimplemented from scratch here, not
+Balancer's GPL Solidity (see ADR-0001/ADR-0004 for why). Stated here precisely enough to
+implement and to prove the round-trip invariant against.
 
 ## Inputs
 

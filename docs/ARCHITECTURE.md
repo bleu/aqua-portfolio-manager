@@ -4,9 +4,7 @@
 an independent router we own (inheriting `SwapVM` with our own opcode set) — not a pure
 `AquaApp`, not a hybrid, and not merged into 1inch's own `AquaSwapVMRouter`. See
 [`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)
-for the full decision: made on the unilateral-deployability criterion and the PoC investment
-already in `proofs-of-concept/swapvm-multi-token/`, ahead of the gas/frontier comparison this
-ADR originally scoped as closing evidence — a strategic call, not a numbers-driven one. The
+for the full decision and reasoning. The
 frontier comparison is done now (see [Milestone 1](#milestone-1) below) and confirms the
 mechanism beats naive rebalancing baselines; real gas numbers are still a placeholder pending
 on-chain benchmarking. The round-trip/donation-resistance proof is done
