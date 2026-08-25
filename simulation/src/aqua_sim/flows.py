@@ -74,17 +74,17 @@ class EndogenousArbConfig:
     would capture is worth more than gas + fee) — there was nothing left for a cooldown to
     usefully add.
 
-    `gas_cost_b` — a flat, deliberately-labeled PLACEHOLDER per-transaction gas cost, in
-    B-numeraire units (same placeholder value and framing as
-    `baselines.GenericDexConfig.gas_cost_b` — real gas numbers don't exist yet,
-    `BLEUDEV-265`). Unlike the removed price dead-zone, this isn't a guessed constant: it's
-    what actually determines whether a correction is worth an arbitrageur's while, and it
-    naturally raises the bar for how small a drift can be before it's profitable to fix,
-    scaling with real cost instead of being a hand-tuned percentage.
+    `gas_cost_b` — a flat per-transaction gas cost, in B-numeraire units, same value and
+    sourcing as `baselines.GenericDexConfig.gas_cost_b` (real observed Base costs, not yet
+    benchmarked against this specific contract — `BLEUDEV-265`). Unlike the removed price
+    dead-zone, this isn't a hand-picked constant: it's what actually determines whether a
+    correction is worth an arbitrageur's while, and it naturally raises the bar for how
+    small a drift can be before it's profitable to fix, scaling with real cost instead of
+    being a guessed percentage.
     """
 
     fee: float = 0.0002
-    gas_cost_b: float = 5.0
+    gas_cost_b: float = 0.10
 
 
 def _target_balance_in_for_price(

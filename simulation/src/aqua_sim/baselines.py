@@ -28,15 +28,18 @@ class GenericDexConfig:
     `depth_b` — both sides of the external pool, in B-numeraire terms; large relative to
     a single LP's rebalance size so slippage stays realistic-but-modest, matching a
     real deep venue rather than a thin one.
-    `gas_cost_b` — a flat, deliberately-labeled PLACEHOLDER per-transaction gas cost, in
-    B-numeraire units. Real gas numbers don't exist yet for the full on-chain
-    implementation (`BLEUDEV-265` is still open) — this value must be revisited once
-    they do, not treated as a benchmarked number.
+    `gas_cost_b` — a flat per-transaction gas cost, in B-numeraire units, based on real
+    observed Base costs (not benchmarked against this specific contract, which doesn't
+    exist yet — `BLEUDEV-265` is still open): a typical Base DEX swap runs $0.01-$0.10
+    total (L2 execution + L1 data fee), with multi-hop/more-complex swaps around $0.075
+    (OpenLiquid, "Base Chain Gas Fees Explained", Q1 2026 data). $0.10 rounds up from
+    that range with margin for this being a curve-math interaction, not a plain swap —
+    revisit once the real contract's gas usage is benchmarked.
     """
 
     fee: float = 0.003
     depth_b: float = 10_000_000.0
-    gas_cost_b: float = 5.0
+    gas_cost_b: float = 0.10
 
 
 def _external_dex_state(price_a_in_b: float, config: GenericDexConfig) -> CurveState:
