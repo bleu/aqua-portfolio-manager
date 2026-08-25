@@ -79,7 +79,7 @@ contract Deploy is Script {
         uint256[] memory basketIds = new uint256[](2);
         basketIds[0] = 1;
         basketIds[1] = 2;
-        BasketScopeGuard guard = new BasketScopeGuard(aqua, PM_STRATEGY_HASH, tokens, basketIds);
+        BasketScopeGuard guard = new BasketScopeGuard(aqua, address(safe), PM_STRATEGY_HASH, tokens, basketIds);
         console.log("BasketScopeGuard deployed at", address(guard));
 
         // Install the Guard on the Safe for real, so the E2E test exercises the actual
@@ -103,6 +103,33 @@ contract Deploy is Script {
         );
         require(guardInstalled, "setGuard failed");
         console.log("Guard installed on Safe");
+
+        // Attest onboarding is clean. In a real onboarding flow this only happens after
+        // actually running the off-chain onboarding-check tool (BLEUDEV-321,
+        // packages/onboarding-check) against this Safe's real Shipped-event history and
+        // confirming no violation. Here it's auto-attested: this is a fresh Safe on a fresh
+        // fork with no prior activity, so there is nothing for that check to find — but the
+        // attestation call itself is real and signed, exactly as it would be in production,
+        // so this still exercises the actual gate PM's strategy ships through.
+        bytes memory attestData = abi.encodeWithSignature("attestOnboardingClean()");
+        bytes32 attestTxHash = safe.getTransactionHash(
+            address(guard), 0, attestData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce()
+        );
+        (uint8 av, bytes32 ar, bytes32 as_) = vm.sign(deployerPk, attestTxHash);
+        bool attested = safe.execTransaction(
+            address(guard),
+            0,
+            attestData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            abi.encodePacked(ar, as_, av)
+        );
+        require(attested, "attestOnboardingClean failed");
+        console.log("Onboarding attested");
 
         vm.stopBroadcast();
 

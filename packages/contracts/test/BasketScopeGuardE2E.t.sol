@@ -58,6 +58,11 @@ contract BasketScopeGuardE2ETest is Test {
         // the deployed Safe, not just sitting deployed-but-uninstalled somewhere.
         address installedGuard = address(uint160(uint256(vm.load(address(safe), GUARD_STORAGE_SLOT))));
         assertEq(installedGuard, address(guard), "deployed Safe must have the deployed Guard installed");
+
+        // Same for onboarding: confirm attestOnboardingClean() was actually called for real
+        // against this deployed Guard, not just that PM's strategy happens to ship for some
+        // other reason.
+        assertTrue(guard.onboardingAttested(), "deployed Guard must have onboarding attested");
     }
 
     function _shipCalldata(bytes memory strategy, address[] memory tokens) internal pure returns (bytes memory) {
