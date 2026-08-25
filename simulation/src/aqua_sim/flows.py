@@ -64,23 +64,27 @@ def maybe_exogenous_trade(
 class EndogenousArbConfig:
     """Arbitrageur/solver-driven corrective flow — the mechanism's actual rebalancing path.
 
-    `tolerance_band` — ADR-0006: deviations from the market-implied price smaller than
-    this fraction are priced as neutral, not corrective; no arb fires inside it.
-    `min_steps_between_trades` — ADR-0006's rate cap, expressed as a step count here
-    (converted from a real time interval by the caller).
+    No separate price dead-zone and no cooldown (ADR-0006, revised): `fee` and
+    `gas_cost_b` together are what actually determine whether a correction is worth an
+    arbitrageur's while, and a hand-picked dead-zone/cooldown on top of that was found to
+    be redundant, not just theoretically but empirically — see `05_frontier_sweep.ipynb`'s
+    comparison. An explicit cooldown changed nothing until set so loose it started making
+    tracking *worse* than gas-cost gating alone already does, because gas naturally spaces
+    out corrections on its own (real gas cost only lets a correction fire when the drift it
+    would capture is worth more than gas + fee) — there was nothing left for a cooldown to
+    usefully add.
 
-    Defaults are the values notebook 10 (`10_parameter_decision.ipynb`) picked: every
-    dimension that notebook measured (cost, tracking error, shock-recovery time,
-    stale-quote exploit exposure) gets monotonically worse as either knob loosens, so
-    tighter is always better *in-model* — these defaults are a deliberate step back from
-    that mathematical optimum (`tolerance_band=0.001`, `min_steps_between_trades=1`)
-    to bound correction frequency (and so, real gas cost, not modeled here) until
-    `BLEUDEV-265`'s real benchmark exists to make that trade-off precisely.
+    `gas_cost_b` — a flat, deliberately-labeled PLACEHOLDER per-transaction gas cost, in
+    B-numeraire units (same placeholder value and framing as
+    `baselines.GenericDexConfig.gas_cost_b` — real gas numbers don't exist yet,
+    `BLEUDEV-265`). Unlike the removed price dead-zone, this isn't a guessed constant: it's
+    what actually determines whether a correction is worth an arbitrageur's while, and it
+    naturally raises the bar for how small a drift can be before it's profitable to fix,
+    scaling with real cost instead of being a hand-tuned percentage.
     """
 
-    tolerance_band: float = 0.005
     fee: float = 0.0002
-    min_steps_between_trades: int = 12
+    gas_cost_b: float = 5.0
 
 
 def _target_balance_in_for_price(
@@ -104,10 +108,20 @@ def maybe_arbitrage_trade(
     state: CurveState,
     market_price: float,
     config: EndogenousArbConfig,
-    steps_since_last_trade: int,
+    gas_cost_in: float = 0.0,
 ) -> tuple[CurveState, float, bool]:
-    """Fires a corrective trade against `state` if the pool's spot price has drifted from
-    `market_price` by more than `tolerance_band`, and the rate cap allows it.
+    """Fires a corrective trade against `state` if it's still profitable for the
+    arbitrageur net of `config.fee` AND `gas_cost_in` — no separate dead-zone, no cooldown.
+
+    `gas_cost_in` — the arbitrageur's own real transaction cost, in the *same token* as
+    `balance_in`/`amount_in` (the caller converts from whatever numeraire it's tracked in,
+    since orientation flips each step — see `simulate.py`). Correcting a drift smaller than
+    fee + gas would cost the arbitrageur more than they'd make, so no separate,
+    hand-picked price dead-zone is needed: real cost alone is what makes tiny corrections
+    not worth firing, and (unlike a flat percentage band) it naturally shrinks or grows
+    with how much gas actually costs, instead of being a guessed constant. It also, on its
+    own, naturally spaces out how often a correction fires — a separate cooldown on top of
+    it was found to add nothing (see `EndogenousArbConfig`'s docstring).
 
     `market_price` and `spot_price(state)` must use the same convention: both "units of
     `balance_in`'s token paid per unit of `balance_out`'s token received" (`curve.py`'s
@@ -117,23 +131,28 @@ def maybe_arbitrage_trade(
 
     Returns `(new_state, amount_in, happened)`.
     """
-    if steps_since_last_trade < config.min_steps_between_trades:
-        return state, 0.0, False
-
     pool_price = spot_price(state)
     # Pool is CHEAPER than market for this i->o direction (pay less `in` per `out` than the
-    # market would charge) once past the fee + tolerance-band buffer — an arbitrageur can
-    # buy `out` here and profit reselling at the market rate.
-    threshold = market_price * (1 - config.tolerance_band - config.fee)
+    # market would charge) once past the fee — an arbitrageur can buy `out` here and profit
+    # reselling at the market rate. This is a quick pre-filter (gas not included yet, since
+    # gas is flat while this threshold is scale-free); the real profit check happens below,
+    # after sizing, where the actual amounts are known.
+    threshold = market_price * (1 - config.fee)
     if pool_price >= threshold:
         return state, 0.0, False
 
-    target_price = market_price * (1 - config.tolerance_band)
+    target_price = market_price
     v = state.balance_in**state.weight_in * state.balance_out**state.weight_out
     target_balance_in = _target_balance_in_for_price(v, state.weight_in, state.weight_out, target_price)
     amount_in = target_balance_in - state.balance_in
     if amount_in <= 0:
         return state, 0.0, False
 
-    new_state, _ = apply_exact_in(state, amount_in, config.fee)
+    new_state, amount_out = apply_exact_in(state, amount_in, config.fee)
+    # Profit in the "in"-token's own terms: what `amount_out` would fetch at the fair
+    # market rate, minus what was actually paid for it.
+    profit_in = amount_out * market_price - amount_in
+    if profit_in < gas_cost_in:
+        return state, 0.0, False
+
     return new_state, amount_in, True
