@@ -62,47 +62,53 @@ is a placeholder, not a final answer.
 
 ## Revised decision — under review, not yet applied to notebooks/other docs (2026-08-25)
 
-The tolerance band and rate cap above are being replaced with a **fee + gas-cost
-profitability gate** and nothing else: an arbitrageur's correction only fires if the drift
-it captures is worth more than the trading fee plus their own (placeholder) gas cost.
-Reasoning:
+**Still in progress — the reasoning below went through one real correction already; treat
+the conclusion as unsettled, not final.**
+
+The tolerance band and rate cap above are being reconsidered in favor of a **fee + gas-cost
+profitability gate**: an arbitrageur's correction only fires if the drift it captures is
+worth more than the trading fee plus their own real gas cost. First pass:
 
 - A review comment asked whether the tolerance band was doing anything the trading fee
   didn't already do on its own — testing confirmed it wasn't: cost barely moved across the
   entire swept band range.
-- Removing the band alone, with no fee for gas, made the mechanism correct on ~94% of all
+- Removing the band with no gas cost modeled made the mechanism correct on ~94% of all
   simulated 5-minute steps — unrealistic, since it implicitly assumes gas is free.
-- Adding a *real* (placeholder) gas cost to the arbitrageur's own profitability check, with
-  no separate cooldown, brought that down to ~577 corrections/year on its own — an explicit
-  cooldown swept on top of the gas gate (5min through 1 day) changed nothing until set so
-  loose it started making tracking *worse*. The gas gate alone already does the job a
-  hand-picked cooldown was for.
+- Adding a gas cost to the arbitrageur's own profitability check, with no separate cooldown,
+  initially looked like it settled the question: at a **$5 placeholder** gas cost (reused,
+  unchecked, from an existing placeholder elsewhere in this simulation), corrections dropped
+  to ~577/year on their own, and an explicit cooldown swept on top of that gas gate (5min
+  through 1 day) changed nothing until set so loose it made tracking worse.
 
-Net effect: **no more free parameters to pick.** `fee` is fixed by ADR-0008 (2 bps); the gas
-placeholder is the same one already used elsewhere in this simulation for un-modeled gas
-($5, `BLEUDEV-265` still open). Nothing is left to sweep or tune — the mechanism has exactly
-one real operating point.
+**That $5 figure was never actually checked against Base and turned out to be off by
+roughly 50x.** Real Base transaction costs run $0.01-$0.10 (L2 execution + L1 data fee,
+OpenLiquid data, Q1 2026) — corrected to **$0.10**. Redoing the comparison at the realistic
+gas cost changes the picture substantially:
 
-**What that changes about the M1 comparison:** the old comparison swept the tolerance band
-into a 5-point curve and checked whether *some* point on that curve beat each baseline
-setting (that's where the "10/10" dominance claim came from). With one operating point
-instead of a curve, the mechanism either beats a given baseline setting or it doesn't — no
-cherry-picking a favorable point on a range. Checked against the same 10 baseline settings:
+![Mechanism (single point) vs. naive baselines, at realistic Base gas cost](assets/0006-mechanism-vs-baselines.png)
 
-![Mechanism (single point) vs. naive baselines](assets/0006-mechanism-vs-baselines.png)
+At $0.10 gas, the gate barely throttles anything — corrections fire almost as often as with
+no gas cost at all, because $0.10 is cheap enough that nearly any real drift is worth
+correcting. The mechanism's cost is no longer gas-bound; it's now dominated by **cumulative
+trading-fee drag** from correcting near-continuously (2 bps × a very large number of
+corrections over a year adds up). Checked against the same 10 baseline settings: **0 of 10**
+beat the mechanism on both cost and tracking at once — the mechanism still has by far the
+tightest tracking of anything tested, but every baseline setting is now cheaper than it,
+specifically because they all correct far less often.
 
-**1 of 10** baseline settings is beaten on both cost and tracking error at once (down from
-the previously-claimed 10/10, and down from 2/10 measured right after the underlying
-simulation bugs were fixed but before this parameter change). The mechanism's real strength
-shows clearly on the chart: it has the *tightest tracking of anything tested* — no baseline
-setting gets within 2x its tracking error. What it loses on is cost: several baseline
-settings (most clearly threshold=0.05) get noticeably tighter tracking *and* lower cost
-than the mechanism at once, because they tolerate more drift than the mechanism's real
-economics ever would.
+**This walks back the "no more free parameters to pick" conclusion from the first pass.**
+Once gas is priced realistically (cheap, as Base actually is), gas cost isn't what
+should be limiting correction frequency — cumulative fee drag is, and nothing in the
+current fee+gas-only design controls that. The original tolerance band's stated
+rationale ("cost/UX reasons, not security" — see Decision above) turns out to still be a
+real, live concern; it just isn't gas that motivates it. What hasn't been done yet: a fresh
+sweep of a dead-zone and/or cooldown *on top of* the realistic-gas mechanism, to find where
+cumulative fee cost and tracking tightness actually trade off — this is needed before a
+final parameter choice can be made, and hasn't been run.
 
-This section is a proposal for review, not yet carried through to `simulation/notebooks/`
-(03, 05, 06, 07, 08, 09 all still construct the old tolerance-band/cooldown config, and
-`10_parameter_decision.ipynb` — the notebook that picked 0.5%/1hr — still exists), or to
+This section is a proposal under active review, not yet carried through to
+`simulation/notebooks/` (03, 05, 06, 07, 08, 09 all still construct the old
+tolerance-band/cooldown config, and `10_parameter_decision.ipynb` still exists), or to
 `ARCHITECTURE.md`/`ROADMAP.md`'s "10/10" and "All met" language. Those are a separate,
 larger follow-up once this direction is confirmed.
 
