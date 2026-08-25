@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from aqua_sim.curve import CurveState, apply_exact_in, spot_price
+from aqua_sim.curve import CurveState, exact_in, spot_price
 from aqua_sim.flows import maybe_arbitrage_trade, maybe_exogenous_trade
 from aqua_sim.market import simulate_price_path
 from aqua_sim.metrics import cost_of_rebalancing, frictionless_reference_path, portfolio_value, tracking_error
@@ -42,11 +42,21 @@ def apply_basket_aware_exact_in(
     (non-augmented) new `(balance_in, balance_out)` -- `basket_balance` itself never moves
     from this trade; only the two tokens actually being swapped do. Mirrors exactly how
     BasketXYCSwap.sol reads the basket balance for pricing but never pulls/pushes it.
+
+    The basket token inflates the curve's apparent output-side liquidity without being
+    transferable itself, so a quote can come back larger than the real `balance_out` --
+    raises `ValueError` rather than returning a negative real balance in that case.
     """
     state = CurveState(balance_in, balance_out, weight_in, weight_out)
     effective_state = basket_augmented_state(state, basket_balance)
-    new_effective_state, _ = apply_exact_in(effective_state, amount_in, fee)
-    return new_effective_state.balance_in, new_effective_state.balance_out - basket_balance
+    amount_out = exact_in(effective_state, amount_in, fee)
+    if amount_out > balance_out:
+        raise ValueError(
+            f"basket-aware quote of {amount_out} exceeds the real transferable "
+            f"balance_out={balance_out}; the basket token affects pricing but cannot "
+            "itself be paid out as the traded token"
+        )
+    return effective_state.balance_in + amount_in, balance_out - amount_out
 
 
 def basket_aware_spot_price(balance_in: float, balance_out: float, basket_balance: float, weight_in: float, weight_out: float) -> float:

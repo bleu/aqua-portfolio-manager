@@ -114,7 +114,7 @@ def load_1inch_weth_usdc_quotes() -> list[dict]:
     """Real, one-time-captured snapshot of 1inch aggregator quotes for WETH->USDC at
     several trade sizes -- the real market's aggregate price-impact curve, used as the
     competitive benchmark our own pool's quote is compared against (notebook 09)."""
-    with open(_DATA_DIR / "oneinch_weth_usdc_quotes.csv", newline="") as f:
+    with open(_DATA_DIR / "1inch_weth_usdc_quotes.csv", newline="") as f:
         rows = list(csv.DictReader(f))
     for row in rows:
         row["weth_in"] = float(row["weth_in"])
@@ -130,7 +130,7 @@ def load_1inch_weth_usdc_routes() -> list[dict]:
     generic "the market" abstraction. `part_pct` is that protocol's share of ITS route leg
     (legs run in parallel on split routes, so shares within one `weth_in` size don't
     necessarily sum to 100 -- see notebook 09 for how this is aggregated)."""
-    with open(_DATA_DIR / "oneinch_weth_usdc_routes.csv", newline="") as f:
+    with open(_DATA_DIR / "1inch_weth_usdc_routes.csv", newline="") as f:
         rows = list(csv.DictReader(f))
     for row in rows:
         row["weth_in"] = float(row["weth_in"])

@@ -9,8 +9,8 @@ notebook run. `aqua_sim.marketdata` only reads these files; it makes no network 
 | `usdc_usd_daily.csv` | CoinGecko `coins/usd-coin/market_chart`, `days=180` | Daily USDC/USD close, ~180 days |
 | `wbtc_usd_daily.csv` | CoinGecko `coins/wrapped-bitcoin/market_chart`, `days=180` | Daily WBTC/USD close, ~180 days |
 | `balancer_weth_pools.csv` | Balancer v3 API (`api-v3.balancer.fi/graphql`), `poolGetPools` | Mainnet weighted pools containing WETH — swap fee, 24h volume, TVL, 24h fee revenue |
-| `oneinch_weth_usdc_quotes.csv` | 1inch aggregation API (`api.1inch.dev/swap/v6.0/1/quote`) | Best-execution WETH→USDC quotes at 1/5/10/25/50/100/250/500/1000 WETH — a price-impact curve |
-| `oneinch_weth_usdc_routes.csv` | Same 1inch calls, `includeProtocols=true` | Which protocols (Uniswap V3/V4, Curve, PMM market makers, Fluid, Ekubo, Angstrom, ...) 1inch routed each size through, and their share — the competitive landscape our strategy would be routed against |
+| `1inch_weth_usdc_quotes.csv` | 1inch aggregation API (`api.1inch.dev/swap/v6.0/1/quote`) | Best-execution WETH→USDC quotes at 1/5/10/25/50/100/250/500/1000 WETH — a price-impact curve |
+| `1inch_weth_usdc_routes.csv` | Same 1inch calls, `includeProtocols=true` | Which protocols (Uniswap V3/V4, Curve, PMM market makers, Fluid, Ekubo, Angstrom, ...) 1inch routed each size through, and their share — the competitive landscape our strategy would be routed against |
 
 ## Why fixed, not live
 
@@ -22,6 +22,9 @@ keeps the simulation suite's reproducibility independent of external services st
 
 ## Regenerating
 
-Not scripted on purpose (avoids maintaining fetch/cache machinery for data that's meant
-to stay fixed). To recapture a fresh snapshot, hit the same endpoints above with the same
-parameters and replace these files.
+Not wired into the notebooks or CI on purpose (avoids maintaining fetch/cache machinery for
+data that's meant to stay fixed, and keeps notebook runs network-independent). To verify
+the committed data or recapture a fresh snapshot, run `uv run python data/fetch_snapshot.py`
+from `simulation/` — hits the same endpoints/parameters as the table above. The 1inch calls
+need `ONEINCH_API_KEY` set; without it, that script refreshes everything else and skips the
+1inch files with a warning.

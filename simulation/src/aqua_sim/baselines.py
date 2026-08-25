@@ -74,16 +74,18 @@ def rebalance_to_target(
     dex = _external_dex_state(price_a_in_b, config)
 
     if delta_value_a > 0:
-        # Need more A: sell B for A.
+        # Need more A: sell B for A. `dex` is oriented A-in/B-out (see
+        # _external_dex_state), so this direction needs the flipped pair.
         amount_b_in = delta_value_a
-        amount_a_out = exact_in(dex, amount_b_in, config.fee)
+        flipped = CurveState(dex.balance_out, dex.balance_in, dex.weight_out, dex.weight_in)
+        amount_a_out = exact_in(flipped, amount_b_in, config.fee)
         new_balance_a = balance_a + amount_a_out
         new_balance_b = balance_b - amount_b_in
     else:
-        # Too much A: sell A for B.
+        # Too much A: sell A for B — `dex`'s natural A-in/B-out orientation already
+        # matches this direction, no flip needed.
         amount_a_in = -delta_value_a / price_a_in_b
-        flipped = CurveState(dex.balance_out, dex.balance_in, dex.weight_out, dex.weight_in)
-        amount_b_out = exact_in(flipped, amount_a_in, config.fee)
+        amount_b_out = exact_in(dex, amount_a_in, config.fee)
         new_balance_a = balance_a - amount_a_in
         new_balance_b = balance_b + amount_b_out
 
