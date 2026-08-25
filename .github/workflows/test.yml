@@ -37,6 +37,42 @@ jobs:
       - name: Run Forge tests
         run: forge test -vvv
 
+  check-onboarding-check:
+    name: Proof of concept (proofs-of-concept/onboarding-check)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: proofs-of-concept/onboarding-check
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: proofs-of-concept/onboarding-check/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
   check-pocs:
     name: Proof of concept (${{ matrix.project }})
     runs-on: ubuntu-latest
