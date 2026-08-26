@@ -15,6 +15,13 @@ smoothing" below for why that was cut).
 
 ## The curve invariant (the whole proof)
 
+**Assumption, stated explicitly.** Token *i* and token *o* each have their own market price,
+set externally, that this strategy's own liquidity is too small to move. The proof below is
+about this strategy's *own* invariant `V` never decreasing — it says nothing about, and
+doesn't need, either token's price being stable in absolute terms; only that trading against
+*this* curve can't be a source of profit on its own, regardless of where the external price
+sits.
+
 **Claim.** For weights `w_i, w_o > 0` normalized as in `PRICING.md`, and any single exact-in
 trade of `PRICING.md`'s form with fee `f ∈ [0, 1)`:
 
