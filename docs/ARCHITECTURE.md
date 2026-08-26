@@ -329,10 +329,13 @@ Nine notebooks (`simulation/notebooks/`), each with real assertions checked in c
   finding the still-unbuilt multi-token group routing design (`BLEUDEV-75`) needs to account
   for, not a safety issue
   ([`08_basket_interaction.ipynb`](../simulation/notebooks/08_basket_interaction.ipynb)).
-- A recommended swap fee of ~30-32bps, derived from WETH/USDC volatility and independently
-  matching what the established Balancer 50/50 WETH/USDC pool already charges. Pool depth,
-  not fee, is usually the binding constraint on competitiveness at launch-stage size — this
-  notebook's own methodology is flagged separately as needing a deeper rework
+- A recommended swap fee of ~20-30bps (anchored at ~25bps), derived from WETH/USDC
+  volatility — in the same range as, though not an exact match for, the established
+  Balancer 50/50 WETH/USDC pool's real 30bps. The competitiveness side of this now comes
+  from a controlled sweep (hold depth/size fixed, vary only fee, measure the gap against
+  real 1inch execution) rather than a correlation across structurally different real
+  pools. Pool depth, not fee, is usually the binding constraint on competitiveness at
+  launch-stage size
   ([`09_fee_recommendation.ipynb`](../simulation/notebooks/09_fee_recommendation.ipynb)).
 
 ### What Milestone 1 does and doesn't establish
