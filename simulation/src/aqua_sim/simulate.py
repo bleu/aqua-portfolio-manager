@@ -71,6 +71,7 @@ def run_mechanism_simulation(config: MechanismSimConfig) -> SimulationResult:
 
     n_exogenous_trades = 0
     n_arb_trades = 0
+    steps_since_last_arb = config.arb.min_steps_between_trades
 
     for t in range(1, config.n_steps + 1):
         price = price_path[t]
@@ -93,20 +94,24 @@ def run_mechanism_simulation(config: MechanismSimConfig) -> SimulationResult:
         # orientation so `maybe_arbitrage_trade`'s profit check compares like with like.
         state_ab = CurveState(balance_a, balance_b, weight_a, weight_b)
         new_state_ab, _, arb_happened_ab = maybe_arbitrage_trade(
-            state_ab, 1 / price, config.arb, gas_cost_in=config.arb.gas_cost_b / price
+            state_ab, 1 / price, config.arb, steps_since_last_arb, gas_cost_in=config.arb.gas_cost_b / price
         )
 
         if arb_happened_ab:
             balance_a, balance_b = new_state_ab.balance_in, new_state_ab.balance_out
             n_arb_trades += 1
+            steps_since_last_arb = 0
         else:
             state_ba = CurveState(balance_b, balance_a, weight_b, weight_a)
             new_state_ba, _, arb_happened_ba = maybe_arbitrage_trade(
-                state_ba, price, config.arb, gas_cost_in=config.arb.gas_cost_b
+                state_ba, price, config.arb, steps_since_last_arb, gas_cost_in=config.arb.gas_cost_b
             )
             if arb_happened_ba:
                 balance_b, balance_a = new_state_ba.balance_in, new_state_ba.balance_out
                 n_arb_trades += 1
+                steps_since_last_arb = 0
+            else:
+                steps_since_last_arb += 1
 
         balance_a_path[t] = balance_a
         balance_b_path[t] = balance_b
