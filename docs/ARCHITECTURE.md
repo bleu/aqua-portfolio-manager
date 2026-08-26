@@ -5,9 +5,10 @@ an independent router we own (inheriting `SwapVM` with our own opcode set) — n
 `AquaApp`, not a hybrid, and not merged into 1inch's own `AquaSwapVMRouter`. See
 [`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)
 for the full decision and reasoning. The
-frontier comparison is done now (see [Milestone 1](#milestone-1) below) and confirms the
-mechanism beats naive rebalancing baselines; real gas numbers are still a placeholder pending
-on-chain benchmarking. The round-trip/donation-resistance proof is done
+frontier comparison is done now (see [Milestone 1](#milestone-1) below): the mechanism tracks
+far tighter than either naive baseline, but doesn't win on cost — a real trade-off, not outright
+dominance; real gas numbers are still a placeholder (based on current observed Base costs, not
+this specific contract) pending on-chain benchmarking. The round-trip/donation-resistance proof is done
 ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy
 manipulation gap it doesn't cover is closed structurally, not proven, by a Safe wallet
 requirement and a Basket Scope Guard, now built and tested
@@ -25,7 +26,7 @@ Every other design choice reflected in the diagrams below has its own ADR in
 | Oracle-valued token groups, not per-token targets | Accepted | [0003](adr/0003-oracle-valued-token-groups.md) |
 | Constant-mean weighted curve pricing, reimplemented independently | Accepted | [0004](adr/0004-constant-mean-weighted-curve-pricing.md) |
 | Chainlink-style push oracles, bluechip-first | Accepted | [0005](adr/0005-chainlink-push-oracles.md) |
-| Tolerance band + rate caps for exposure guardrails (no EMA/TWAP) | Accepted | [0006](adr/0006-exposure-smoothing.md) |
+| Fee + gas-cost profitability gate for exposure guardrails, no tolerance band/rate cap, no EMA/TWAP | Accepted | [0006](adr/0006-exposure-smoothing.md) |
 | Donation resistance via curve invariant, not internal accounting | Accepted | [0007](adr/0007-donation-resistance-via-curve-invariant.md) |
 | Success = tracking error + cost of rebalancing, not fee/volume | Accepted | [0008](adr/0008-success-metrics-tracking-error-and-cost.md) |
 | Deploy on Base at launch | Accepted | [0009](adr/0009-deploy-on-base-at-launch.md) |
@@ -172,11 +173,11 @@ flowchart TD
     Chainlink["Chainlink<br/>(price feeds)"]
 
     subgraph Strategy["Portfolio Manager Strategy (swapVM instruction, own router, immutable once shipped)"]
-        Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights, tolerance band,<br/>rate caps<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
+        Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
 
         ExposureReader["<b>Exposure Reader</b><br/>reads the wallet's real balance,<br/>ONLY over declared tokens<br/>(guards against pollution)"]
 
-        Smoothing["<b>Exposure Guardrails</b><br/>tolerance band<br/>+ rate cap<br/><i>(cost/UX, not security —<br/>no moving average)</i>"]
+        Smoothing["<b>Exposure Guardrails</b><br/>fee + gas-cost gate<br/><i>(real economics, not a<br/>hand-picked band — no<br/>moving average)</i>"]
 
         OracleAdapter["<b>Oracle Adapter</b><br/>reads Chainlink,<br/>normalizes decimals,<br/>checks staleness"]
 
@@ -233,8 +234,9 @@ flowchart TD
   [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for the full correction),
   and **only over tokens the LP declared** in the Config — anything else sitting in the wallet
   (by accident or an intentional donation) is ignored by this read.
-- **Exposure Guardrails** — a tolerance band and a rate cap (max rebalance frequency/amount) on
-  the *current* real reading, no moving average. Donation resistance doesn't depend on these —
+- **Exposure Guardrails** — a fee + gas-cost profitability gate on the *current* real reading, no
+  moving average, no separate hand-picked dead-zone or cooldown (a real sweep found neither
+  reduces cost once correction is gated on real economics). Donation resistance doesn't depend on these —
   that's fully closed by the curve invariant alone (see Invariant below). Cross-strategy
   resistance also doesn't depend on these — it's not this contract's job at all: it's closed
   structurally, at the wallet level, by the Basket Scope Guard (
@@ -292,35 +294,36 @@ flowchart TD
   [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md). Still
   open: an external audit, and the onboarding flow's one-time pre-existing-strategy check it
   depends on.
-- **Concrete parameter values** — resolved. `tolerance_band = 0.005`, `min_steps_between_trades
-  = 12` (1 hour at the simulation's 5-minute step resolution), picked in
-  `simulation/notebooks/10_parameter_decision.ipynb`. Every dimension that notebook measured
-  (cost, tracking error, shock-recovery time, stale-quote exploit exposure) gets monotonically
-  worse as either knob loosens — the chosen values are a deliberate step back from the
-  in-model mathematical optimum (`0.001`/`1`), trading simulated performance for a >10x
-  reduction in worst-case correction frequency against gas cost this suite doesn't model
-  (placeholder pending gas-per-rebalance benchmarking). See
-  [ADR-0006](adr/0006-exposure-smoothing.md) and
-  [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md).
+- **Concrete parameter values** — resolved, but the resolution is "there are none to pick."
+  `fee` is fixed by [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md) (2 bps); a
+  tolerance band and rate cap were tried and swept against a realistic gas cost, found to not
+  reduce cost at all (fee savings from correcting less often get cancelled out by more value
+  leaking to the market while the pool sits stale), and dropped. The mechanism corrects
+  whenever doing so is profitable net of fee + gas — a real gas-cost placeholder (based on
+  current observed Base transaction costs, not this specific contract), not a hand-tuned
+  percentage. See [ADR-0006](adr/0006-exposure-smoothing.md).
 - **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and
   [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source"
   actually means for this repo's own contracts, independent of the mechanism design.
 
 ### Simulation results
 
-Ten notebooks (`simulation/notebooks/`), each with real assertions checked in code — see
+Nine notebooks (`simulation/notebooks/`), each with real assertions checked in code — see
 [`simulation/README.md`](../simulation/README.md) for the full table.
 
-- The mechanism beats both naive rebalancing baselines (periodic and threshold) on the
-  tracking-error/cost-of-rebalancing frontier, at every one of 10 swept baseline settings
+- The mechanism has the tightest tracking of anything tested — no baseline setting gets within
+  2x its tracking error — but doesn't win on cost: checked directly, 0 of 10 swept baseline
+  settings (periodic and threshold) are beaten on both cost *and* tracking at once. A real
+  trade-off (tighter tracking, at a real cost), not outright dominance
   ([`05_frontier_sweep.ipynb`](../simulation/notebooks/05_frontier_sweep.ipynb)).
-- After a severe price shock (-30%), the mechanism recovers ~1183x faster than a
-  weekly-rebalance baseline (~25 minutes vs. ~20.5 days)
+- After a severe price shock (-30%), the mechanism recovers within a single step (~5 minutes) —
+  correcting a 30% skew clears its real gas cost trivially — vs. ~9,360 minutes (~6.5 days) for
+  a weekly-rebalance baseline
   ([`06_price_shocks.ipynb`](../simulation/notebooks/06_price_shocks.ipynb)).
-- Sustained adversarial pressure doesn't raise the LP's realized cost — every attacking trade
-  pays the same fee the invariant proof shows always benefits the pool. A stale-quote exploit
-  right after a shock is bounded (~1.1% of portfolio for a severe shock) and controllable via
-  the rate cap
+- With no rate cap, the mechanism's own same-step correction after a shock already leaves
+  essentially nothing for a stale-quote exploiter to extract — down from a real, measurable cost
+  under the old rate-capped design. Caveat: the simulation models one clean corrector, not real
+  same-block competition between multiple parties racing for the same opportunity
   ([`07_adversarial_agent.ipynb`](../simulation/notebooks/07_adversarial_agent.ipynb)).
 - A basket association costs something structurally, even from a dormant co-strategy — a
   finding the still-unbuilt multi-token group routing design (`BLEUDEV-75`) needs to account
@@ -328,16 +331,18 @@ Ten notebooks (`simulation/notebooks/`), each with real assertions checked in co
   ([`08_basket_interaction.ipynb`](../simulation/notebooks/08_basket_interaction.ipynb)).
 - A recommended swap fee of ~30-32bps, derived from WETH/USDC volatility and independently
   matching what the established Balancer 50/50 WETH/USDC pool already charges. Pool depth,
-  not fee, is usually the binding constraint on competitiveness at launch-stage size
+  not fee, is usually the binding constraint on competitiveness at launch-stage size — this
+  notebook's own methodology is flagged separately as needing a deeper rework
   ([`09_fee_recommendation.ipynb`](../simulation/notebooks/09_fee_recommendation.ipynb)).
 
 ### What Milestone 1 does and doesn't establish
 
 **Established:** the pricing math is implemented correctly and is safe against round-trip
 draining, unconditionally. Under a synthetic-then-real-calibrated market model with an
-idealized always-available arbitrageur, the mechanism keeps a portfolio closer to target and
-cheaper than the naive alternatives, holds up under hostile trading pressure, recovers fast
-from shocks, and has concrete, evidenced parameter values.
+idealized always-available arbitrageur, the mechanism keeps a portfolio far closer to target
+than the naive alternatives (a real trade-off against cost, not a free win), holds up under
+hostile trading pressure, recovers fast from shocks, and has no free parameters left to
+mistune — correction is pinned by real fee + gas economics, not a hand-picked value.
 
 **Not established:** performance under live trading, gas costs (a placeholder throughout
 every cost number above, pending gas-per-rebalance benchmarking against the implementation),
