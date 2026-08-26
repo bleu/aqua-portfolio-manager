@@ -5,10 +5,9 @@ an independent router we own (inheriting `SwapVM` with our own opcode set) — n
 `AquaApp`, not a hybrid, and not merged into 1inch's own `AquaSwapVMRouter`. See
 [`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)
 for the full decision and reasoning. The
-frontier comparison is done now (see [Milestone 1](#milestone-1) below): the mechanism tracks
-far tighter than either naive baseline, but doesn't win on cost — a real trade-off, not outright
-dominance; real gas numbers are still a placeholder (based on current observed Base costs, not
-this specific contract) pending on-chain benchmarking. The round-trip/donation-resistance proof is done
+frontier comparison is done now — see [Milestone 1](#milestone-1) below for the current result,
+not restated here since it's exactly the kind of thing that changes as assumptions get
+corrected. The round-trip/donation-resistance proof is done
 ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy
 manipulation gap it doesn't cover is closed structurally, not proven, by a Safe wallet
 requirement and a Basket Scope Guard, now built and tested
@@ -308,52 +307,20 @@ flowchart TD
 
 ### Simulation results
 
-Nine notebooks (`simulation/notebooks/`), each with real assertions checked in code — see
-[`simulation/README.md`](../simulation/README.md) for the full table.
+Nine notebooks (`simulation/notebooks/`), each with real assertions checked in code, not just
+printed claims. Results aren't restated here — per review, a second copy of notebook findings
+in this document is exactly the kind of thing that goes stale independently as the underlying
+code and assumptions get corrected, which happened more than once already in this project's
+history. See [`simulation/README.md`](../simulation/README.md) for what each notebook covers
+and its current result, and each notebook's own summary for the full detail.
 
-- The mechanism has the tightest tracking of anything tested — no baseline setting gets within
-  2x its tracking error — but doesn't win on cost: checked directly, 0 of 10 swept baseline
-  settings (periodic and threshold) are beaten on both cost *and* tracking at once. A real
-  trade-off (tighter tracking, at a real cost), not outright dominance
-  ([`05_frontier_sweep.ipynb`](../simulation/notebooks/05_frontier_sweep.ipynb)).
-- After a severe price shock (-30%), the mechanism recovers within a single step (~5 minutes) —
-  correcting a 30% skew clears its real gas cost trivially — vs. ~9,360 minutes (~6.5 days) for
-  a weekly-rebalance baseline
-  ([`06_price_shocks.ipynb`](../simulation/notebooks/06_price_shocks.ipynb)).
-- With no rate cap, the mechanism's own same-step correction after a shock already leaves
-  essentially nothing for a stale-quote exploiter to extract — down from a real, measurable cost
-  under the old rate-capped design. Caveat: the simulation models one clean corrector, not real
-  same-block competition between multiple parties racing for the same opportunity
-  ([`07_adversarial_agent.ipynb`](../simulation/notebooks/07_adversarial_agent.ipynb)).
-- A basket association costs something structurally, even from a dormant co-strategy — a
-  finding the still-unbuilt multi-token group routing design (`BLEUDEV-75`) needs to account
-  for, not a safety issue
-  ([`08_basket_interaction.ipynb`](../simulation/notebooks/08_basket_interaction.ipynb)).
-- A recommended swap fee of ~20-30bps (anchored at ~25bps), derived from WETH/USDC
-  volatility — in the same range as, though not an exact match for, the established
-  Balancer 50/50 WETH/USDC pool's real 30bps. The competitiveness side of this now comes
-  from a controlled sweep (hold depth/size fixed, vary only fee, measure the gap against
-  real 1inch execution) rather than a correlation across structurally different real
-  pools. Pool depth, not fee, is usually the binding constraint on competitiveness at
-  launch-stage size
-  ([`09_fee_recommendation.ipynb`](../simulation/notebooks/09_fee_recommendation.ipynb)).
-
-### What Milestone 1 does and doesn't establish
-
-**Established:** the pricing math is implemented correctly and is safe against round-trip
-draining, unconditionally. Under a synthetic-then-real-calibrated market model with an
-idealized always-available arbitrageur, the mechanism keeps a portfolio far closer to target
-than the naive alternatives (a real trade-off against cost, not a free win), holds up under
-hostile trading pressure, recovers fast from shocks, and has no free parameters left to
-mistune — correction is pinned by real fee + gas economics, not a hand-picked value.
-
-**Not established:** performance under live trading, gas costs (a placeholder throughout
-every cost number above, pending gas-per-rebalance benchmarking against the implementation),
-multi-token group routing beyond the two-token pair every notebook models, and aggregator
-routing behavior (the fee/competitiveness analysis compares quoted prices directly, not live
-1inch routing decisions). Closing that gap is M2 (testnet, real transactions) and M4
-(mainnet, real capital and unpredictable traders) — this milestone doesn't substitute for
-either.
+**Scope not covered, regardless of the specific numbers on any given day:** performance under
+live trading, real gas costs (every notebook uses a placeholder based on current observed Base
+transaction costs, not this specific contract's actual gas usage), multi-token group routing
+beyond the two-token pair every notebook models, and real aggregator routing behavior (compared
+against quoted prices directly, not live 1inch routing decisions). Closing that gap is M2
+(testnet, real transactions) and M4 (mainnet, real capital and unpredictable traders) — this
+milestone doesn't substitute for either.
 
 See [`adr/README.md`](adr/README.md) for the full decision log, including chain choice
 ([ADR-0009](adr/0009-deploy-on-base-at-launch.md)) and the group/pricing/oracle decisions
