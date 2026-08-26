@@ -99,15 +99,39 @@ specifically because they all correct far less often.
 **This walks back the "no more free parameters to pick" conclusion from the first pass.**
 Once gas is priced realistically (cheap, as Base actually is), gas cost isn't what
 should be limiting correction frequency — cumulative fee drag is, and nothing in the
-current fee+gas-only design controls that. The original tolerance band's stated
-rationale ("cost/UX reasons, not security" — see Decision above) turns out to still be a
-real, live concern; it just isn't gas that motivates it. What hasn't been done yet: a fresh
-sweep of a dead-zone and/or cooldown *on top of* the realistic-gas mechanism, to find where
-cumulative fee cost and tracking tightness actually trade off — this is needed before a
-final parameter choice can be made, and hasn't been run.
+first-pass fee+gas-only design controls that. That raised a real question: does a
+dead-zone and/or cooldown *on top of* the realistic-gas mechanism actually trade cost for
+tracking, the way the old tolerance band was assumed to?
 
-This section is a proposal under active review, not yet carried through to
-`simulation/notebooks/` (03, 05, 06, 07, 08, 09 all still construct the old
+**Answer: no, not meaningfully — and the reason matters.** "Cost" here isn't raw fee
+accounting; it's value lost against a frictionless, instantly-rebalanced reference (an
+LVR-style metric — see `metrics.py`'s `cost_of_rebalancing`), which also counts value
+leaked to informed/opportunistic trades against an increasingly stale price while the pool
+sits uncorrected. Sweeping both knobs independently:
+
+![Sweeping tolerance band and cooldown at realistic gas cost](assets/0006-tolerance-cooldown-sweep.png)
+
+Over a 200x range of correction frequency (from ~10,655 corrections/year down to 53/year),
+cost barely moves (6.77% → 7.19%, a ~6% relative change) while p95 tracking error gets 40x
+worse (0.15% → 6.05%). The fee savings from correcting less often are almost exactly
+cancelled out by more value leaking to the market while the pool sits stale — a real,
+structural property of continuously quoting a firm price (the same Loss-Versus-Rebalancing
+effect the LVR literature already describes, cited in `ADR-0011`'s alternatives), not a
+tuning problem. **Loosening either knob is strictly worse: it doesn't save meaningful cost,
+and it makes tracking dramatically worse.** There is no cost/tracking trade-off here for a
+dead-zone or cooldown to usefully exploit.
+
+**Settled conclusion:** no tolerance band, no cooldown. `fee` (fixed by ADR-0008) and
+`gas_cost_b` (the realistic Base placeholder) are the only two parameters, and the
+mechanism should correct as tightly and often as gas-cost profitability allows — anything
+looser only gives up tracking for no real cost benefit. This does **not** change the
+cost-vs-baselines finding above (0/10 dominated): the mechanism's ~6.8% cost floor is a
+structural consequence of quoting continuously at all, not something a parameter choice
+inside this design can lower. Closing that gap, if it's worth closing, is a different-shape
+problem than picking a band width.
+
+This section is a proposal that has reached a settled conclusion but is not yet carried
+through to `simulation/notebooks/` (03, 05, 06, 07, 08, 09 all still construct the old
 tolerance-band/cooldown config, and `10_parameter_decision.ipynb` still exists), or to
 `ARCHITECTURE.md`/`ROADMAP.md`'s "10/10" and "All met" language. Those are a separate,
 larger follow-up once this direction is confirmed.
