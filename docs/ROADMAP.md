@@ -31,12 +31,13 @@ real work, but they're bounded (the candidate knobs are already named), not open
 - [x] Build the simulation notebook (flow modeled in two tiers: endogenous rebalancing/arb
       flow + exogenous organic flow) producing a tracking-error/cost-of-rebalancing frontier,
       protocol fee included on the cost side ([ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)).
-      Ten notebooks total — the frontier plus price-shock, adversarial-agent,
+      Nine notebooks total — the frontier plus price-shock, adversarial-agent,
       basket-interaction, and fee-recommendation extensions. See
       [`../simulation/README.md`](../simulation/README.md).
-- [x] From the frontier, pick concrete parameter values: tolerance band width (0.5%),
-      rate-cap threshold (1 hour) — no EMA window, dropped from scope
-      ([ADR-0006](adr/0006-exposure-smoothing.md)).
+- [x] From the frontier, resolve the exposure-guardrail parameters: no EMA window (dropped
+      from scope), and — after a real sweep — no tolerance band or rate cap either, since
+      neither reduces cost once correction is gated on real fee + gas-cost economics instead.
+      Nothing left to hand-tune ([ADR-0006](adr/0006-exposure-smoothing.md)).
 - [x] Prove the round-trip-always-favors-the-pool invariant for this specific curve
       implementation — the headline security deliverable. Closed by the curve invariant alone,
       unconditionally (no smoothing/lag bound needed) — see
