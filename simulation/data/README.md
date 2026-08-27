@@ -1,7 +1,10 @@
 # Real market data (fixed snapshot)
 
-Captured once, on 2026-08-21, and committed as plain CSVs — not re-fetched on every
-notebook run. `aqua_sim.marketdata` only reads these files; it makes no network calls.
+Not committed — generate it once locally with `uv run python data/fetch_snapshot.py` from
+`simulation/` (see Regenerating below) before running the notebooks. `aqua_sim.marketdata` only
+reads these local files and makes no network calls itself, so once generated a snapshot stays
+fixed for as long as you keep it — pin an old date if strict day-to-day reproducibility matters
+more than freshness; freshness itself isn't the point here (see Why fixed, not live).
 
 | File | Source | What |
 |---|---|---|
@@ -22,9 +25,10 @@ keeps the simulation suite's reproducibility independent of external services st
 
 ## Regenerating
 
-Not wired into the notebooks or CI on purpose (avoids maintaining fetch/cache machinery for
-data that's meant to stay fixed, and keeps notebook runs network-independent). To verify
-the committed data or recapture a fresh snapshot, run `uv run python data/fetch_snapshot.py`
-from `simulation/` — hits the same endpoints/parameters as the table above. The 1inch calls
-need `ONEINCH_API_KEY` set; without it, that script refreshes everything else and skips the
-1inch files with a warning.
+Required once before first use, since the CSVs aren't committed — run
+`uv run python data/fetch_snapshot.py` from `simulation/`, which hits the same
+endpoints/parameters as the table above and writes the files this directory otherwise doesn't
+ship with. The 1inch calls need `ONEINCH_API_KEY` set; without it, that script refreshes
+everything else and skips the 1inch files with a warning. Not wired into the notebooks or CI —
+keeps notebook runs network-independent once the local snapshot exists, and avoids maintaining
+fetch/cache machinery for data that's meant to stay fixed between runs.

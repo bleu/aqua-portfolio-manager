@@ -1,10 +1,10 @@
 # Round-trip / donation-resistance proof
 
-Status: **closed for what this proof can prove.** A single proof (below) fully discharges
-ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no
-additional bound needed for either. **Cross-strategy interaction (a different strategy on the
-same wallet moving the balance) is a separate case this proof does not cover** — see the
-correction below. That gap is closed structurally instead, by `ADR-0011`'s Basket Scope Guard.
+A single proof (below) fully discharges ADR-0007's obligation for this strategy's own trades and
+for pure donations — no smoothing, no additional bound needed for either. **Cross-strategy
+interaction (a different strategy on the same wallet moving the balance) is a separate case this
+proof does not cover** — see below. That gap is closed structurally instead, by `ADR-0011`'s
+Basket Scope Guard.
 
 ## What has to be shown
 
@@ -56,14 +56,9 @@ inverse, so the same substitution applies symmetrically.
 **Why this covers donations at all.** A donation isn't a trade — it's a bare transfer with no
 output leg, so it only ever *increases* `B_i` for whatever token was donated, which strictly
 increases `V`. Since no subsequent trade can decrease `V` below wherever it stands (donation
-included), the donor can never trade their way back to more value than they gave away — worked
-example with real numbers in the PR history / Linear BLEUDEV-254 if a concrete walkthrough is
-useful later.
+included), the donor can never trade their way back to more value than they gave away.
 
-**Why this does NOT automatically cover cross-strategy interaction — a correction (2026-08-20).**
-An earlier version of this section argued the proof applies unconditionally regardless of how
-the pre-trade balance arose, including via another of the LP's own strategies trading on the
-shared wallet (ADR-0002). That was wrong: the proof above (lines
+**Why this does not automatically cover cross-strategy interaction.** The proof above (lines
 17-40) shows `V` never decreases across a trade that follows *this strategy's own* formula
 (`PRICING.md`) — it says nothing about a trade against a *different* strategy's curve, which
 follows different math entirely and can move this strategy's `B_i`/`B_o` in a way that decreases
@@ -81,17 +76,14 @@ oracle-valued total feeds this curve), a within-group trade by another strategy 
 exactly the one-sided "donation" case this proof already covers. The proof isn't stronger than it
 was; the boundary it needs now actually holds, enforced outside this contract entirely.
 
-## Why no smoothing (EMA/TWAP removed from scope, 2026-08-18)
+## Proof precondition: no smoothing
 
-ADR-0006 originally proposed feeding the exposure reading through an EMA or TWAP before pricing.
-That turned out to be exactly what made this proof incomplete: smoothing means the price no
-longer reflects the *current* real balance, only a lagging function of it, and closing the gap
-between "smoothed" and "raw" needed a second, harder proof that depended on simulation
-parameters that don't exist yet (see git history on this file for the abandoned "Part 2"). Once
-the exposure reader feeds the *raw*, current balance directly with no averaging, that gap
-doesn't exist, and the single proof above is unconditionally sufficient — for external
-donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix
-entirely, not more of this proof — see the correction above and `ADR-0011`.)
+This proof requires the exposure reader to feed the *raw*, current balance directly, with no
+EMA/TWAP averaging — smoothing would mean the price reflects a lagging function of the balance
+rather than the balance itself, which the proof above doesn't account for. See ADR-0006 for why
+no smoothing is used. With a raw reading, the proof above is unconditionally sufficient for
+external donations and ordinary settlement noise (cross-strategy interaction needed a different
+fix entirely, not more of this proof — see above and `ADR-0011`).
 
 The tolerance band and rate cap (ADR-0006) stay in scope, but on a different footing now: they're
 not load-bearing for this proof (the proof holds with or without them), they exist to reduce

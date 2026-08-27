@@ -18,22 +18,6 @@ work.
 Every other design choice reflected in the diagrams below has its own ADR in
 [`adr/`](adr/README.md) — see the component notes for links.
 
-## Key technical decisions
-
-| Decision | Status | ADR |
-|---|---|---|
-| License this repo's code under Aqua-Source-1.1, not MIT | Accepted | [0001](adr/0001-license-under-aqua-source-not-mit.md) |
-| Dedicated maker wallet as portfolio scope, zero Aqua protocol changes | Accepted | [0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) |
-| Oracle-valued token groups, not per-token targets | Accepted | [0003](adr/0003-oracle-valued-token-groups.md) |
-| Constant-mean weighted curve pricing, reimplemented independently | Accepted | [0004](adr/0004-constant-mean-weighted-curve-pricing.md) |
-| Chainlink-style push oracles, bluechip-first | Accepted | [0005](adr/0005-chainlink-push-oracles.md) |
-| Tolerance band + rate caps for exposure guardrails (no EMA/TWAP) | Accepted | [0006](adr/0006-exposure-smoothing.md) |
-| Donation resistance via curve invariant, not internal accounting | Accepted | [0007](adr/0007-donation-resistance-via-curve-invariant.md) |
-| Success = tracking error + cost of rebalancing, not fee/volume | Accepted | [0008](adr/0008-success-metrics-tracking-error-and-cost.md) |
-| Deploy on Base at launch | Accepted | [0009](adr/0009-deploy-on-base-at-launch.md) |
-| On-chain form: independent router, new swapVM instruction (not `AquaApp`, not merged into 1inch's router) | Accepted | [0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) |
-| Safe-only maker wallet with a Basket Scope Guard, instead of bounding cross-strategy risk | Accepted | [0011](adr/0011-safe-wallet-with-basket-scope-guard.md) |
-
 **Why an independent router, not `AquaApp` and not merged into 1inch's own router.** Reading
 the actual `lib/swap-vm` source is what settled this:
 

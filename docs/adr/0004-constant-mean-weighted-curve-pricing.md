@@ -32,8 +32,9 @@ The best-known public example of this math: Balancer's 80/20 BAL/WETH pool.
 ## Decision
 
 Pricing uses a constant-mean weighted curve (Balancer-style weighted-pool math), reimplemented
-independently from the published formula — not Balancer's code, and not the oracle ± spread
-design.
+independently from the published formula — not Balancer's code (see Context above for why
+copying it directly isn't available: GPL-3.0 vs. this repo's Aqua-Source-1.1), and not the
+oracle ± spread design.
 
 ## Consequences
 
