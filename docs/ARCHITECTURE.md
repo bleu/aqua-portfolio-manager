@@ -79,7 +79,9 @@ flowchart TD
     subgraph BleuScope["Built under this grant"]
         LPApp["<b>LP App</b><br/>Declare universe,<br/>set targets, monitor"]
         Dashboard["<b>Dashboard</b><br/>Protocol-wide<br/>monitoring"]
-        Strategy["<b>Portfolio Manager Strategy</b><br/>(swapVM instruction,<br/>own router)<br/>Pricing + exposure<br/>reading"]
+        Router["<b>Router</b><br/>(our deployment)<br/>quote()/swap() entrypoints,<br/>runs the maker's program,<br/>settles the trade"]
+        SwapVMLib["<i>SwapVM</i><br/>(1inch's engine —<br/>inherited source,<br/>not a separate<br/>deployment, ADR-0010)"]
+        Strategy["<b>Portfolio Manager<br/>Instruction</b><br/>= our opcode, one entry<br/>in the Router's opcode<br/>table, run by SwapVM's<br/>dispatch loop<br/>Pricing + exposure<br/>reading"]
     end
 
     subgraph WalletScope["Dedicated Maker Wallet — Safe only (ADR-0011)"]
@@ -87,9 +89,8 @@ flowchart TD
         Guard{{"<b>Basket Scope Guard</b><br/>allows PM's exact strategy hash;<br/>anyone else must stay<br/>inside one group"}}
     end
 
-    subgraph AquaCore["Aqua (1inch protocol)"]
-        Aqua["Aqua Core<br/>virtual balances,<br/>ship/dock/pull/push"]
-        SwapVM["swapVM<br/>execution engine"]
+    subgraph AquaCore["Aqua (1inch protocol, unmodified)"]
+        Aqua["<b>Aqua Core</b><br/>per-(maker,app,strategyHash)<br/>ledger + real settlement<br/>(ship/dock/pull/push)"]
     end
 
     Chainlink["<b>Chainlink</b><br/>Price oracle<br/>(push feeds)"]
@@ -97,28 +98,32 @@ flowchart TD
     DAO["<b>1inch DAO</b><br/>Receives a fee share"]
 
     LP -->|"declares universe,<br/>targets, config"| LPApp
-    LPApp -.->|"monitors via events"| Strategy
+    LPApp -.->|"monitors Swapped<br/>events"| Router
     LP -->|"controls (signs txs for)"| Wallet
 
-    LPApp -->|"prepares ship() tx for PM"| Wallet
+    LPApp -->|"prepares ship(app=Router, ...)<br/>tx for PM"| Wallet
     OtherStrategy -.->|"also tries to ship()<br/>from the same wallet"| Wallet
     Wallet -->|"every outgoing call<br/>checked by"| Guard
     Guard -->|"ship() allowed:<br/>PM's exact hash, or a<br/>single-group strategy"| Aqua
     Guard -.->|"reverts: cross-group or<br/>outside-universe token"| OtherStrategy
 
     Taker -->|"wants to swap TokenA for TokenB"| Routing
-    Routing -->|"finds the best price"| Aqua
-    Aqua -->|"runs the program"| SwapVM
-    SwapVM -->|"calls the<br/>strategy logic"| Strategy
+    Routing -->|"calls quote() then<br/>swap()"| Router
 
+    Router -.->|"compiled from<br/>(inherits)"| SwapVMLib
+    Router -->|"reads this router's<br/>authorized balance<br/>(safeBalances)"| Aqua
+    Router -->|"dispatches opcode:<br/>runs the program"| Strategy
     Strategy -->|"reads real balance<br/>(balanceOf, ADR-0002)"| Wallet
     Strategy -->|"reads current price"| Chainlink
-    Strategy -->|"computes price,<br/>authorizes pull/push"| Aqua
-    Aqua -->|"moves tokens to/from"| Wallet
+    Strategy -->|"returns computed<br/>amountIn/amountOut"| Router
 
-    Strategy -.->|"half the fee"| DAO
+    Router <-->|"collects tokenIn /<br/>pays out tokenOut"| Taker
+    Router -->|"push(tokenIn),<br/>pull(tokenOut)"| Aqua
+    Aqua -->|"transferFrom — the actual<br/>ERC20 move, maker's<br/>approval required"| Wallet
 
-    Dashboard -.->|"reads on-chain events"| Strategy
+    Router -.->|"half the fee"| DAO
+
+    Dashboard -.->|"reads on-chain events"| Router
 
     classDef actor fill:#f1f5f9,stroke:#64748b,color:#0f172a
     classDef bleu fill:#2563eb,stroke:#1e40af,color:#ffffff,font-weight:bold
@@ -126,12 +131,14 @@ flowchart TD
     classDef guard fill:#dc2626,stroke:#991b1b,color:#ffffff,font-weight:bold
     classDef aqua fill:#16a34a,stroke:#15803d,color:#ffffff,font-weight:bold
     classDef external fill:#e2e8f0,stroke:#64748b,color:#0f172a
+    classDef vendored fill:#eef2ff,stroke:#4338ca,color:#312e81,stroke-dasharray: 3 3
 
     class LP,Taker,OtherStrategy actor
-    class LPApp,Dashboard,Strategy bleu
+    class LPApp,Dashboard,Router,Strategy bleu
+    class SwapVMLib vendored
     class Wallet wallet
     class Guard guard
-    class Aqua,SwapVM aqua
+    class Aqua aqua
     class Chainlink,Routing,DAO external
 
     style BleuScope fill:#eff6ff,stroke:#1e40af,stroke-dasharray: 5 5
@@ -139,9 +146,29 @@ flowchart TD
     style WalletScope fill:#fff7ed,stroke:#b45309,stroke-dasharray: 5 5
 ```
 
-**What this grant builds** (blue boxes): the strategy contract, the LP-facing web app, and the
-protocol-wide monitoring dashboard. Everything else — Aqua, swapVM, Chainlink, 1inch's own
-routing — already exists; we only integrate against it.
+**What this grant builds** (blue boxes): the pricing instruction, the router that hosts it
+(ADR-0010 — our own, not 1inch's shared `AquaSwapVMRouter`), the LP-facing web app, and the
+protocol-wide monitoring dashboard. Everything else — Aqua core, the SwapVM base contract our
+router inherits, Chainlink, 1inch's own routing — already exists; we only integrate against it.
+
+**The Router vs. the Instruction — a distinction earlier revisions of this diagram collapsed.**
+The Router is the contract a taker actually calls (`quote()`/`swap()`); it's also the `app`
+address Aqua's ledger is keyed on at `ship()` time — "app" here is just Aqua's generic term for
+whoever ships a strategy, **not** the same thing as the named `AquaApp` base contract (see
+[ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)'s clarification; our Router
+is an app to Aqua, but doesn't inherit `AquaApp.sol`). The Router reads
+`AQUA.safeBalances(maker, address(this), strategyHash, ...)` — scoped to itself as `app` — runs
+the maker's program, and settles by calling `AQUA.pull()` / `AQUA.push()`. Aqua does the actual
+`IERC20.transferFrom` on settlement, moving real tokens directly between the Safe and the taker
+(`pull`) or between the Router and the Safe (`push`) — this requires the Safe to have approved
+Aqua for every universe token, an onboarding step not yet written up anywhere (owed alongside
+the migration checklist [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md)
+already flags). The Instruction is just the one opcode in the Router's table our pricing logic
+occupies, invoked mid-program. `AQUA.pull()` is keyed by `msg.sender`, i.e. by Router address —
+only the Router that shipped a given `strategyHash` can ever pull for it, which is exactly why
+[ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) anchors trust to the strategy hash
+and not to the Router's address (a Router can be `msg.sender` for many different strategies, not
+just PM's).
 
 **The dedicated maker wallet** (orange) is the load-bearing design choice: a fresh **Safe** —
 not an EOA, see [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) — the LP creates and
@@ -167,29 +194,35 @@ removal).
 ```mermaid
 %%{init: {"flowchart": {"defaultRenderer": "elk"}} }%%
 flowchart TD
-    Aqua["<b>Aqua Core</b><br/>calls the strategy<br/>via swapVM"]
-    Wallet[("Dedicated Maker Wallet<br/>(LP's EOA/Safe)")]
+    Taker["Taker / 1inch Routing"]
+    Aqua["<b>Aqua Core</b><br/>ledger + settlement<br/>(pull/push do the<br/>real transferFrom)"]
+    Wallet[("Dedicated Maker Wallet<br/>(Safe, ADR-0011)")]
     Chainlink["Chainlink<br/>(price feeds)"]
 
-    subgraph Strategy["Portfolio Manager Strategy (swapVM instruction, own router, immutable once shipped)"]
-        Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
+    subgraph RouterBox["Router (SwapVM base + our opcode table, ADR-0010)"]
+        Entrypoints["<b>quote() / swap()</b><br/>builds Context,<br/>runs runLoop(),<br/>settles via Aqua"]
 
-        ExposureReader["<b>Exposure Reader</b><br/>reads the wallet's real balance,<br/>ONLY over declared tokens<br/>(guards against pollution)"]
+        subgraph Strategy["Portfolio Manager Instruction — one opcode, immutable once shipped"]
+            Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
 
-        Smoothing["<b>Exposure Guardrails</b><br/>fee + gas-cost gate<br/><i>(real economics, not a<br/>hand-picked band — no<br/>moving average)</i>"]
+            ExposureReader["<b>Exposure Reader</b><br/>reads the wallet's real balance,<br/>ONLY over declared tokens<br/>(guards against pollution)"]
 
-        OracleAdapter["<b>Oracle Adapter</b><br/>reads Chainlink,<br/>normalizes decimals,<br/>checks staleness"]
+            Smoothing["<b>Exposure Guardrails</b><br/>fee + gas-cost gate<br/><i>(real economics, not a<br/>hand-picked band — no<br/>moving average)</i>"]
 
-        PricingEngine["<b>Pricing Engine</b><br/>constant-mean curve<br/>(Balancer-style, reimplemented)<br/>discount/surcharge by<br/>trade direction"]
+            OracleAdapter["<b>Oracle Adapter</b><br/>reads Chainlink,<br/>normalizes decimals,<br/>checks staleness"]
 
-        FeeAccounting["<b>Fee Accounting</b><br/>protocol fee inside the price,<br/>DAO/Bleu split"]
+            PricingEngine["<b>Pricing Engine</b><br/>constant-mean curve<br/>(Balancer-style, reimplemented)<br/>discount/surcharge by<br/>trade direction"]
 
-        Invariant["<b>Curve invariant</b><br/>(not a separate module -<br/>guaranteed by the<br/>Pricing Engine's math)<br/>every closed round-trip ends<br/>in the pool's favor -><br/>a donation becomes a gift,<br/>never a profit"]
+            FeeAccounting["<b>Fee Accounting</b><br/>protocol fee inside the price,<br/>DAO/Bleu split"]
+
+            Invariant["<b>Curve invariant</b><br/>(not a separate module -<br/>guaranteed by the<br/>Pricing Engine's math)<br/>every closed round-trip ends<br/>in the pool's favor -><br/>a donation becomes a gift,<br/>never a profit"]
+        end
     end
 
     DAO["1inch DAO"]
 
-    Aqua -->|"requests a price for<br/>TokenA -> TokenB"| PricingEngine
+    Taker -->|"calls"| Entrypoints
+    Entrypoints -->|"dispatches this opcode<br/>(runLoop)"| PricingEngine
     ExposureReader -->|"reads balance"| Wallet
     ExposureReader -->|"uses"| Config
     ExposureReader --> Smoothing
@@ -198,8 +231,9 @@ flowchart TD
     OracleAdapter -->|"price per token"| PricingEngine
     PricingEngine -->|"relies on"| Invariant
     PricingEngine --> FeeAccounting
-    FeeAccounting -->|"returns final price<br/>+ authorizes pull/push"| Aqua
-    Aqua -->|"moves tokens"| Wallet
+    FeeAccounting -->|"returns computed<br/>amountIn/amountOut"| Entrypoints
+    Entrypoints -->|"push(tokenIn),<br/>pull(tokenOut)"| Aqua
+    Aqua -->|"transferFrom —<br/>the actual move"| Wallet
     FeeAccounting -.->|"half the fee"| DAO
 
     classDef aqua fill:#16a34a,stroke:#15803d,color:#ffffff,font-weight:bold
@@ -208,15 +242,18 @@ flowchart TD
     classDef config fill:#7c3aed,stroke:#5b21b6,color:#ffffff,font-weight:bold
     classDef logic fill:#6366f1,stroke:#4338ca,color:#ffffff,font-weight:bold
     classDef invariant fill:#fce7f3,stroke:#be185d,color:#0f172a,stroke-dasharray: 3 3
+    classDef router fill:#1d4ed8,stroke:#1e3a8a,color:#ffffff,font-weight:bold
 
     class Aqua aqua
     class Wallet wallet
-    class Chainlink,DAO external
+    class Chainlink,DAO,Taker external
     class Config config
     class ExposureReader,Smoothing,OracleAdapter,PricingEngine,FeeAccounting logic
     class Invariant invariant
+    class Entrypoints router
 
-    style Strategy fill:#eff6ff,stroke:#1e40af,stroke-dasharray: 5 5
+    style RouterBox fill:#eff6ff,stroke:#1e3a8a,stroke-dasharray: 5 5
+    style Strategy fill:#eef2ff,stroke:#1e40af,stroke-dasharray: 3 3
 ```
 
 ### Component notes, grounded against the real Aqua interfaces
@@ -304,6 +341,15 @@ flowchart TD
 - **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and
   [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source"
   actually means for this repo's own contracts, independent of the mechanism design.
+- **Routing discoverability — still genuinely open, not just a formality.** Deploying our own
+  Router (ADR-0010) makes shipping unilateral, but it doesn't by itself confirm 1inch's own
+  routing/solver infrastructure will find and price against an independently-deployed `SwapVM`
+  router the way it does `AquaSwapVMRouter`. [`ROADMAP.md`](ROADMAP.md)'s M4 milestone already
+  carries this as an unchecked item ("confirm the strategy is reachable through 1inch's own
+  routing, not only via direct calls"). Worth resolving directly with 1inch rather than assuming
+  the SwapVM interface alone buys discoverability — if it doesn't, that's true whether the
+  strategy is a `SwapVM` instruction or a plain `AquaApp`, and changes what "the point of using
+  SwapVM" actually is (see [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)).
 
 ### Simulation results
 

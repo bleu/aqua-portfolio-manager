@@ -62,6 +62,13 @@ ADR-0002's original "EOA or Safe" language.
 - Zero-protocol-change integration is a strong pitch, but onboarding has a real cost this ADR
   doesn't remove: LP must create the wallet, fund it, and re-ship existing strategies from it.
   An onboarding guide / migration checklist is owed by Milestone 4.
+- **Not yet written up anywhere: the Safe must approve Aqua for every universe token.**
+  `Aqua.pull(maker, strategyHash, token, amount, to)` settles via
+  `IERC20(token).safeTransferFrom(maker, to, amount)` (`Aqua.sol:63-70`) — a real ERC20
+  `transferFrom` against the maker's own balance, which reverts without a prior `approve(AQUA,
+  ...)` from the Safe. This is a one-time onboarding step per universe token, distinct from
+  funding the wallet, and belongs in the same Milestone 4 onboarding guide the bullet above
+  already owes.
 - The exposure reader must filter to the declared universe only — anything else that lands in
   the wallet (accidental or a deliberate donation) is ignored by the reading. This is a spec
   requirement, not a documentation note.

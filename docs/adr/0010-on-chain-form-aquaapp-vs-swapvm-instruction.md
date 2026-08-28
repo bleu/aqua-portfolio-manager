@@ -25,9 +25,13 @@ contribution for the grant's evaluation.
 
 Everything else in this ADR log — the maker-wallet scope (ADR-0002), the group model
 (ADR-0003), the pricing curve (ADR-0004), the oracle (ADR-0005), smoothing (ADR-0006), and the
-invariant proof (ADR-0007) — is written assuming the `AquaApp` path, per
-[`../ARCHITECTURE.md`](../ARCHITECTURE.md)'s explicit note that this is the current working
-assumption, not a closed decision.
+invariant proof (ADR-0007) — was originally written assuming the `AquaApp` path, per an earlier
+revision of [`../ARCHITECTURE.md`](../ARCHITECTURE.md) that flagged this as a working assumption,
+not a closed decision. **Correction, current as of Milestone 1 completion:** that note no longer
+exists — `ARCHITECTURE.md`'s status line now reads "Milestone 1 complete" against the
+instruction/own-router form this ADR settles below. Kept here as a historical record of the
+context this decision was actually made against, not as a description of the doc's current
+state.
 
 ### What the vendored `lib/swap-vm` source actually shows
 
@@ -71,6 +75,19 @@ Read directly rather than assumed, three facts change how the three options comp
    "`AquaApp` that optionally inherits a swap-vm instruction contract for its pure math" — which
    buys nothing today, since swap-vm ships no weighted curve to inherit in the first place
    (ADR-0004's curve has to be written from scratch either way).
+4. **"App" (Aqua's ledger term) and `AquaApp` (the base contract) are not the same thing — worth
+   being explicit about this given how easily the two get conflated.** `IAqua.ship(address app,
+   ...)` takes `app` as a bare address; Aqua never calls back into it, so *anything* that calls
+   `pull()`/`push()` as `msg.sender` for a given `(maker, app, strategyHash)` is "an app" by
+   definition — our own Router included. `lib/aqua/src/AquaApp.sol` is a separate, specific,
+   opt-in 69-line base contract (a `nonReentrantStrategy(maker, strategyHash)` modifier plus
+   `_safeCheckAquaPush()`, which checks `rawBalances(maker, address(this), strategyHash, token)`
+   against an expected post-push balance) meant for a strategy author writing a bespoke swap
+   entrypoint from scratch, bypassing SwapVM entirely. Our Router is an app to Aqua's ledger, but
+   does not inherit `AquaApp.sol` and gets no benefit from doing so — `SwapVM.sol` already
+   provides its own equivalent reentrancy lock (keyed by `orderHash`, not `(maker,
+   strategyHash)`) and its own push-verification check
+   (`AquaBalanceInsufficientAfterTakerPush`), solving the same problem a different way.
 
 ## Decision
 
@@ -102,9 +119,11 @@ a real cost, accepted in exchange for not being blocked on an external party rig
 - Every ADR in this log written against the `AquaApp` assumption (ADR-0002 through ADR-0008)
   describes logic/data-shape decisions (group model, pricing curve, oracle, smoothing, KPIs)
   that don't depend on which contract holds them — only *where* the state and pricing
-  math live changes. `ARCHITECTURE.md` needs its L2 diagram and component notes updated from the
-  `AquaApp` framing to the instruction/own-router framing (tracked separately, not blocking this
-  ADR).
+  math live changes. `ARCHITECTURE.md`'s L1/L2 diagrams and component notes are now updated from
+  the `AquaApp` framing to the instruction/own-router framing, and further corrected to show the
+  Router (the `quote()`/`swap()` entrypoints and `app` Aqua's ledger is keyed on) as distinct
+  from the Instruction (the one opcode our pricing logic occupies) — a distinction the diagrams
+  collapsed even after the initial `AquaApp`-to-instruction update.
 - New audited surface this decision takes on: our own router's EIP-712 order signing,
   taker-traits parsing, WETH unwrap, and maker hooks/callbacks — needs the same audit scrutiny
   as the pricing/smoothing logic itself, not treated as "vendor code we can trust."
@@ -114,6 +133,15 @@ a real cost, accepted in exchange for not being blocked on an external party rig
 - `LICENSING-RISK.md`'s Aqua-Source-1.1 copyleft/commercial-trigger analysis applies to this
   path too (it's not AquaApp-specific) and remains open, unresolved with counsel — this decision
   doesn't close it.
+- **Deploying our own Router doesn't by itself confirm 1inch's routing/solver infrastructure
+  will discover and price against it.** The interface-compatibility argument for choosing
+  SwapVM over a bespoke `AquaApp` (a standard `quote()`/`swap()`/`Order` shape that 1inch's
+  routing already knows how to call) only holds if an independently-deployed router is actually
+  reachable through that routing, not only through direct calls — unconfirmed, and tracked as an
+  open item in [`../ROADMAP.md`](../ROADMAP.md)'s M4 milestone. Worth resolving directly with
+  1inch: if independent routers aren't discoverable without additional registration on their
+  side, that registration step is what actually buys reachability, not the choice of `SwapVM`
+  over `AquaApp` per se.
 
 ## References
 

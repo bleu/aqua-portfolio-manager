@@ -34,9 +34,13 @@ and every token must belong to *some* declared group — the Guard reverts other
 swapVM router is a general-purpose opcode dispatcher — the same router address can run PM's
 strategy *and* any other strategy built from the same opcode set, each with its own
 `strategyHash`. Checking `app` alone would trust every strategy that happens to share PM's
-router, not just PM itself. The group-membership mapping and the trusted strategy hash are both
-fixed at the Guard's construction, with no setter, so neither can be loosened later by whoever
-controls the Safe.
+router, not just PM itself. This isn't a hypothetical distinction: `Aqua.pull(maker,
+strategyHash, token, amount, to)` looks up `_balances[maker][msg.sender][strategyHash][token]` —
+keyed by `msg.sender`, i.e. by router address, not by strategy. Any strategy shipped through the
+same router can call `pull()` as that same `msg.sender`; only `strategyHash` distinguishes one
+strategy's authorized balance from another's sharing the same router. The group-membership
+mapping and the trusted strategy hash are both fixed at the Guard's construction, with no
+setter, so neither can be loosened later by whoever controls the Safe.
 
 This makes the assumption ADR-0003 and ADR-0007 already relied on ("only PM, or a pure
 donation, can move what PM prices") structurally true, rather than hoped-for. See
@@ -109,6 +113,8 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
   enforces
 - `docs/adr/0007-donation-resistance-via-curve-invariant.md` — the proof whose "only PM or a
   donation" precondition this ADR makes true
+- `lib/aqua/src/Aqua.sol:63-70` — `pull()`'s `msg.sender`-keyed ledger lookup, the concrete
+  mechanism behind "trust the strategy hash, not the router address" above
 - Safe (`safe-smart-account`) `contracts/base/GuardManager.sol`, `CHANGELOG.md` (`IModuleGuard`
   introduced in v1.5.0)
 - Zodiac (Gnosis Guild) `zodiac-guard-scope` and Roles Modifier — real, audited precedent for a
