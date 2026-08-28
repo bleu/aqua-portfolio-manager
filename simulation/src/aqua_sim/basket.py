@@ -2,16 +2,25 @@
 
 ADR-0011/BasketScopeGuard forbids any strategy but PM's own from *crossing* a declared
 group boundary, but does not forbid another strategy from trading *within* the same group.
-Per `proofs-of-concept/swapvm-multi-token/src/BasketXYCSwap.sol`'s real formula, PM's own
-quote for tokenIn->tokenOut already reads a third (basket) token's balance --
-`effectiveBalanceOut = balanceOut + basketToken's Aqua balance` -- so another strategy
-moving that basket token's balance changes what PM quotes, without PM trading at all. This
-module answers "how does PM react to that" -- not by rebuilding the full multi-token group
-routing logic (`BLEUDEV-75`, separate, unbuilt), but by generalizing the PoC's exact
-augmentation to the weighted curve this package already implements (`curve.py`), and adding
-a minimal model of the other strategy: an independent noise process directly on the basket
-token's balance, since we neither know nor care what that other strategy's own pricing
-looks like -- only that it changes C's balance, which is the one thing that perturbs PM.
+`proofs-of-concept/swapvm-multi-token/src/BasketXYCSwap.sol`'s PoC formula augments PM's
+quote for tokenIn->tokenOut with a third (basket) token's raw balance --
+`effectiveBalanceOut = balanceOut + basketToken's Aqua balance` -- with no price conversion,
+which is only correct if the basket token happens to be worth the same as `balance_out`'s
+own token. ADR-0003 requires a group's value to be the oracle-valued *sum* of its members
+(e.g. a "stables" group of USDC + EURC, where EUR/USD floats) -- raw addition silently
+assumes currency parity that a genuinely oracle-valued group can't assume. This module
+models the corrected mechanism: the basket balance is converted through its own oracle
+price before it's added, and a stale price on that oracle rejects the trade outright
+(ADR-0005), rather than pricing off a stale or assumed-parity value. The Solidity PoC still
+does the uncorrected raw-add; fixing it is tracked separately, not part of this change.
+
+Also adds a minimal model of the other strategy sharing the basket: an independent noise
+process directly on the basket token's balance, since we neither know nor care what that
+other strategy's own pricing looks like -- only that it changes the shared balance, which is
+one of the two things that perturbs PM (the other now being that token's own oracle price).
+This module answers "how does PM react to that" -- not by rebuilding the full multi-token
+group routing logic (`BLEUDEV-75`, separate, unbuilt), but by generalizing the PoC's
+augmentation to the weighted curve this package already implements (`curve.py`).
 """
 
 from __future__ import annotations
@@ -27,28 +36,71 @@ from aqua_sim.metrics import cost_of_rebalancing, frictionless_reference_path, p
 from aqua_sim.simulate import MechanismSimConfig, SimulationResult
 
 
-def basket_augmented_state(state: CurveState, basket_balance: float) -> CurveState:
-    """The exact augmentation BasketXYCSwap.sol applies before pricing: `balance_out` is
-    replaced by `balance_out + basket_balance`. `basket_balance` is never itself part of
-    `state` -- it's a separate balance in the same declared group, held by the same wallet,
-    managed by some other strategy."""
-    return CurveState(state.balance_in, state.balance_out + basket_balance, state.weight_in, state.weight_out)
+class StalePriceError(ValueError):
+    """A group member's oracle price is older than its configured max age. The trade must be
+    rejected outright, not priced against a stale or fallback value (ADR-0005's Decision)."""
+
+
+def basket_augmented_state(
+    state: CurveState,
+    basket_balance: float,
+    basket_price_in_out: float = 1.0,
+    *,
+    basket_price_is_stale: bool = False,
+) -> CurveState:
+    """The oracle-valued augmentation ADR-0003 requires before pricing: `balance_out` is
+    replaced by `balance_out + basket_balance * basket_price_in_out` -- `basket_balance`
+    converted into `balance_out`'s own token via the basket token's oracle price, not added
+    raw. `basket_price_in_out=1.0` (the default) recovers the degenerate case where both
+    tokens happen to be worth the same (e.g. two USD stablecoins); anything else (e.g. a
+    EUR-pegged basket-mate priced against a USD-numeraire `balance_out`) requires the real
+    ratio. `basket_balance` is never itself part of `state` -- it's a separate balance in the
+    same declared group, held by the same wallet, managed by some other strategy.
+
+    Raises `StalePriceError` if `basket_price_is_stale` -- the caller is expected to have
+    already checked the feed's `updatedAt` against its configured max age (ADR-0005) and pass
+    the result in; this function refuses to price at all rather than silently falling back to
+    a stale or assumed value.
+    """
+    if basket_price_is_stale:
+        raise StalePriceError(
+            f"basket token's oracle price is stale; refusing to price the {state.balance_in}/"
+            f"{state.balance_out} pair against it rather than use a stale value"
+        )
+    if basket_price_in_out <= 0:
+        raise ValueError(f"basket_price_in_out must be positive, got {basket_price_in_out}")
+    return CurveState(
+        state.balance_in, state.balance_out + basket_balance * basket_price_in_out, state.weight_in, state.weight_out
+    )
 
 
 def apply_basket_aware_exact_in(
-    balance_in: float, balance_out: float, basket_balance: float, weight_in: float, weight_out: float, amount_in: float, fee: float
+    balance_in: float,
+    balance_out: float,
+    basket_balance: float,
+    weight_in: float,
+    weight_out: float,
+    amount_in: float,
+    fee: float,
+    basket_price_in_out: float = 1.0,
+    *,
+    basket_price_is_stale: bool = False,
 ) -> tuple[float, float]:
     """Runs one exact-in trade against the basket-augmented curve, then returns the REAL
     (non-augmented) new `(balance_in, balance_out)` -- `basket_balance` itself never moves
-    from this trade; only the two tokens actually being swapped do. Mirrors exactly how
-    BasketXYCSwap.sol reads the basket balance for pricing but never pulls/pushes it.
+    from this trade; only the two tokens actually being swapped do. Mirrors how
+    BasketXYCSwap.sol reads the basket balance for pricing but never pulls/pushes it, plus
+    the oracle price conversion and staleness rejection ADR-0003/ADR-0005 require (see
+    `basket_augmented_state`) that the Solidity PoC doesn't yet apply.
 
     The basket token inflates the curve's apparent output-side liquidity without being
     transferable itself, so a quote can come back larger than the real `balance_out` --
     raises `ValueError` rather than returning a negative real balance in that case.
     """
     state = CurveState(balance_in, balance_out, weight_in, weight_out)
-    effective_state = basket_augmented_state(state, basket_balance)
+    effective_state = basket_augmented_state(
+        state, basket_balance, basket_price_in_out, basket_price_is_stale=basket_price_is_stale
+    )
     amount_out = exact_in(effective_state, amount_in, fee)
     if amount_out >= balance_out:
         raise ValueError(
@@ -59,9 +111,20 @@ def apply_basket_aware_exact_in(
     return effective_state.balance_in + amount_in, balance_out - amount_out
 
 
-def basket_aware_spot_price(balance_in: float, balance_out: float, basket_balance: float, weight_in: float, weight_out: float) -> float:
+def basket_aware_spot_price(
+    balance_in: float,
+    balance_out: float,
+    basket_balance: float,
+    weight_in: float,
+    weight_out: float,
+    basket_price_in_out: float = 1.0,
+    *,
+    basket_price_is_stale: bool = False,
+) -> float:
     state = CurveState(balance_in, balance_out, weight_in, weight_out)
-    return spot_price(basket_augmented_state(state, basket_balance))
+    return spot_price(
+        basket_augmented_state(state, basket_balance, basket_price_in_out, basket_price_is_stale=basket_price_is_stale)
+    )
 
 
 @dataclass(frozen=True)
@@ -114,16 +177,23 @@ def run_basket_simulation(
     config: MechanismSimConfig,
     initial_basket_balance: float,
     cobasket_config: CoBasketAgentConfig | None,
+    basket_price_path: np.ndarray | None = None,
 ) -> BasketSimulationResult:
     """Runs the same simulation as `simulate.run_mechanism_simulation` (same background
     noise, same corrective-arb logic, same price path), except every trade against the A/B
     pair is priced through the basket-augmented curve (B is declared grouped with basket
-    token C, mirroring `BasketXYCSwap.sol`): `effective_balance_b = balance_b +
-    basket_balance`. If `cobasket_config` is given, an independent OTHER strategy also
-    trades C every step, per its own arrival process -- changing what PM quotes for A<->B
-    without PM doing anything. Passing `cobasket_config=None` holds C's balance constant,
-    isolating the effect of basket AUGMENTATION alone from the effect of another strategy
-    actively MOVING it.
+    token C): `effective_balance_b = balance_b + basket_balance * basket_price_path[t]`,
+    where `basket_price_path[t]` is C's oracle price denominated in B at step `t`
+    (`basket_augmented_state`; ADR-0003/ADR-0005). Defaulting `basket_price_path` to a
+    constant `1.0` array recovers the degenerate same-value-token case; pass a real path
+    (e.g. a EUR/USD-style series) to model a basket-mate that doesn't track B 1:1. This
+    function doesn't model oracle staleness itself -- `basket_price_path` is assumed
+    already-fresh at every step; see `basket_augmented_state`'s `basket_price_is_stale` for
+    where a staleness check would reject a trade instead. If `cobasket_config` is given, an
+    independent OTHER strategy also trades C every step, per its own arrival process --
+    changing what PM quotes for A<->B without PM doing anything. Passing
+    `cobasket_config=None` holds C's balance constant, isolating the effect of basket
+    AUGMENTATION alone from the effect of another strategy actively MOVING it.
 
     Tracking error and cost are computed on `(balance_a, balance_b)` alone, matching
     `simulate.run_mechanism_simulation` exactly -- C is not part of PM's own declared
@@ -140,6 +210,12 @@ def run_basket_simulation(
         price_path = config.price_path
     else:
         price_path = simulate_price_path(config.n_steps, config.dt_years, config.sigma_annual, seed=config.seed)
+    if basket_price_path is None:
+        basket_price_path = np.ones(config.n_steps + 1)
+    elif len(basket_price_path) != config.n_steps + 1:
+        raise ValueError(
+            f"basket_price_path must have length n_steps+1={config.n_steps + 1}, got {len(basket_price_path)}"
+        )
     rng = np.random.default_rng(config.seed)
 
     balance_a, balance_b = config.initial_balance_a, config.initial_balance_b
@@ -161,27 +237,32 @@ def run_basket_simulation(
             basket_balance, cobasket_happened = maybe_cobasket_trade(basket_balance, config.dt_years, cobasket_config, rng)
             n_cobasket_trades += int(cobasket_happened)
 
-        effective_ab = CurveState(balance_a, balance_b + basket_balance, weight_a, weight_b)
+        # basket_value: the basket balance converted through its own oracle price into B's
+        # numeraire (ADR-0003) -- what actually augments B's effective balance, not the raw
+        # token amount tracked in basket_balance_path.
+        basket_value = basket_balance * basket_price_path[t]
+
+        effective_ab = CurveState(balance_a, balance_b + basket_value, weight_a, weight_b)
         effective_ab, _, exo_happened = maybe_exogenous_trade(effective_ab, config.dt_years, config.exogenous, rng)
-        balance_a, balance_b = effective_ab.balance_in, effective_ab.balance_out - basket_balance
+        balance_a, balance_b = effective_ab.balance_in, effective_ab.balance_out - basket_value
         n_exogenous_trades += int(exo_happened)
 
-        effective_ab = CurveState(balance_a, balance_b + basket_balance, weight_a, weight_b)
+        effective_ab = CurveState(balance_a, balance_b + basket_value, weight_a, weight_b)
         new_effective_ab, _, arb_happened_ab = maybe_arbitrage_trade(
             effective_ab, 1 / price, config.arb, steps_since_last_arb, gas_cost_in=config.arb.gas_cost_b / price
         )
 
         if arb_happened_ab:
-            balance_a, balance_b = new_effective_ab.balance_in, new_effective_ab.balance_out - basket_balance
+            balance_a, balance_b = new_effective_ab.balance_in, new_effective_ab.balance_out - basket_value
             n_arb_trades += 1
             steps_since_last_arb = 0
         else:
-            effective_ba = CurveState(balance_b + basket_balance, balance_a, weight_b, weight_a)
+            effective_ba = CurveState(balance_b + basket_value, balance_a, weight_b, weight_a)
             new_effective_ba, _, arb_happened_ba = maybe_arbitrage_trade(
                 effective_ba, price, config.arb, steps_since_last_arb, gas_cost_in=config.arb.gas_cost_b
             )
             if arb_happened_ba:
-                balance_b, balance_a = new_effective_ba.balance_in - basket_balance, new_effective_ba.balance_out
+                balance_b, balance_a = new_effective_ba.balance_in - basket_value, new_effective_ba.balance_out
                 n_arb_trades += 1
                 steps_since_last_arb = 0
             else:
