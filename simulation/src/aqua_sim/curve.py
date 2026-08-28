@@ -52,7 +52,8 @@ class CurveState:
 def spot_price(state: CurveState) -> float:
     """SP(i->o) = (B_i / w_i) / (B_o / w_o) — PRICING.md "Spot price".
 
-    Token i priced in terms of token o, before fees.
+    Units of i paid per unit of o received, before fees — i.e. the price of o
+    denominated in i.
     """
     return (state.balance_in / state.weight_in) / (state.balance_out / state.weight_out)
 

@@ -45,8 +45,8 @@ def best_stale_quote_trade(
     worth trading at the real, current market rate. `exact_in` is concave in `a_in`
     (diminishing returns, same curve-bending property checked in
     `01_pricing_curve.ipynb`), so profit here is concave-minus-linear, i.e. also
-    concave — it has one interior maximum, found here by a plain grid-plus-refine
-    search over trade size (not a black-box optimizer, so the result stays easy to
+    concave — it has one interior maximum, found here by a plain ternary search
+    over trade size (not a black-box optimizer, so the result stays easy to
     verify by eye against a profit curve).
 
     Returns `(best_amount_in, best_profit)`. `best_profit <= 0` means there's no

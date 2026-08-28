@@ -95,8 +95,9 @@ def _target_balance_in_for_price(
     `invariant_value` would have if its spot price were exactly `target_price`.
 
     Derived by solving `{B_i^wi * B_o^wo = V, (B_i/wi)/(B_o/wo) = target_price}` for `B_i`:
-    `B_o = (wo/wi) * B_i / target_price`, substitute into the invariant, solve for `B_i`.
-    This sizes the trade an arbitrageur *would* need in the frictionless (fee=0) case; the
+    `B_o = (wo/wi) * B_i / target_price`, substitute into the invariant, solve for `B_i`
+    (using `weight_in + weight_out == 1`, true for every caller in this package, which is
+    what collapses `B_i^wi * B_i^wo` into `B_i^1`). This sizes the trade an arbitrageur *would* need in the frictionless (fee=0) case; the
     actual trade is then executed through `apply_exact_in` with the real fee, so realized
     balances always come from the one true (fee-inclusive) formula in `curve.py` — this
     helper only decides "how much", never "what happens when you trade that much".

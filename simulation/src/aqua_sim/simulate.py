@@ -71,7 +71,7 @@ def run_mechanism_simulation(config: MechanismSimConfig) -> SimulationResult:
 
     n_exogenous_trades = 0
     n_arb_trades = 0
-    steps_since_last_arb = config.arb.min_steps_between_trades
+    steps_since_last_arb = config.arb.min_steps_between_trades  # seed past cooldown so step 1 is eligible
 
     for t in range(1, config.n_steps + 1):
         price = price_path[t]
