@@ -33,9 +33,9 @@ simulation/
 
 | # | Notebook | Status | Covers |
 |---|---|---|---|
-| 01 | `01_pricing_curve.ipynb` | Done | Implements + checks the curve against `PRICING.md`/`INVARIANT-PROOF.md`: equal-weight reduces to `xy=k`, spot-price direction, the round-trip invariant (200k random trades), the `fee=0` equality case, donation-only-increases, degenerate-balance rejection. Also records (not hides) a known float64 precision limit near an empty pool at extreme trade sizes — matches `BLEUDEV-263`/`BLEUDEV-296`'s planned minimum-liquidity floor. |
-| 02 | `02_exogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Organic trade arrivals unrelated to the pool's own skew — Poisson arrival rate, unbiased direction (checked correctly, across many realizations, not one path), lognormal size distribution. |
-| 03 | `03_endogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Arbitrageur/solver-driven corrective flow. **Documents a real price-convention bug** this work found and fixed (see below) — kept in the notebook deliberately, not cleaned out of the record. Verifies arb direction both ways and a full year end-to-end, on the settled fee + gas-cost profitability gate — no tolerance band, no rate cap (`ADR-0006`, revised after a real sweep found neither reduces cost). |
+| 01 | `01_pricing_curve.ipynb` | Done | Implements + checks the curve against `PRICING.md`/`INVARIANT-PROOF.md`: equal-weight reduces to `xy=k`, spot-price direction, the round-trip invariant (200k random trades), the `fee=0` equality case, donation-only-increases, degenerate-balance rejection. Also records a known float64 precision limit near an empty pool at extreme trade sizes — matches `BLEUDEV-263`/`BLEUDEV-296`'s planned minimum-liquidity floor. |
+| 02 | `02_exogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Organic trade arrivals unrelated to the pool's own skew — Poisson arrival rate, unbiased direction (checked across many realizations, not one path), lognormal size distribution. |
+| 03 | `03_endogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Arbitrageur/solver-driven corrective flow. **Documents a real price-convention bug** this work found and fixed (see below). Verifies arb direction both ways and a full year end-to-end, on the settled fee + gas-cost profitability gate — no tolerance band, no rate cap (`ADR-0006`, revised after a real sweep found neither reduces cost). |
 | 04 | `04_naive_baselines.ipynb` | Done (`BLEUDEV-322`) | Periodic manual rebalance + threshold rebalance via a generic DEX — what the mechanism must beat, on the same cost/tracking-error metrics. On one seed, doesn't cleanly win either way: the mechanism tracks ~25x tighter but costs more on this LVR-style metric than either baseline, which barely register any gas/fee drag correcting as rarely as they do. |
 | 05 | `05_frontier_sweep.ipynb` | Done (`BLEUDEV-322`) | The tracking-error/cost-of-rebalancing comparison: the mechanism's one real operating point (fee + gas-cost gate — no tunable knob left to sweep) vs. both baselines (period/threshold sweeps), 15 Monte Carlo reps per point. **Result: 0/10 baseline settings are beaten on both cost and tracking at once** — the mechanism has by far the tightest tracking of anything tested, but loses on cost to every baseline setting tried, a real trade-off rather than outright dominance (checked as an explicit count, not eyeballed or asserted toward a target). |
 | 06 | `06_price_shocks.ipynb` | Done (`BLEUDEV-323`) | Jump-diffusion price paths (Merton: GBM + Poisson-arrival log-normal jumps) and a deterministic instantaneous shock injector. **Result: after a -30% shock, the mechanism recovers under a fixed measurement yardstick within a single step (~5 minutes), vs. ~9,360 minutes (~6.5 days) for the weekly baseline** — correcting a 30% skew is obviously worth its real gas cost, so the gate doesn't slow it down here. |
@@ -57,8 +57,7 @@ received"). Every isolated unit test happened to use `market_price=1.0` (its own
 reciprocal), so nothing caught the mismatch until a full end-to-end run produced a
 95th-percentile tracking error of 43% — wrong for a mechanism whose entire job is to hold
 tracking error small. Fixed, and locked in with a non-self-reciprocal regression check in
-`03_endogenous_flow.ipynb` §1. Left in the record as evidence this was checked end to
-end, not assumed correct because the algebra looked right on paper.
+`03_endogenous_flow.ipynb` §1.
 
 ## Running
 
