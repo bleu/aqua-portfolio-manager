@@ -1,15 +1,16 @@
-"""Regenerates this directory's committed CSVs from the real endpoints in README.md's table.
+"""Generates this directory's local CSV snapshot from the real endpoints in README.md's
+table — required once before running notebooks 08/09 (the CSVs are gitignored, not
+committed; see data/README.md).
 
 Not part of the normal notebook flow — `aqua_sim.marketdata` never imports this file, and
-no notebook runs it. It exists purely so a reviewer can independently verify the committed
-data is what it claims to be, or recapture a fresh dated snapshot. Run manually:
+no notebook runs it. Run manually:
 
     uv run python data/fetch_snapshot.py
 
 Requires network access. The 1inch calls need an API key (`api.1inch.dev` returns 401
-unauthenticated, per docs/reference/... — see PR #12's own description); set
-ONEINCH_API_KEY and re-run to also refresh those two files, or leave it unset to refresh
-just the CoinGecko/Balancer files and skip 1inch with a warning.
+unauthenticated without one); set ONEINCH_API_KEY and re-run to also refresh those two
+files, or leave it unset to refresh just the CoinGecko/Balancer files and skip 1inch with
+a warning.
 """
 
 from __future__ import annotations
@@ -115,7 +116,7 @@ def fetch_1inch_quotes_and_routes() -> None:
             data = _get_json(url, headers={"Authorization": f"Bearer {api_key}"})
             usdc_out = int(data["dstAmount"]) / 1e6
             qw.writerow([size, usdc_out, usdc_out / size])
-            for route in data.get("protocols", [[]])[0]:
+            for route in (data.get("protocols") or [[]])[0]:
                 for hop in route:
                     rw.writerow([size, hop["name"], hop["part"]])
             time.sleep(1)
