@@ -269,7 +269,11 @@ flowchart TD
   scoped to this one strategy only — not a wallet-wide reading; see
   [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for the full correction),
   and **only over tokens the LP declared** in the Config — anything else sitting in the wallet
-  (by accident or an intentional donation) is ignored by this read.
+  (by accident or an intentional donation) is ignored by this read. For a group holding more
+  than one token, the per-token `balanceOf` reads feed the Oracle Adapter below, which converts
+  and sums them into the one oracle-valued group total that `PRICING.md` and
+  [ADR-0003](adr/0003-oracle-valued-token-groups.md) call `B_i`/`B_o` — the Exposure Reader
+  itself only ever reads raw balances, it doesn't price them.
 - **Exposure Guardrails** — a fee + gas-cost profitability gate on the *current* real reading, no
   moving average, no separate hand-picked dead-zone or cooldown (a real sweep found neither
   reduces cost once correction is gated on real economics). Donation resistance doesn't depend on these —
@@ -281,7 +285,15 @@ flowchart TD
   [ADR-0006](adr/0006-exposure-smoothing.md).
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was
   considered and rejected specifically because the taker could choose which still-valid price
-  to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)).
+  to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)). Two jobs, both per-feed: check
+  each read `updatedAt` against a configured max-staleness threshold and **revert the whole
+  trade** if any group member involved fails that check (no fallback price, no degraded
+  execution — see ADR-0005's Decision); and, for a multi-token group, convert each member's
+  balance through its own price and sum into the one value the Pricing Engine treats as `B_i`
+  or `B_o` (ADR-0003). The reference PoC (`BasketXYCSwap.sol`) doesn't implement this
+  conversion yet — it adds a basket token's raw balance with no price applied, correct only by
+  coincidence when every group member is worth the same. The simulation model
+  (`simulation/src/aqua_sim/basket.py`) has the corrected, price-converting version.
 - **Pricing Engine** — the constant-mean weighted curve, i.e. Balancer's weighted-pool
   formula (the 80/20 BAL/WETH pool is the best-known public example of this exact math with
   unequal weights), *reimplemented from scratch*. See

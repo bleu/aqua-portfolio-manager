@@ -74,10 +74,17 @@ there's balance left to trade against, same as any constant-mean pool.
   implementation: the equal-weight case must reproduce the PoC's existing, tested numbers
   exactly.
 - **Single-token groups vs. multi-token groups (ADR-0003):** when a group holds more than one
-  token, `B_i`/`B_o` above is the group's *oracle-valued total*, not any one token's balance —
-  which token within a multi-token group actually moves on a given trade is a routing detail
-  the Exposure Reader / group config resolves before this formula is invoked, not something this
-  formula itself decides.
+  token, `B_i`/`B_o` above is the group's *oracle-valued total* —
+  `Σ (token_balance_j × oracle_price_j)` over every token `j` the group holds, all converted to
+  the same numeraire — not any one token's balance. Which token within a multi-token group
+  actually moves on a given trade is a routing detail the Exposure Reader / group config
+  resolves before this formula is invoked, not something this formula itself decides; the
+  oracle-valuation sum above is what this formula does need, and does receive, from that
+  resolution step.
+- **Any group member's oracle price stale beyond its configured max age (ADR-0005):** revert.
+  Applies per-feed, so a multi-token group needs every member fresh, not just the two tokens
+  actually being swapped — see ADR-0005's Consequences for why that's accepted rather than
+  narrowed to "only the tokens changing hands."
 
 ## Invariant proof
 
