@@ -67,7 +67,7 @@ example with real numbers in the PR history / Linear BLEUDEV-254 if a concrete w
 useful later.
 
 **Why this does NOT automatically cover cross-strategy interaction.** The proof above (lines
-17-40) shows `V` never decreases across a trade that follows *this strategy's own* formula
+25-48) shows `V` never decreases across a trade that follows *this strategy's own* formula
 (`PRICING.md`) — it says nothing about a trade against a *different* strategy's curve, which
 follows different math entirely and can move this strategy's `B_i`/`B_o` in a way that decreases
 `V` relative to where it stood a moment before. `thoughts/cross-strategy-manipulation.md` found a
@@ -94,8 +94,9 @@ sufficient for external donations and ordinary settlement noise. (Cross-strategy
 needed a different fix entirely, not more of this proof — see the correction above and
 `ADR-0011`.)
 
-The tolerance band and rate cap (ADR-0006) stay in scope, but on a different footing now: they're
-not load-bearing for this proof (the proof holds with or without them), they exist to reduce
-unnecessary rebalancing churn/cost. Neither reopens the lag problem smoothing did — the
-tolerance band is a stateless function of the *current* balance (no history to lag), and the
-rate cap only limits frequency/size, not what price a trade clears at.
+ADR-0006's fee + gas-cost profitability gate (no tolerance band, no rate cap — see that ADR's
+History for why both were dropped) is not load-bearing for this proof either: the proof holds
+regardless of whether or how often a correction fires, since it's a per-trade property, not one
+that depends on trade frequency. Gating correction on profitability doesn't reopen the lag
+problem smoothing did — it's a stateless function of the *current* balance and gas price, with
+no history to lag.

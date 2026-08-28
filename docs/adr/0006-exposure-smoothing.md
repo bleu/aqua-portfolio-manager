@@ -1,7 +1,8 @@
-# ADR-0006: Exposure guardrails — a tolerance band and rate caps (no EMA/TWAP)
+# ADR-0006: Exposure guardrails — a fee + gas-cost profitability gate (no tolerance band, no rate cap, no EMA/TWAP)
 
-**Status:** Accepted — revised 2026-08-18 to drop the EMA/TWAP moving average, revised
-2026-08-24 to pick concrete parameter values
+**Status:** Accepted — revised 2026-08-18 to drop the EMA/TWAP moving average; revised
+2026-08-25 to a fee + gas-cost profitability gate, superseding the tolerance-band/rate-cap
+values chosen 2026-08-24 (see "History" below for why).
 
 ## Context
 
@@ -25,25 +26,20 @@ Basket Scope Guard) — dropping smoothing didn't close that gap by itself; see 
 
 ## Decision
 
-No moving average. The exposure reading feeds the pricing engine directly off the current real
-balance. Two guardrails remain, kept for cost/UX reasons, not security:
+No moving average, no tolerance band, no rate cap. The exposure reading feeds the pricing
+engine directly off the current real balance, and a correction fires whenever doing so is
+profitable net of two costs, both fixed outside this ADR's scope:
 
-- **Tolerance band** — small deviations from target are priced as neutral, not corrective.
-  Chosen value: **0.5%**.
-- **Rate cap** — a ceiling on rebalancing frequency and amount per period. Chosen value:
-  **1 hour minimum between corrective trades**.
+- **`fee`** — the protocol fee, fixed at 2 bps by ADR-0008.
+- **`gas_cost_b`** — the arbitrageur's own real transaction cost, a placeholder based on
+  observed Base costs (**$0.10** — see History for how that number was arrived at).
 
-Both values come from `simulation/notebooks/10_parameter_decision.ipynb`. Every dimension
-that notebook measured — cost, tracking error, shock-recovery time, stale-quote exploit
-exposure — gets monotonically worse as either knob loosens, so there's no genuine in-model
-trade-off pushing toward these particular numbers over tighter ones; the mathematical
-optimum found in that sweep is a 0.1% band with a 5-minute rate cap. The chosen values are a
-deliberate, documented step back from that optimum: correction frequency (and so, gas cost —
-a placeholder throughout this whole simulation series) scales directly with tightness, and
-the chosen values allow up to 8,760 corrective transactions/year worst case versus
-105,120/year at the mathematical optimum. Once a gas-per-rebalance number exists
-(`BLEUDEV-265`), both knobs should tighten toward that optimum if the cost supports it — this
-is a placeholder, not a final answer.
+Nothing else gates a correction. A tolerance band and a rate cap were both tried first (see
+History) and dropped: at a realistic gas cost, neither reduces cost at all — the fee savings
+from correcting less often are almost exactly cancelled out by more value leaking to the
+market while the pool sits stale (a Loss-Versus-Rebalancing-style effect, not a tuning
+problem) — while tracking error gets dramatically worse. There is no cost/tracking trade-off
+here for either knob to usefully exploit.
 
 ## Consequences
 
@@ -51,92 +47,53 @@ is a placeholder, not a final answer.
   curve invariant alone (`../INVARIANT-PROOF.md`). Cross-strategy resistance was never this
   ADR's job to close and still isn't — that's `ADR-0011`, enforced at the wallet level, not by
   any parameter picked here.
-- The tolerance band and rate cap exist purely to reduce unnecessary rebalancing churn and cost
-  from ordinary noise (including intra-group drift from another strategy on the shared wallet,
-  which ADR-0003 already accepts by design) — not to bound an attack. Both are stateless
-  functions of the *current* balance/timing, so neither reintroduces the lag problem EMA/TWAP
-  had.
-- Still introduces parameters — band width, rate-cap thresholds — picked from a
-  tracking-error/cost-of-rebalancing simulation frontier (see ADR-0008), not a
-  security-critical choice. Values above.
+- No free parameters remain in this ADR's scope: `fee` is fixed by ADR-0008, and `gas_cost_b`
+  is an external, real-world number (Base's own transaction costs), not something this design
+  picks. Once a gas-per-rebalance number for the actual deployed contract exists
+  (`BLEUDEV-265`), `gas_cost_b` should be replaced by that measured value — tightening an
+  input, not reopening a design choice.
+- This doesn't change the cost-vs-baselines finding from the same work (0 of 10 swept baseline
+  settings beat the mechanism on both cost and tracking at once — see `ARCHITECTURE.md`'s
+  Milestone 1 section): the mechanism's cost floor is a structural consequence of quoting
+  continuously at all, not something a parameter choice inside this design can lower.
 
-## Revised decision — under review, not yet applied to notebooks/other docs (2026-08-25)
+## History
 
-**Still in progress — the reasoning below went through one real correction already; treat
-the conclusion as unsettled, not final.**
+**First pass (2026-08-24):** chose a 0.5% tolerance band and a 1-hour rate cap, from a sweep
+in a notebook since deleted (`10_parameter_decision.ipynb`) that measured cost, tracking
+error, shock-recovery time, and stale-quote exploit exposure — all of which got monotonically
+worse as either knob loosened. The chosen values were a deliberate step back from that sweep's
+mathematical optimum (a 0.1% band, 5-minute cap), trading tracking tightness for fewer
+corrective transactions (8,760/year worst case vs. 105,120/year at the optimum) — under a
+**$5-per-correction gas placeholder** reused from elsewhere in the simulation.
 
-The tolerance band and rate cap above are being reconsidered in favor of a **fee + gas-cost
-profitability gate**: an arbitrageur's correction only fires if the drift it captures is
-worth more than the trading fee plus their own real gas cost. First pass:
+**Second pass (2026-08-25):** that $5 gas figure was never checked against Base and turned out
+to be roughly 50x too high — real Base transaction costs run $0.01-$0.10 (L2 execution + L1
+data fee, OpenLiquid data, Q1 2026), corrected to **$0.10**. Redone at the realistic cost:
 
-- A review comment asked whether the tolerance band was doing anything the trading fee
-  didn't already do on its own — testing confirmed it wasn't: cost barely moved across the
-  entire swept band range.
-- Removing the band with no gas cost modeled made the mechanism correct on ~94% of all
-  simulated 5-minute steps — unrealistic, since it implicitly assumes gas is free.
-- Adding a gas cost to the arbitrageur's own profitability check, with no separate cooldown,
-  initially looked like it settled the question: at a **$5 placeholder** gas cost (reused,
-  unchecked, from an existing placeholder elsewhere in this simulation), corrections dropped
-  to ~577/year on their own, and an explicit cooldown swept on top of that gas gate (5min
-  through 1 day) changed nothing until set so loose it made tracking worse.
+- A fee + gas-cost profitability gate alone (no separate band or cooldown) already limits
+  corrections to something realistic — at $0.10 gas, corrections fire almost as often as with
+  no gas cost at all, since $0.10 is cheap enough that nearly any real drift is worth
+  correcting. Cost becomes dominated by cumulative trading-fee drag from correcting
+  near-continuously, not by gas.
 
-**That $5 figure was never actually checked against Base and turned out to be off by
-roughly 50x.** Real Base transaction costs run $0.01-$0.10 (L2 execution + L1 data fee,
-OpenLiquid data, Q1 2026) — corrected to **$0.10**. Redoing the comparison at the realistic
-gas cost changes the picture substantially:
+  ![Mechanism (single point) vs. naive baselines, at realistic Base gas cost](assets/0006-mechanism-vs-baselines.png)
 
-![Mechanism (single point) vs. naive baselines, at realistic Base gas cost](assets/0006-mechanism-vs-baselines.png)
+- A tolerance band and/or cooldown on top of the realistic-gas gate was tested directly next,
+  since cumulative fee drag looked like exactly the kind of cost a dead-zone might reduce.
+  Over a 200x range of correction frequency (~10,655/year down to 53/year), cost barely moved
+  (6.77% → 7.19%) while p95 tracking error got 40x worse (0.15% → 6.05%) — the fee savings
+  from correcting less often are almost exactly cancelled out by more value leaking to the
+  market while the pool sits stale.
 
-At $0.10 gas, the gate barely throttles anything — corrections fire almost as often as with
-no gas cost at all, because $0.10 is cheap enough that nearly any real drift is worth
-correcting. The mechanism's cost is no longer gas-bound; it's now dominated by **cumulative
-trading-fee drag** from correcting near-continuously (2 bps × a very large number of
-corrections over a year adds up). Checked against the same 10 baseline settings: **0 of 10**
-beat the mechanism on both cost and tracking at once — the mechanism still has by far the
-tightest tracking of anything tested, but every baseline setting is now cheaper than it,
-specifically because they all correct far less often.
+  ![Sweeping tolerance band and cooldown at realistic gas cost](assets/0006-tolerance-cooldown-sweep.png)
 
-**This walks back the "no more free parameters to pick" conclusion from the first pass.**
-Once gas is priced realistically (cheap, as Base actually is), gas cost isn't what
-should be limiting correction frequency — cumulative fee drag is, and nothing in the
-first-pass fee+gas-only design controls that. That raised a real question: does a
-dead-zone and/or cooldown *on top of* the realistic-gas mechanism actually trade cost for
-tracking, the way the old tolerance band was assumed to?
-
-**Answer: no, not meaningfully — and the reason matters.** "Cost" here isn't raw fee
-accounting; it's value lost against a frictionless, instantly-rebalanced reference (an
-LVR-style metric — see `metrics.py`'s `cost_of_rebalancing`), which also counts value
-leaked to informed/opportunistic trades against an increasingly stale price while the pool
-sits uncorrected. Sweeping both knobs independently:
-
-![Sweeping tolerance band and cooldown at realistic gas cost](assets/0006-tolerance-cooldown-sweep.png)
-
-Over a 200x range of correction frequency (from ~10,655 corrections/year down to 53/year),
-cost barely moves (6.77% → 7.19%, a ~6% relative change) while p95 tracking error gets 40x
-worse (0.15% → 6.05%). The fee savings from correcting less often are almost exactly
-cancelled out by more value leaking to the market while the pool sits stale — a real,
-structural property of continuously quoting a firm price (the same Loss-Versus-Rebalancing
-effect the LVR literature already describes, cited in `ADR-0011`'s alternatives), not a
-tuning problem. **Loosening either knob is strictly worse: it doesn't save meaningful cost,
-and it makes tracking dramatically worse.** There is no cost/tracking trade-off here for a
-dead-zone or cooldown to usefully exploit.
-
-**Settled conclusion:** no tolerance band, no cooldown. `fee` (fixed by ADR-0008) and
-`gas_cost_b` (the realistic Base placeholder) are the only two parameters, and the
-mechanism should correct as tightly and often as gas-cost profitability allows — anything
-looser only gives up tracking for no real cost benefit. This does **not** change the
-cost-vs-baselines finding above (0/10 dominated): the mechanism's ~6.8% cost floor is a
-structural consequence of quoting continuously at all, not something a parameter choice
-inside this design can lower. Closing that gap, if it's worth closing, is a different-shape
-problem than picking a band width.
-
-This section is a proposal that has reached a settled conclusion but is not yet carried
-through to `simulation/notebooks/` (03, 05, 06, 07, 08, 09 all still construct the old
-tolerance-band/cooldown config, and `10_parameter_decision.ipynb` still exists), or to
-`ARCHITECTURE.md`/`ROADMAP.md`'s "10/10" and "All met" language. Those are a separate,
-larger follow-up once this direction is confirmed.
+Both charts and the underlying sweep are why the Decision above has no tolerance band or rate
+cap: loosening either knob is strictly worse under a realistic gas cost, so there's nothing for
+them to usefully trade off.
 
 ## References
 
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — Exposure Smoothing component notes
-- [`../../simulation/notebooks/10_parameter_decision.ipynb`](../../simulation/notebooks/10_parameter_decision.ipynb) — the sweep and decision behind the tolerance-band/rate-cap values this ADR is moving away from (see "Revised decision" above)
+- `simulation/` — the notebooks and code behind every number in this ADR (currently a
+  separate open PR, not yet merged as of this writing)
