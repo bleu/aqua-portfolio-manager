@@ -50,7 +50,7 @@ def apply_basket_aware_exact_in(
     state = CurveState(balance_in, balance_out, weight_in, weight_out)
     effective_state = basket_augmented_state(state, basket_balance)
     amount_out = exact_in(effective_state, amount_in, fee)
-    if amount_out > balance_out:
+    if amount_out >= balance_out:
         raise ValueError(
             f"basket-aware quote of {amount_out} exceeds the real transferable "
             f"balance_out={balance_out}; the basket token affects pricing but cannot "
@@ -152,7 +152,7 @@ def run_basket_simulation(
     n_exogenous_trades = 0
     n_arb_trades = 0
     n_cobasket_trades = 0
-    steps_since_last_arb = config.arb.min_steps_between_trades
+    steps_since_last_arb = config.arb.min_steps_between_trades  # seed past cooldown so step 1 is eligible
 
     for t in range(1, config.n_steps + 1):
         price = price_path[t]
