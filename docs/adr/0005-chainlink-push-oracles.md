@@ -37,7 +37,10 @@ is the concrete behavior behind the Oracle Adapter's "checks staleness" responsi
 [`ARCHITECTURE.md`](../ARCHITECTURE.md), previously named there but not specified as a
 behavior anywhere. The exact per-feed threshold values are a parameter, not a design
 decision — deferred to the same place other concrete parameters land (see
-[ADR-0006](0006-exposure-smoothing.md) for the pattern).
+[ADR-0006](0006-exposure-smoothing.md) for the pattern). This threshold is also what actually
+bounds the "residual staleness-driven LVR" accepted in Context above: lag *within* the
+threshold is that bounded cost; a read that would exceed it doesn't get to become a larger,
+unbounded cost, because the trade reverts before it can happen.
 
 ## Consequences
 
@@ -54,7 +57,10 @@ decision — deferred to the same place other concrete parameters land (see
   strategy, it just blocks that one group's trades in the meantime.
 - A multi-token group (ADR-0003) needs every member's feed fresh for a trade against that
   group to succeed, not just the two tokens actually changing hands — one stale feed on an
-  otherwise-uninvolved group member blocks the whole group until it updates.
+  otherwise-uninvolved group member blocks the whole group until it updates. This isn't an
+  arbitrarily wide check: ADR-0003's `B_i`/`B_o` for a multi-token group is a sum over every
+  member's oracle-valued balance, so every member's price is already an input to that group's
+  side of the trade, whether or not that specific member's tokens move.
 
 ## References
 

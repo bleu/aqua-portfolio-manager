@@ -286,14 +286,15 @@ flowchart TD
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was
   considered and rejected specifically because the taker could choose which still-valid price
   to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)). Two jobs, both per-feed: check
-  each read `updatedAt` against a configured max-staleness threshold and **revert the whole
+  each read's `updatedAt` against a configured max-staleness threshold and **revert the whole
   trade** if any group member involved fails that check (no fallback price, no degraded
   execution — see ADR-0005's Decision); and, for a multi-token group, convert each member's
   balance through its own price and sum into the one value the Pricing Engine treats as `B_i`
   or `B_o` (ADR-0003). The reference PoC (`BasketXYCSwap.sol`) doesn't implement this
   conversion yet — it adds a basket token's raw balance with no price applied, correct only by
   coincidence when every group member is worth the same. The simulation model
-  (`simulation/src/aqua_sim/basket.py`) has the corrected, price-converting version.
+  (`simulation/src/aqua_sim/basket.py`) has the corrected, price-converting version — currently
+  on a separate open PR (#12), not yet merged as of this writing.
 - **Pricing Engine** — the constant-mean weighted curve, i.e. Balancer's weighted-pool
   formula (the 80/20 BAL/WETH pool is the best-known public example of this exact math with
   unequal weights), *reimplemented from scratch*. See
