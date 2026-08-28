@@ -152,7 +152,7 @@ protocol-wide monitoring dashboard. Everything else — Aqua core, the SwapVM ba
 router inherits, Chainlink, 1inch's own routing — already exists; we only integrate against it.
 
 **The Router vs. the Instruction — a distinction earlier revisions of this diagram collapsed.**
-The Router is the contract a taker actually calls (`quote()`/`swap()`); it's also the `app`
+The Router is the contract a taker calls (`quote()`/`swap()`); it's also the `app`
 address Aqua's ledger is keyed on at `ship()` time — "app" here is just Aqua's generic term for
 whoever ships a strategy, **not** the same thing as the named `AquaApp` base contract (see
 [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)'s clarification; our Router
