@@ -80,6 +80,12 @@ def simulate_jump_diffusion_price_path(
     the driftless diffusion. Set `jump_mean_log` negative for a deliberately
     crash-biased stress scenario (e.g. `-0.3` for jumps centered around a 30% drop).
     """
+    if n_steps <= 0:
+        raise ValueError(f"n_steps must be positive, got {n_steps}")
+    if dt_years <= 0:
+        raise ValueError(f"dt_years must be positive, got {dt_years}")
+    if sigma_annual < 0:
+        raise ValueError(f"sigma_annual must be non-negative, got {sigma_annual}")
     if jump_rate_per_year < 0:
         raise ValueError(f"jump_rate_per_year must be non-negative, got {jump_rate_per_year}")
     if jump_std_log < 0:
