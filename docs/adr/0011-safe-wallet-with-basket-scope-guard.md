@@ -12,26 +12,16 @@ the wallet could move tokens between groups (or in from outside the declared uni
 PM's curve would price the result as if it were legitimate. `thoughts/cross-strategy-manipulation.md`
 worked this out in full with a concrete numeric exploit.
 
-Two families of fix were explored before this one:
-
-- An oracle-informed reward mechanism (virtual weight anchored to a live oracle price, plus a
-  rebalancing reward capped at a provably-real surplus) — mathematically sound, but leans on a
-  live oracle for a safety-critical property, which the LVR literature (Milionis et al.) warns
-  against.
-- A set of layered guardrails modeled on Balancer's own Managed Pool circuit breaker, an
-  oracle-informed reward, and a time-decay surcharge modeled on mutual-fund redemption fees
-  (`thoughts/cross-strategy-layered-defense.md`) — each layer individually well-precedented, but
-  the team decided against carrying three separate mechanisms, each with its own parameters and
-  failure modes, when the underlying problem might be closable structurally instead.
-
-The team's direction (2026-08-20): **don't bound the risk — remove the capability.** No strategy
-other than PM's own should be able to cross a group boundary or touch a token outside the
-declared universe. If that's enforceable, the cross-strategy problem doesn't need a mathematical
-bound at all — it needs to not exist.
+Two families of fix were explored and rejected before this one — see Alternatives considered
+below.
 
 ## Decision
 
-The maker wallet must be a Safe, with a **Basket Scope Guard** installed (`ITransactionGuard`,
+**Don't bound the risk — remove the capability.** No strategy other than PM's own should be able
+to cross a group boundary or touch a token outside the declared universe; if that's enforceable,
+the cross-strategy problem doesn't need a mathematical bound at all, it needs to not exist. The
+maker wallet must be a Safe — not an EOA, which has no code and so nowhere to attach any check,
+see Alternatives considered — with a **Basket Scope Guard** installed (`ITransactionGuard`,
 and `IModuleGuard` on Safe ≥1.5.0) that inspects every outgoing `AQUA.ship(app, strategy, tokens,
 amounts)` call: if `keccak256(strategy)` matches the exact, known strategy hash of this LP's PM
 instance — computed off-chain, before deployment, from PM's already-parameterized strategy
@@ -61,10 +51,18 @@ donation, can move what PM prices") structurally true, rather than hoped-for. Se
   LP who wants it, but it gives up ADR-0002's stated value (visibility across the LP's *other*
   strategies) entirely. The Guard is strictly more permissive: other strategies are welcome, as
   long as they stay within one group.
-- **The oracle-informed reward and the layered-guardrail designs** (above) — both left as
-  documented, superseded explorations rather than deleted, since the reasoning (and the
-  precedent research behind each) may be useful again if a future design needs to bound rather
-  than eliminate a risk.
+- **An oracle-informed reward mechanism** (virtual weight anchored to a live oracle price, plus
+  a rebalancing reward capped at a provably-real surplus) — mathematically sound, but leans on a
+  live oracle for a safety-critical property, which the LVR literature (Milionis et al.) warns
+  against.
+- **A set of layered guardrails** modeled on Balancer's own Managed Pool circuit breaker, an
+  oracle-informed reward, and a time-decay surcharge modeled on mutual-fund redemption fees
+  (`thoughts/cross-strategy-layered-defense.md`) — each layer individually well-precedented, but
+  rejected in favor of a single structural fix over three separate mechanisms, each with its own
+  parameters and failure modes.
+- Both left as documented, superseded explorations rather than deleted, since the reasoning
+  (and the precedent research behind each) may be useful again if a future design needs to
+  bound rather than eliminate a risk.
 
 ## Consequences
 
