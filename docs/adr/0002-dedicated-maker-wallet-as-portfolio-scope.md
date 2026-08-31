@@ -6,7 +6,12 @@
 
 Aqua's shared virtual-balance model (`balances[maker][app][strategyHash][token]`) is exactly
 what makes Aqua capital-efficient, but it also means an LP's *net* exposure across strategies
-is an emergent sum nothing tracks. Two, not three, candidate sources of truth actually exist —
+is an emergent sum nothing tracks. That per-`(maker, app, strategyHash)` ledger scoping is
+Aqua's own default and not something this ADR changes — what this ADR adds on top is a
+convention Aqua does *not* enforce on its own: the LP dedicating a wallet that holds *only* the
+declared universe, so a plain `balanceOf` read on it is clean. Nothing stops an LP from shipping
+this strategy out of an existing, mixed-purpose wallet instead; this ADR is the decision to
+require they don't. Two, not three, candidate sources of truth actually exist —
 an earlier draft of this ADR named a third ("read `AQUA.safeBalances()` for settled state"),
 but that was a misreading of the interface, corrected here (2026-08-18):
 

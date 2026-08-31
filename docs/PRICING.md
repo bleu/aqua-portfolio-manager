@@ -31,10 +31,8 @@ round-trip argument transfers directly — see `INVARIANT-PROOF.md`.
 
     SP(i→o) = (B_i / w_i) / (B_o / w_o)
 
-Token *i* priced in terms of token *o*, before fees. Standard constant-mean result: doubling
-`w_i` relative to `w_o` at equal balances halves *i*'s price in terms of *o* — a group declared
-twice as important to the LP's target trades off more cheaply against, matching the intuition
-that a bigger target allocation should absorb more flow before its price moves as much.
+Token *i* priced in terms of token *o*, before fees. Standard constant-mean result — see
+Martinelli & Mushegian (2019), cited above, for the full derivation.
 
 ## Exact-in swap
 

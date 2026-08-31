@@ -138,7 +138,7 @@ a real cost, accepted in exchange for not being blocked on an external party rig
   SwapVM over a bespoke `AquaApp` (a standard `quote()`/`swap()`/`Order` shape that 1inch's
   routing already knows how to call) only holds if an independently-deployed router is actually
   reachable through that routing, not only through direct calls — unconfirmed, and tracked as an
-  open item in [`../ROADMAP.md`](../ROADMAP.md)'s M4 milestone. Worth resolving directly with
+  open M4-milestone item in Linear (see [`../ROADMAP.md`](../ROADMAP.md)). Worth resolving directly with
   1inch: if independent routers aren't discoverable without additional registration on their
   side, that registration step is what actually buys reachability, not the choice of `SwapVM`
   over `AquaApp` per se.
@@ -146,7 +146,7 @@ a real cost, accepted in exchange for not being blocked on an external party rig
 ## References
 
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — explicit "working assumption, not a closed
-  decision" note, and the "Key technical decisions" summary
+  decision" note
 - `lib/aqua/src/AquaApp.sol` — the entire `AquaApp` base (69 lines: reentrancy lock +
   taker-push verification, nothing else)
 - `lib/swap-vm/src/opcodes/AquaOpcodes.sol` — the fixed opcode table
