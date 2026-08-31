@@ -43,6 +43,16 @@ class SpotPriceTest(unittest.TestCase):
         self.assertAlmostEqual(p_skewed, p_even / 2, places=9)
 
 
+class DegenerateBalanceTest(unittest.TestCase):
+    def test_zero_balance_in_rejects_trade(self) -> None:
+        with self.assertRaises(DegenerateBalanceError):
+            CurveState(balance_in=0, balance_out=100, weight_in=0.5, weight_out=0.5)
+
+    def test_zero_balance_out_rejects_trade(self) -> None:
+        with self.assertRaises(DegenerateBalanceError):
+            CurveState(balance_in=100, balance_out=0, weight_in=0.5, weight_out=0.5)
+
+
 class InvariantTest(unittest.TestCase):
     def test_never_decreases_across_200k_random_trades(self) -> None:
         rng = random.Random(0)
