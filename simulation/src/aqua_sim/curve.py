@@ -4,7 +4,7 @@
 This is NOT the on-chain source of truth. The real strategy is Solidity,
 fixed-point, with rounding that always favors the pool (floor on exact-in output,
 ceil throughout exact-out — see ``docs/PRICING.md``'s "Rounding" notes and
-``docs/INVARIANT-PROOF.md``). This module trades that rounding discipline for
+``docs/DONATION-RESISTANCE-PROOF.md``). This module trades that rounding discipline for
 speed and precision, since a market simulation runs the formula millions of times
 across parameter sweeps and rounding-direction bias would not change which
 parameters look best — only the on-chain contract's own Forge test suite is the
@@ -59,7 +59,7 @@ def spot_price(state: CurveState) -> float:
 
 
 def invariant(state: CurveState) -> float:
-    """V = B_i^w_i * B_o^w_o — INVARIANT-PROOF.md's round-trip invariant.
+    """V = B_i^w_i * B_o^w_o — DONATION-RESISTANCE-PROOF.md's round-trip invariant.
 
     Proven (see that file) to never decrease across a trade priced by this curve,
     and to strictly increase on a pure donation. Used here as a numerical check,

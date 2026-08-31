@@ -3,5 +3,5 @@
 Floating-point reimplementation of the strategy's math for fast, iterable market
 simulation (Monte Carlo sweeps, parameter search). The real spec is Solidity,
 fixed-point, with rounding that always favors the pool (see repo-root
-docs/PRICING.md, docs/INVARIANT-PROOF.md).
+docs/PRICING.md, docs/DONATION-RESISTANCE-PROOF.md).
 """

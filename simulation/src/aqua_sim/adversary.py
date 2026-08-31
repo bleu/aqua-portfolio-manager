@@ -7,7 +7,7 @@ module models an agent that deliberately exploits the gap between a sudden price
 the mechanism's next correction (a staleness-arbitrage angle — the simulated version of a
 "flash-crash exploit").
 
-This agent can never violate the round-trip invariant proven in `docs/INVARIANT-PROOF.md`
+This agent can never violate the round-trip invariant proven in `docs/DONATION-RESISTANCE-PROOF.md`
 — that proof holds for *any* trade against this curve, adversarial or not, as long as it
 goes through the real, fee-inclusive formula (`curve.exact_in`), same as every other trader
 in this simulation. What it tests is not "can the invariant be broken" (it can't — that's

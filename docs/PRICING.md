@@ -10,7 +10,7 @@ For a swap between token *i* (in) and token *o* (out), both belonging to declare
 - `w_i`, `w_o` — the group's target weight, normalized so all weights in the strategy sum to 1. Fixed at `ship()` time (part of the immutable `strategyHash`), never updated in place.
 - `f` — the protocol fee, in scope for Milestone 1 as the flat 2 bps referenced in ADR-0008; taken on the input side.
 
-Because `B_i`/`B_o` is the same real balance Aqua actually moves on pull/push, this is a plain Balancer weighted pool in the one respect that matters for the invariant proof: the balance that sets the price and the balance a trade updates are the same variable, so Balancer's own round-trip argument transfers directly — see `INVARIANT-PROOF.md`.
+Because `B_i`/`B_o` is the same real balance Aqua actually moves on pull/push, this is a plain Balancer weighted pool in the one respect that matters for the donation-resistance proof: the balance that sets the price and the balance a trade updates are the same variable, so Balancer's own round-trip argument transfers directly — see `DONATION-RESISTANCE-PROOF.md`.
 
 ## Spot price
 
@@ -47,4 +47,4 @@ Trader specifies `A_o` (amount of token *o* they want out); solve for `A_i`, the
 
 ## Invariant proof
 
-This formula is what `INVARIANT-PROOF.md` proves the round-trip/donation-resistance property against — see that file for the full proof (closed, no open half).
+This formula is what `DONATION-RESISTANCE-PROOF.md` proves the round-trip/donation-resistance property against — see that file for the full proof (closed, no open half).

@@ -1,6 +1,6 @@
 # ADR-0007: Rely on the curve invariant, not internal accounting, for donation-attack resistance
 
-**Status:** Accepted — round-trip proof complete (`../INVARIANT-PROOF.md`, 2026-08-18)
+**Status:** Accepted — round-trip proof complete (`../DONATION-RESISTANCE-PROOF.md`)
 
 ## Context
 
@@ -16,8 +16,8 @@ Donation-attack resistance comes entirely from the pricing curve's invariant (no
 ## Consequences
 
 - The honest residual is pure vandalism: burning your own tokens into someone else's wallet to nudge their weights, for zero extractable gain. Accepted as unpreventable but economically irrational.
-- "No donation attack is ever profitable" is proven, not just asserted — see `../INVARIANT-PROOF.md` for the full proof, covering PM's own trades and external donations, with no dependency on smoothing parameters.
-- This proof does not, on its own, cover a trade by a *different* strategy sharing the same wallet — that's two-sided (it can remove value from one side while adding to another), unlike a donation. `ADR-0011`'s Basket Scope Guard is what closes that gap, by confining every other strategy to trading within one group — see `../INVARIANT-PROOF.md` for the full reasoning.
+- "No donation attack is ever profitable" is proven, not just asserted — see `../DONATION-RESISTANCE-PROOF.md` for the full proof, covering PM's own trades and external donations, with no dependency on smoothing parameters.
+- This proof does not, on its own, cover a trade by a *different* strategy sharing the same wallet — that's two-sided (it can remove value from one side while adding to another), unlike a donation. `ADR-0011`'s Basket Scope Guard is what closes that gap, by confining every other strategy to trading within one group — see `../DONATION-RESISTANCE-PROOF.md` for the full reasoning.
 - The same round-trip proof also closes the "round-trip drain via the rebate" concern and the near-empty-pool precision concern — one proof obligation, three issues.
 
 ## References

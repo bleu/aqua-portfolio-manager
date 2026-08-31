@@ -1,6 +1,6 @@
 # M1 economic simulation
 
-Answers the question `docs/adr/0008-success-metrics-tracking-error-and-cost.md` sets up: does the mechanism beat naive rebalancing baselines on a tracking-error/cost frontier? This is a floating-point, fast-iteration companion to the Solidity contracts — **not** the on-chain source of truth. The spec is `docs/PRICING.md` / `docs/INVARIANT-PROOF.md`; this package reimplements that math in Python to run market simulations (Monte Carlo sweeps, parameter search) far faster than Forge allows.
+Answers the question `docs/adr/0008-success-metrics-tracking-error-and-cost.md` sets up: does the mechanism beat naive rebalancing baselines on a tracking-error/cost frontier? This is a floating-point, fast-iteration companion to the Solidity contracts — **not** the on-chain source of truth. The spec is `docs/PRICING.md` / `docs/DONATION-RESISTANCE-PROOF.md`; this package reimplements that math in Python to run market simulations (Monte Carlo sweeps, parameter search) far faster than Forge allows.
 
 ## Structure
 
@@ -28,7 +28,7 @@ simulation/
 
 | # | Notebook | Status | Covers |
 |---|---|---|---|
-| 01 | `01_pricing_curve.ipynb` | Done | Implements + checks the curve against `PRICING.md`/`INVARIANT-PROOF.md`: equal-weight reduces to `xy=k`, spot-price direction, the round-trip invariant (200k random trades), the `fee=0` equality case, donation-only-increases, degenerate-balance rejection. Also records a known float64 precision limit near an empty pool at extreme trade sizes — matches `BLEUDEV-263`/`BLEUDEV-296`'s planned minimum-liquidity floor. |
+| 01 | `01_pricing_curve.ipynb` | Done | Implements + checks the curve against `PRICING.md`/`DONATION-RESISTANCE-PROOF.md`: equal-weight reduces to `xy=k`, spot-price direction, the round-trip invariant (200k random trades), the `fee=0` equality case, donation-only-increases, degenerate-balance rejection. Also records a known float64 precision limit near an empty pool at extreme trade sizes — matches `BLEUDEV-263`/`BLEUDEV-296`'s planned minimum-liquidity floor. |
 | 02 | `02_exogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Organic trade arrivals unrelated to the pool's own skew — Poisson arrival rate, unbiased direction (checked across many realizations, not one path), lognormal size distribution. |
 | 03 | `03_endogenous_flow.ipynb` | Done (`BLEUDEV-322`) | Arbitrageur/solver-driven corrective flow. Verifies arb direction both ways, including a non-self-reciprocal regression check (§1), across a full multi-step simulation run, on the settled fee + gas-cost profitability gate — no tolerance band, no rate cap (`ADR-0006`, revised after a real sweep found neither reduces cost). |
 | 04 | `04_naive_baselines.ipynb` | Done (`BLEUDEV-322`) | Periodic manual rebalance + threshold rebalance via a generic DEX — what the mechanism must beat, on the same cost/tracking-error metrics. On one seed, doesn't cleanly win either way: the mechanism tracks ~25x tighter but costs more on this LVR-style metric than either baseline, which barely register any gas/fee drag correcting as rarely as they do. |
