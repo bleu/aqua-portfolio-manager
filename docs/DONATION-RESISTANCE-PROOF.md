@@ -1,4 +1,4 @@
-# Invariant proof
+# Donation resistance proof
 
 A single proof (below) fully discharges ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no additional bound needed for either. Cross-strategy interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
 
