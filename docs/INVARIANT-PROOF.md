@@ -1,9 +1,9 @@
 # Invariant proof
 
-Status: **closed for what this proof can prove.** A single proof (below) fully discharges
-ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no
-additional bound needed for either. Cross-strategy interaction is a separate case, closed
-structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
+A single proof (below) fully discharges ADR-0007's obligation for this strategy's own trades and
+for pure donations — no smoothing, no additional bound needed for either. Cross-strategy
+interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather
+than by this proof — see below.
 
 ## What has to be shown
 
@@ -62,9 +62,7 @@ inverse, so the same substitution applies symmetrically.
 **Why this covers donations at all.** A donation isn't a trade — it's a bare transfer with no
 output leg, so it only ever *increases* `B_i` for whatever token was donated, which strictly
 increases `V`. Since no subsequent trade can decrease `V` below wherever it stands (donation
-included), the donor can never trade their way back to more value than they gave away — worked
-example with real numbers in the PR history / Linear BLEUDEV-254 if a concrete walkthrough is
-useful later.
+included), the donor can never trade their way back to more value than they gave away.
 
 **Why this does NOT automatically cover cross-strategy interaction.** The proof above (lines
 25-48) shows `V` never decreases across a trade that follows *this strategy's own* formula
@@ -84,15 +82,14 @@ oracle-valued total feeds this curve), a within-group trade by another strategy 
 exactly the one-sided "donation" case this proof already covers. The proof isn't stronger than it
 was; the boundary it needs now actually holds, enforced outside this contract entirely.
 
-## Why no smoothing (EMA/TWAP removed from scope, 2026-08-18)
+## Why no smoothing
 
-See `ADR-0006`'s Context for why the EMA/TWAP was dropped. For this proof specifically: it only
-holds because the exposure reader feeds the *raw*, current balance directly with no averaging —
-a lagging, smoothed reading would have needed a second, harder proof (see git history on this
-file for the abandoned "Part 2"). With no averaging, the single proof above is unconditionally
-sufficient for external donations and ordinary settlement noise. (Cross-strategy interaction
-needed a different fix entirely, not more of this proof — see the correction above and
-`ADR-0011`.)
+Full rationale for dropping the EMA/TWAP lives in `ADR-0006`'s Context. For this proof
+specifically: it only holds because the exposure reader feeds the *raw*, current balance
+directly with no averaging — a lagging, smoothed reading would have needed a second, harder
+proof. With no averaging, the single proof above is unconditionally sufficient for external
+donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix
+entirely, not more of this proof — see the correction above and `ADR-0011`.)
 
 ADR-0006's fee + gas-cost profitability gate (no tolerance band, no rate cap — see that ADR's
 History for why both were dropped) is not load-bearing for this proof either: the proof holds

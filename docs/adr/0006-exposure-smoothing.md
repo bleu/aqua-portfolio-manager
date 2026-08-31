@@ -1,8 +1,7 @@
 # ADR-0006: Exposure guardrails — a fee + gas-cost profitability gate (no tolerance band, no rate cap, no EMA/TWAP)
 
-**Status:** Accepted — revised 2026-08-18 to drop the EMA/TWAP moving average; revised
-2026-08-25 to a fee + gas-cost profitability gate, superseding the tolerance-band/rate-cap
-values chosen 2026-08-24 (see "History" below for why).
+**Status:** Accepted. This design superseded an earlier tolerance-band/rate-cap approach —
+see "History" below for why.
 
 ## Context
 
@@ -18,9 +17,8 @@ vector.
 for this strategy's own trades and for pure donations, as long as pricing reads the *current*
 real balance directly. Smoothing didn't add donation resistance; it *cost* some, by introducing a
 lag between the real balance and the quoted price that a patient attacker could trade against
-during convergence — a harder, still-unresolved proof obligation (the abandoned "Part
-2", see that file's git history) that the plain, un-smoothed curve never needed in the first
-place. **Cross-strategy interaction turned out to need its own fix** (`ADR-0011`'s
+during convergence — a harder proof obligation that the plain, un-smoothed curve never needed in
+the first place. **Cross-strategy interaction turned out to need its own fix** (`ADR-0011`'s
 Basket Scope Guard) — dropping smoothing didn't close that gap by itself; see the correction in
 `../INVARIANT-PROOF.md`.
 
@@ -59,7 +57,7 @@ here for either knob to usefully exploit.
 
 ## History
 
-**First pass (2026-08-24):** chose a 0.5% tolerance band and a 1-hour rate cap, from a sweep
+**Initial tolerance-band/rate-cap sweep:** chose a 0.5% tolerance band and a 1-hour rate cap, from a sweep
 in a notebook since deleted (`10_parameter_decision.ipynb`) that measured cost, tracking
 error, shock-recovery time, and stale-quote exploit exposure — all of which got monotonically
 worse as either knob loosened. The chosen values were a deliberate step back from that sweep's
@@ -67,7 +65,7 @@ mathematical optimum (a 0.1% band, 5-minute cap), trading tracking tightness for
 corrective transactions (8,760/year worst case vs. 105,120/year at the optimum) — under a
 **$5-per-correction gas placeholder** reused from elsewhere in the simulation.
 
-**Second pass (2026-08-25):** that $5 gas figure was never checked against Base and turned out
+**Realistic-gas-cost re-sweep:** that $5 gas figure was never checked against Base and turned out
 to be roughly 50x too high — real Base transaction costs run $0.01-$0.10 (L2 execution + L1
 data fee, OpenLiquid data, Q1 2026), corrected to **$0.10**. Redone at the realistic cost:
 
