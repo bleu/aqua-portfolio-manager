@@ -1,15 +1,17 @@
 # ADR-0001: License this repo's own code under Aqua-Source-1.1, not MIT
 
-**Status:** Accepted
+**Status:** Accepted — revised 2026-08-25 to reflect ADR-0010's on-chain form (a swapVM
+instruction on our own router, not `AquaApp`)
 
 ## Context
 
 `1inch/aqua` and `1inch/swap-vm` ship under a custom Degensoft Ltd license
 (`Aqua-Source-1.1` / `SwapVM-1.1`). Its §3 "Modification" clause is defined broadly enough to
-cover inheritance and static linking, and our strategy contract will inherit
-`abstract contract AquaApp` — compiled directly into our bytecode, not called as a separate
-deployed instance. That reads as "based on or incorporating" the licensed work, not the
-"independent code that merely calls/interfaces with it" carve-out in §3.3.
+cover inheritance and static linking, and our strategy ships as a swapVM instruction on our
+own router, which inherits `SwapVM` directly ([ADR-0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md))
+— compiled directly into our bytecode, not called as a separate deployed instance. That reads
+as "based on or incorporating" the licensed work, not the "independent code that merely
+calls/interfaces with it" carve-out in §3.3.
 
 Defaulting to MIT, as `forge init` does, would misstate which license governs this code — and
 the grant proposal's own "MIT, open source" language, written before this license was found,
@@ -38,3 +40,5 @@ This repo's root `LICENSE` is the full text of `Aqua-Source-1.1`, and
 - [`../LICENSING-RISK.md`](../LICENSING-RISK.md) — full finding
 - [`../../THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) — per-dependency license table
 - `lib/aqua/LICENSES/Aqua-Source-1.1.txt` (vendored copy)
+- [ADR-0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) — resolved the on-chain form
+  referenced here (`SwapVM`, not `AquaApp`)

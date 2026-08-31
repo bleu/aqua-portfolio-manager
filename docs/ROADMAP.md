@@ -5,7 +5,7 @@ milestones:
 
 | Milestone | Status |
 |---|---|
-| M1 — Research & Spec | In progress |
+| M1 — Research & Spec | Complete |
 | M2 — PoC on testnet | Not started |
 | M3 — Full implementation | Not started |
 | M4 — 1inch integration & audit gate | Not started |

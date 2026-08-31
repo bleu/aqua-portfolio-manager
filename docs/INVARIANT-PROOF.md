@@ -1,10 +1,9 @@
-# Round-trip / donation-resistance proof
+# Invariant proof
 
 A single proof (below) fully discharges ADR-0007's obligation for this strategy's own trades and
-for pure donations — no smoothing, no additional bound needed for either. **Cross-strategy
-interaction (a different strategy on the same wallet moving the balance) is a separate case this
-proof does not cover** — see below. That gap is closed structurally instead, by `ADR-0011`'s
-Basket Scope Guard.
+for pure donations — no smoothing, no additional bound needed for either. Cross-strategy
+interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather
+than by this proof — see below.
 
 ## What has to be shown
 
@@ -15,6 +14,13 @@ current balance directly — no EMA, no TWAP, no moving average of any kind (see
 smoothing" below for why that was cut).
 
 ## The curve invariant (the whole proof)
+
+**Assumption, stated explicitly.** Token *i* and token *o* each have their own market price,
+set externally, that this strategy's own liquidity is too small to move. The proof below is
+about this strategy's *own* invariant `V` never decreasing — it says nothing about, and
+doesn't need, either token's price being stable in absolute terms; only that trading against
+*this* curve can't be a source of profit on its own, regardless of where the external price
+sits.
 
 **Claim.** For weights `w_i, w_o > 0` normalized as in `PRICING.md`, and any single exact-in
 trade of `PRICING.md`'s form with fee `f ∈ [0, 1)`:
@@ -58,8 +64,8 @@ output leg, so it only ever *increases* `B_i` for whatever token was donated, wh
 increases `V`. Since no subsequent trade can decrease `V` below wherever it stands (donation
 included), the donor can never trade their way back to more value than they gave away.
 
-**Why this does not automatically cover cross-strategy interaction.** The proof above (lines
-17-40) shows `V` never decreases across a trade that follows *this strategy's own* formula
+**Why this does NOT automatically cover cross-strategy interaction.** The proof above (lines
+25-48) shows `V` never decreases across a trade that follows *this strategy's own* formula
 (`PRICING.md`) — it says nothing about a trade against a *different* strategy's curve, which
 follows different math entirely and can move this strategy's `B_i`/`B_o` in a way that decreases
 `V` relative to where it stood a moment before. `thoughts/cross-strategy-manipulation.md` found a
@@ -76,17 +82,18 @@ oracle-valued total feeds this curve), a within-group trade by another strategy 
 exactly the one-sided "donation" case this proof already covers. The proof isn't stronger than it
 was; the boundary it needs now actually holds, enforced outside this contract entirely.
 
-## Proof precondition: no smoothing
+## Why no smoothing
 
-This proof requires the exposure reader to feed the *raw*, current balance directly, with no
-EMA/TWAP averaging — smoothing would mean the price reflects a lagging function of the balance
-rather than the balance itself, which the proof above doesn't account for. See ADR-0006 for why
-no smoothing is used. With a raw reading, the proof above is unconditionally sufficient for
-external donations and ordinary settlement noise (cross-strategy interaction needed a different
-fix entirely, not more of this proof — see above and `ADR-0011`).
+Full rationale for dropping the EMA/TWAP lives in `ADR-0006`'s Context. For this proof
+specifically: it only holds because the exposure reader feeds the *raw*, current balance
+directly with no averaging — a lagging, smoothed reading would have needed a second, harder
+proof. With no averaging, the single proof above is unconditionally sufficient for external
+donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix
+entirely, not more of this proof — see the correction above and `ADR-0011`.)
 
-The tolerance band and rate cap (ADR-0006) stay in scope, but on a different footing now: they're
-not load-bearing for this proof (the proof holds with or without them), they exist to reduce
-unnecessary rebalancing churn/cost. Neither reopens the lag problem smoothing did — the
-tolerance band is a stateless function of the *current* balance (no history to lag), and the
-rate cap only limits frequency/size, not what price a trade clears at.
+ADR-0006's fee + gas-cost profitability gate (no tolerance band, no rate cap — see that ADR's
+History for why both were dropped) is not load-bearing for this proof either: the proof holds
+regardless of whether or how often a correction fires, since it's a per-trade property, not one
+that depends on trade frequency. Gating correction on profitability doesn't reopen the lag
+problem smoothing did — it's a stateless function of the *current* balance and gas price, with
+no history to lag.

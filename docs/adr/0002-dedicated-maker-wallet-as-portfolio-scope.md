@@ -15,8 +15,8 @@ require they don't. Two, not three, candidate sources of truth actually exist �
 an earlier draft of this ADR named a third ("read `AQUA.safeBalances()` for settled state"),
 but that was a misreading of the interface, corrected here (2026-08-18):
 
-- **Raw `balanceOf(maker)`** (standard ERC20, no Aqua call involved) — real, and genuinely
-  shared across every strategy the LP runs from that wallet, but polluted by unrelated holdings
+- **Raw `balanceOf(maker)`** (standard ERC20, no Aqua call involved) — real, and shared
+  across every strategy the LP runs from that wallet, but polluted by unrelated holdings
   and manipulable (anyone can transfer tokens into an address to skew a reading — see
   ADR-0007).
 - **Aqua's own per-strategy ledger** (`rawBalances(maker, app, strategyHash, token)` and
@@ -31,7 +31,7 @@ but that was a misreading of the interface, corrected here (2026-08-18):
   under a name (`safeBalances`) that sounds more authoritative than it is.
 
 There is no function anywhere in `IAqua` that reads a wallet-wide, cross-strategy-visible,
-settled balance. The only thing that actually *is* wallet-wide and shared is plain
+settled balance. The only thing that *is* wallet-wide and shared is plain
 `balanceOf(maker)` — Aqua never takes custody of the maker's tokens (`ship`/`pull`/`push` only
 adjust an allowance-style ledger and move tokens at settlement time, `Aqua.sol:63-80`); the real
 tokens sit in the maker's own wallet the entire time. So "settled balance of a wallet the LP
@@ -42,7 +42,7 @@ not technical — "the LP just segregates capital" undersells a real migration: 
 moving capital, and re-shipping every existing strategy from it.
 
 This trades integration smoothness for signal quality: an LP already running strategies from
-an existing wallet can't adopt this without migrating first, which is real onboarding friction
+an existing wallet can't adopt this without migrating first, which is onboarding friction
 weighed against the alternative of a reading that's either polluted (raw `balanceOf`) or
 doesn't reflect the LP's actual settled position (Aqua's own virtual balances).
 
@@ -50,7 +50,7 @@ doesn't reflect the LP's actual settled position (Aqua's own virtual balances).
 
 Portfolio scope = one dedicated maker wallet per LP, holding only a declared universe of
 tokens. The exposure reader calls plain `balanceOf(maker)` on each in-universe token — not
-`AQUA.rawBalances`/`safeBalances` — since that's the only reading that's actually real and
+`AQUA.rawBalances`/`safeBalances` — since that's the only reading that's real and
 shared across every strategy shipped from that wallet. No changes to Aqua core.
 
 Aqua's own per-strategy ledger is still used, separately, for what it's actually for:
@@ -67,6 +67,13 @@ ADR-0002's original "EOA or Safe" language.
 - Zero-protocol-change integration is a strong pitch, but onboarding has a real cost this ADR
   doesn't remove: LP must create the wallet, fund it, and re-ship existing strategies from it.
   An onboarding guide / migration checklist is owed by Milestone 4.
+- **Not yet written up anywhere: the Safe must approve Aqua for every universe token.**
+  `Aqua.pull(maker, strategyHash, token, amount, to)` settles via
+  `IERC20(token).safeTransferFrom(maker, to, amount)` (`Aqua.sol:63-70`) — a real ERC20
+  `transferFrom` against the maker's own balance, which reverts without a prior `approve(AQUA,
+  ...)` from the Safe. This is a one-time onboarding step per universe token, distinct from
+  funding the wallet, and belongs in the same Milestone 4 onboarding guide the bullet above
+  already owes.
 - The exposure reader must filter to the declared universe only — anything else that lands in
   the wallet (accidental or a deliberate donation) is ignored by the reading. This is a spec
   requirement, not a documentation note.
@@ -74,9 +81,9 @@ ADR-0002's original "EOA or Safe" language.
   creates the donation-attack surface that ADR-0007 exists to bound, not to prevent outright.
 - Reading `balanceOf` for price and Aqua's ledger for pull authorization are two independently
   moving numbers. PM's own `ship()`-registered allowance must stay wide enough that a real-price
-  quote it just gave is actually pullable — a spec/implementation detail owed before M2, not
+  quote it just gave is pullable — a spec/implementation detail owed before M2, not
   solved by this ADR.
-- Strategies sharing one wallet can genuinely change the balance PM prices against, at any time,
+- Strategies sharing one wallet can change the balance PM prices against, at any time,
   not just same-block — this is exactly the surface `thoughts/cross-strategy-manipulation.md`
   first worked through. That risk is now closed structurally, not bounded: `ADR-0011` requires
   the wallet to be a Safe with a Guard that forbids any strategy but PM's own from ever crossing
