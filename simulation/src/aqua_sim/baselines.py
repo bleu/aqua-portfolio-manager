@@ -29,11 +29,12 @@ class GenericDexConfig:
     a single LP's rebalance size so slippage stays realistic-but-modest, matching a
     real deep venue rather than a thin one.
     `gas_cost_b` — a flat per-transaction gas cost, in B-numeraire units, based on real
-    observed Base costs (not benchmarked against this specific contract, which doesn't
-    exist yet — `BLEUDEV-265` is still open): a typical Base DEX swap runs $0.01-$0.10
-    total (L2 execution + L1 data fee), with multi-hop/more-complex swaps around $0.075
-    (OpenLiquid, "Base Chain Gas Fees Explained", Q1 2026 data). $0.10 rounds up from
-    that range with margin for this being a curve-math interaction, not a plain swap —
+    observed L2 costs (not benchmarked against this specific contract, which doesn't
+    exist yet — `BLEUDEV-265` is still open, and no specific launch chain is locked in
+    yet either — ADR-0009): a typical L2 DEX swap runs $0.01-$0.10 total (L2 execution +
+    L1 data fee), with multi-hop/more-complex swaps around $0.075 (OpenLiquid, a
+    representative L2's gas-fee breakdown, Q1 2026 data). $0.10 rounds up from that
+    range with margin for this being a curve-math interaction, not a plain swap —
     revisit once the real contract's gas usage is benchmarked.
     """
 

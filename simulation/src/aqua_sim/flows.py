@@ -66,7 +66,7 @@ class EndogenousArbConfig:
 
     ADR-0006, still under revision: an earlier pass concluded `fee` + `gas_cost_b` alone
     (no separate dead-zone or cooldown) were sufficient, but that used an unchecked $5 gas
-    placeholder. Real Base gas is ~$0.10 — cheap enough that the gas gate barely throttles
+    placeholder. Real L2 gas is ~$0.10 — cheap enough that the gas gate barely throttles
     anything, so the mechanism ends up correcting near-continuously and its cost becomes
     dominated by cumulative trading-fee drag, not gas. `tolerance_band` and
     `min_steps_between_trades` are back, specifically to sweep against that realistic gas
@@ -74,7 +74,7 @@ class EndogenousArbConfig:
     itself doesn't.
 
     `gas_cost_b` — a flat per-transaction gas cost, in B-numeraire units, same value and
-    sourcing as `baselines.GenericDexConfig.gas_cost_b` (real observed Base costs, not yet
+    sourcing as `baselines.GenericDexConfig.gas_cost_b` (real observed L2 costs, not yet
     benchmarked against this specific contract — `BLEUDEV-265`).
     `tolerance_band` — deviations from the market-implied price smaller than this fraction
     are priced as neutral, not corrective; no arb fires inside it. `0` (default) means none.

@@ -1,6 +1,6 @@
-# ADR-0009: Deploy on Base at launch
+# ADR-0009: Deploy on an L2 at launch
 
-**Status:** Accepted — held loosely, open to another L2 if Aqua's own deployment points there
+**Status:** Accepted — L2-first, specific chain not locked in
 
 ## Context
 
@@ -10,10 +10,10 @@ Aqua is live in production across 13 EVM chains as of its July 2026 public launc
 
 ## Decision
 
-Launch on Base — confirmed live in Aqua's current deployment set. Kept soft to another already-live chain (e.g. Arbitrum) if 1inch's routing footprint favors it by the time this ships.
+Launch on a leading EVM L2 where Aqua is already live — no specific chain locked in yet. None of the candidate chains (Base, Arbitrum, or otherwise) carries a decided advantage at this stage; the actual pick is deferred to M2/M3, once 1inch's per-chain routing footprint is clearer.
 
 ## Consequences
 
-- Locks in the L2-first cost assumption used in the Milestone 1 tracking-error/cost frontier (ADR-0008) and in any oracle per-update-fee accounting (ADR-0005/0006).
-- Not a hard commitment — if 1inch's routing footprint on another already-live chain (e.g. Arbitrum) turns out to fit better by M2/M3, revisit the chain choice; the application language already flags this as conditional.
+- Locks in the L2-first cost assumption used in the Milestone 1 tracking-error/cost frontier (ADR-0008) and in any oracle per-update-fee accounting (ADR-0005/0006) — grounded in typical L2 execution costs, not a specific chain's numbers.
+- No hard commitment to any specific chain — the pick is deferred to M2/M3 once 1inch's per-chain routing footprint is clearer; the application language already flags this as conditional.
 - Reachability still gates rebalancing regardless of chain: the pool only corrects when a taker or solver actually trades through it, directly or via 1inch routing — a chain choice with no adoption is not sufficient on its own.

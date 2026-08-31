@@ -14,6 +14,6 @@ Most of these decisions were made before this repo existed, during the grant pro
 | [0006](0006-exposure-smoothing.md) | Fee + gas-cost profitability gate for exposure guardrails (no tolerance band/rate cap, no EMA/TWAP) | Accepted (revised 2026-08-25) |
 | [0007](0007-donation-resistance-via-curve-invariant.md) | Donation resistance via curve invariant, not internal accounting | Accepted (round-trip proof complete) |
 | [0008](0008-success-metrics-tracking-error-and-cost.md) | Success = tracking error + cost of rebalancing, not fee/volume | Accepted |
-| [0009](0009-deploy-on-base-at-launch.md) | Deploy on Base at launch | Accepted (held loosely) |
+| [0009](0009-deploy-on-an-l2-at-launch.md) | Deploy on an L2 at launch, specific chain not locked in | Accepted |
 | [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | On-chain form: independent router, new swapVM instruction (not AquaApp, not merged into 1inch's router) | Accepted |
 | [0011](0011-safe-wallet-with-basket-scope-guard.md) | Safe-only maker wallet with a Basket Scope Guard, instead of bounding cross-strategy risk | Accepted |
