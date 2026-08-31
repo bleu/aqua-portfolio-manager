@@ -1,7 +1,6 @@
 # Roadmap
 
-Detailed task tracking lives in Linear. Status against the 1inch Aqua Incubator grant's four
-milestones:
+Detailed task tracking lives in Linear. Status against the 1inch Aqua Incubator grant's four milestones:
 
 | Milestone | Status |
 |---|---|

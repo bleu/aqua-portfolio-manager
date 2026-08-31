@@ -1,8 +1,6 @@
 # Third-Party Notices
 
-This project depends on and is a Modification/Extension of third-party licensed work. See
-[`docs/LICENSING-RISK.md`](docs/LICENSING-RISK.md) for what that actually means for this
-project's own license and business posture — read that before assuming "MIT" applies here.
+This project depends on and is a Modification/Extension of third-party licensed work. See [`docs/LICENSING-RISK.md`](docs/LICENSING-RISK.md) for what that actually means for this project's own license and business posture — read that before assuming "MIT" applies here.
 
 | Dependency | Path | License | Role |
 |---|---|---|---|
@@ -13,10 +11,4 @@ project's own license and business posture — read that before assuming "MIT" a
 
 ## Why this repo's `LICENSE` is Aqua-Source-1.1, not MIT
 
-Aqua-Source-1.1 §3 requires that if you "Modify" the Licensed Work — defined broadly enough
-to include inheritance/extension compiled into the same contract — you publish your own
-resulting code under the *same* license. Our strategy contract inherits `AquaApp`
-(`lib/aqua/src/AquaApp.sol`), so this almost certainly counts. Using plain MIT here would be
-factually wrong about what license actually governs this code. See
-[`docs/LICENSING-RISK.md`](docs/LICENSING-RISK.md) for the full reasoning and the open
-business risk this creates (a revocable commercial-use waiver, not a permanent exemption).
+Aqua-Source-1.1 §3 requires that if you "Modify" the Licensed Work — defined broadly enough to include inheritance/extension compiled into the same contract — you publish your own resulting code under the *same* license. Our strategy contract inherits `AquaApp` (`lib/aqua/src/AquaApp.sol`), so this almost certainly counts. Using plain MIT here would be factually wrong about what license actually governs this code. See [`docs/LICENSING-RISK.md`](docs/LICENSING-RISK.md) for the full reasoning and the open business risk this creates (a revocable commercial-use waiver, not a permanent exemption).

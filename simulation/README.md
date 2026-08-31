@@ -1,11 +1,6 @@
 # M1 economic simulation
 
-Answers the question `docs/adr/0008-success-metrics-tracking-error-and-cost.md` sets up:
-does the mechanism beat naive rebalancing baselines on a tracking-error/cost frontier?
-This is a floating-point, fast-iteration companion to the Solidity contracts — **not**
-the on-chain source of truth. The spec is `docs/PRICING.md` / `docs/INVARIANT-PROOF.md`;
-this package reimplements that math in Python to run market simulations (Monte Carlo
-sweeps, parameter search) far faster than Forge allows.
+Answers the question `docs/adr/0008-success-metrics-tracking-error-and-cost.md` sets up: does the mechanism beat naive rebalancing baselines on a tracking-error/cost frontier? This is a floating-point, fast-iteration companion to the Solidity contracts — **not** the on-chain source of truth. The spec is `docs/PRICING.md` / `docs/INVARIANT-PROOF.md`; this package reimplements that math in Python to run market simulations (Monte Carlo sweeps, parameter search) far faster than Forge allows.
 
 ## Structure
 
@@ -43,10 +38,7 @@ simulation/
 | 08 | `08_basket_interaction.ipynb` | Done (`BLEUDEV-324`) | How PM reacts to another strategy sharing its declared basket group, on a real WETH/USDC pair. **Result: merely having a basket association structurally biases PM off its own real-asset target (p99 tracking error 0.10% → 15.18% as basket size grows from 0% to 50% of the pool), even with zero basket activity — and an actively-trading co-basket strategy worsens tracking error consistently, raising cost on average but noisily (50-rep Monte Carlo).** Not a safety issue — the invariant proof still holds — a behavior/UX one for `BLEUDEV-75`'s still-unbuilt multi-token routing design to account for. |
 | 09 | `09_fee_recommendation.ipynb` | Done (`BLEUDEV-324`) | A recommended swap-fee band, using WETH/USDC volatility (CoinGecko), Balancer weighted-pool fee/volume comparables, and a live 1inch aggregated price-impact curve + protocol routing breakdown. **Result: breakeven fee ≈ 30-32bps, matching almost exactly what the real Balancer 50/50 WETH/USDC pool already charges.** Bigger finding: pool **depth**, not fee, is usually the binding constraint on competitiveness at realistic launch-stage TVL — even at zero fee, a $200K-$1M pool's own price impact already loses to 1inch's execution for most sizes; fee only becomes the deciding factor around $10M+ TVL. Methodology flagged separately as needing a deeper rework (too many confounders for a one-snapshot correlation) — out of scope for the fee+gas mechanism change. |
 
-Notebook 10 (`10_parameter_decision.ipynb`, formerly here) picked concrete values for the
-tolerance band and rate cap — both removed (`ADR-0006`, revised): a real sweep found
-neither reduces cost once correction is gated on real gas economics instead. Deleted along
-with the parameters it existed to choose.
+Notebook 10 (`10_parameter_decision.ipynb`, formerly here) picked concrete values for the tolerance band and rate cap — both removed (`ADR-0006`, revised): a real sweep found neither reduces cost once correction is gated on real gas economics instead. Deleted along with the parameters it existed to choose.
 
 ## Running
 
@@ -64,6 +56,4 @@ Or run a single notebook headlessly (used in CI / to regenerate committed output
 uv run --with nbclient jupyter execute --inplace notebooks/01_pricing_curve.ipynb
 ```
 
-Notebook outputs are committed intentionally — the executed results (including the plots)
-are part of what the M1 write-up deliverable cites, not just the code that produces them.
-Re-run and re-commit after any change to `src/aqua_sim/`.
+Notebook outputs are committed intentionally — the executed results (including the plots) are part of what the M1 write-up deliverable cites, not just the code that produces them. Re-run and re-commit after any change to `src/aqua_sim/`.

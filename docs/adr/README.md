@@ -1,13 +1,8 @@
 # Architecture Decision Records
 
-Lightweight ADRs (Nygard-style: Context / Decision / Consequences) for this project. Start a
-new one from [`0000-template.md`](0000-template.md); number sequentially, never renumber or
-delete a merged ADR — mark it **Superseded by ADR-XXXX** instead and let the new one explain
-why.
+Lightweight ADRs (Nygard-style: Context / Decision / Consequences) for this project. Start a new one from [`0000-template.md`](0000-template.md); number sequentially, never renumber or delete a merged ADR — mark it **Superseded by ADR-XXXX** instead and let the new one explain why.
 
-Most of these decisions were made before this repo existed, during the grant proposal's design
-process. Each ADR here is the durable, code-repo-local record of one of those decisions,
-grounded against the Aqua/swapVM interfaces.
+Most of these decisions were made before this repo existed, during the grant proposal's design process. Each ADR here is the durable, code-repo-local record of one of those decisions, grounded against the Aqua/swapVM interfaces.
 
 | # | Title | Status |
 |---|---|---|
