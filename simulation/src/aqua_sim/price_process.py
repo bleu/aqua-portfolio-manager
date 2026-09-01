@@ -115,6 +115,54 @@ class JumpDiffusionPriceProcess:
 
 
 @dataclass
+class MeanRevertingPriceProcess:
+    """Ornstein-Uhlenbeck in log-price space: pulls the price back toward a long-run
+    anchor instead of letting it wander or trend indefinitely (`GBMPriceProcess`).
+    `log_price[t] = log_price[t-1] + kappa * (log(mean_price) - log_price[t-1]) +
+    sigma_per_step * Z`.
+
+    Exists specifically to demonstrate the flip side of a persistent trend: constant-mix
+    rebalancing (what PM does) systematically loses to buy-and-hold under a one-directional
+    GBM drift (see `02_basket_with_without_pm.ipynb`'s forced-uptrend/downtrend sections),
+    but recovers its edge -- capturing fee revenue on genuine round-trip volatility,
+    directly connected to `DONATION-RESISTANCE-PROOF.md`'s invariant never decreasing on a
+    round trip -- once the price actually reverts instead of trending forever.
+
+    `kappa` is the per-step mean-reversion speed, in `(0, 1]`: `1.0` snaps fully back to
+    `mean_price` every step (pure noise around a fixed level), values near `0` revert very
+    slowly (close to a random walk over any short window).
+    """
+
+    token_id: str
+    sigma_per_step: float
+    mean_price: float
+    kappa: float
+    initial_price: float
+    seed: int | None = None
+    _rng: np.random.Generator = field(init=False, repr=False)
+    _log_price: float = field(init=False, repr=False)
+    _log_mean: float = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.sigma_per_step < 0:
+            raise ValueError(f"sigma_per_step must be non-negative, got {self.sigma_per_step}")
+        if not 0 < self.kappa <= 1:
+            raise ValueError(f"kappa must be in (0, 1], got {self.kappa}")
+        if self.mean_price <= 0:
+            raise ValueError(f"mean_price must be positive, got {self.mean_price}")
+        if self.initial_price <= 0:
+            raise ValueError(f"initial_price must be positive, got {self.initial_price}")
+        self._rng = np.random.default_rng(self.seed)
+        self._log_price = np.log(self.initial_price)
+        self._log_mean = np.log(self.mean_price)
+
+    def next(self, step: int) -> dict[str, float]:
+        z = self._rng.standard_normal()
+        self._log_price += self.kappa * (self._log_mean - self._log_price) + self.sigma_per_step * z
+        return {self.token_id: np.exp(self._log_price)}
+
+
+@dataclass
 class CompositePriceProcess:
     """Combines several single-token `PriceProcess`es (each independently seeded) into
     one, so `BasketWorld` only needs to hold a single `price_process` regardless of how

@@ -6,13 +6,15 @@ co-basket agent to any `Strategy` implementation (here, `XYCCompetitorStrategy`)
 `weth_drift_per_step` defaults to `0.0` (driftless, matching every other scenario in this
 suite) but can be set to force a directional price trend — e.g. to see whether PM's
 active rebalancing helps or costs the portfolio when WETH is genuinely trending up, not
-just noisily wandering.
+just noisily wandering. For a price regime GBM can't express at all (e.g. mean-reverting,
+`price_process.MeanRevertingPriceProcess`), pass `weth_price_process` directly instead —
+it overrides `weth_sigma_per_step`/`weth_drift_per_step` entirely.
 """
 
 from __future__ import annotations
 
 from aqua_sim.basket_world import BasketGroup, BasketWorld, GroupBoundaryGuard, MetricsRecorder
-from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess
+from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess, PriceProcess
 from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
 
@@ -31,6 +33,7 @@ def build_world(
     weth_sigma_per_step: float = 0.01,
     weth_drift_per_step: float = 0.0,
     usdt_depeg_sigma_per_step: float = 0.0005,
+    weth_price_process: PriceProcess | None = None,
     pm_fee: float = 0.0002,
     pm_gas_cost: float = 0.10,
     competitor_fee: float = 0.001,
@@ -67,7 +70,8 @@ def build_world(
         guard=GroupBoundaryGuard(pm_strategy_id=PM_ID),
         price_process=CompositePriceProcess(
             [
-                GBMPriceProcess(
+                weth_price_process
+                or GBMPriceProcess(
                     token_id="WETH",
                     sigma_per_step=weth_sigma_per_step,
                     drift_per_step=weth_drift_per_step,

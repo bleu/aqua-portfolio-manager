@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess, JumpDiffusionPriceProcess
+from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess, JumpDiffusionPriceProcess, MeanRevertingPriceProcess
 
 
 class GBMPriceProcessTest(unittest.TestCase):
@@ -78,6 +78,46 @@ class JumpDiffusionPriceProcessTest(unittest.TestCase):
             prev = price
 
         self.assertGreater(max(jump_returns), max(gbm_returns))
+
+
+class MeanRevertingPriceProcessTest(unittest.TestCase):
+    def test_price_always_positive(self) -> None:
+        process = MeanRevertingPriceProcess(
+            token_id="X", sigma_per_step=0.05, mean_price=100.0, kappa=0.05, initial_price=100.0, seed=1
+        )
+        for t in range(1, 1001):
+            price = process.next(t)["X"]
+            self.assertGreater(price, 0)
+
+    def test_reverts_toward_mean_from_a_displaced_start(self) -> None:
+        process = MeanRevertingPriceProcess(
+            token_id="X", sigma_per_step=0.0, mean_price=100.0, kappa=0.1, initial_price=200.0, seed=1
+        )
+        prices = [process.next(t)["X"] for t in range(1, 101)]
+        # Zero volatility -- purely deterministic decay toward the mean, monotonic.
+        self.assertTrue(all(a > b for a, b in zip(prices, prices[1:])))
+        self.assertLess(abs(prices[-1] - 100.0), abs(prices[0] - 100.0))
+
+    def test_kappa_one_snaps_fully_to_mean_every_step(self) -> None:
+        process = MeanRevertingPriceProcess(
+            token_id="X", sigma_per_step=0.0, mean_price=100.0, kappa=1.0, initial_price=50.0, seed=1
+        )
+        price = process.next(1)["X"]
+        self.assertAlmostEqual(price, 100.0, places=9)
+
+    def test_stays_much_closer_to_mean_than_gbm_over_a_long_run(self) -> None:
+        gbm = GBMPriceProcess(token_id="X", sigma_per_step=0.02, initial_price=100.0, seed=5)
+        reverting = MeanRevertingPriceProcess(
+            token_id="X", sigma_per_step=0.02, mean_price=100.0, kappa=0.05, initial_price=100.0, seed=5
+        )
+
+        gbm_final = None
+        reverting_final = None
+        for t in range(1, 2001):
+            gbm_final = gbm.next(t)["X"]
+            reverting_final = reverting.next(t)["X"]
+
+        self.assertLess(abs(reverting_final - 100.0), abs(gbm_final - 100.0))
 
 
 class CompositePriceProcessTest(unittest.TestCase):
