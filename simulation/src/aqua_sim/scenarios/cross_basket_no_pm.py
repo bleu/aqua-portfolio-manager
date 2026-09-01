@@ -15,7 +15,7 @@ from __future__ import annotations
 from itertools import combinations
 
 from aqua_sim.basket_world import BasketGroup, BasketWorld, GroupBoundaryGuard, MetricsRecorder
-from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess
+from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess, PriceProcess
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
 
 PM_ID = "pm"  # never registered here -- the guard's PM exemption is moot with no PM present
@@ -30,6 +30,7 @@ def build_world(
     target_weight_a: float = 0.5,
     weth_sigma_per_step: float = 0.01,
     usdt_depeg_sigma_per_step: float = 0.0005,
+    weth_price_process: PriceProcess | None = None,
     competitor_fee: float = 0.001,
     competitor_gas_cost: float = 0.01,
     seed: int | None = None,
@@ -52,7 +53,8 @@ def build_world(
         guard=GroupBoundaryGuard(pm_strategy_id=PM_ID),
         price_process=CompositePriceProcess(
             [
-                GBMPriceProcess(token_id="WETH", sigma_per_step=weth_sigma_per_step, initial_price=initial_price_weth, seed=seed),
+                weth_price_process
+                or GBMPriceProcess(token_id="WETH", sigma_per_step=weth_sigma_per_step, initial_price=initial_price_weth, seed=seed),
                 GBMPriceProcess(
                     token_id="USDT",
                     sigma_per_step=usdt_depeg_sigma_per_step,
