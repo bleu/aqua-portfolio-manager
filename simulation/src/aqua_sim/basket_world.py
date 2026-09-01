@@ -43,19 +43,27 @@ class UnknownTokenError(ValueError):
 
 @dataclass(frozen=True)
 class GroupBoundaryGuard:
-    """Simulates ADR-0011's Basket Scope Guard: every strategy except the one designated
-    `pm_strategy_id` is confined to trading *within* a single declared group, but only
-    when PM is actually registered in this world.
+    """Simulates ADR-0011's Basket Scope Guard: every strategy except those explicitly
+    trading PM's own declared pair is confined to trading *within* a single declared
+    group, but only when PM is actually registered in this world.
 
     The real `BasketScopeGuard.sol` is a Safe Transaction Guard installed on PM's own
-    dedicated maker wallet (ADR-0002) — it exists *because* PM operates there. There is
-    no real-world wallet with this Guard installed and no PM ever shipped to it; a wallet
+    dedicated maker wallet (ADR-0002) — only PM's own registered strategy contract is
+    ever authorized to move that wallet's funds at all (`TRUSTED_PM_STRATEGY_HASH`), so
+    *any* settlement against PM's declared pair — whether the counterparty is an
+    arbitrageur correcting price or organic flow clearing through it — is exempt the same
+    way. `pm_strategy_id` is the strategy whose presence determines whether this Guard
+    exists at all (`pm_present`); `also_exempt_ids` covers any other strategy (e.g.
+    organic flow) that's also legitimately settling against PM's own pair, not some other
+    strategy crossing a group boundary it has no business touching. There is no
+    real-world wallet with this Guard installed and no PM ever shipped to it; a wallet
     with no PM simply never has this Guard in the first place, so nothing on it is
     confined to a single group. `check`'s `pm_present` argument models exactly that: with
     `pm_present=False`, every trade is allowed regardless of group membership.
     """
 
     pm_strategy_id: str
+    also_exempt_ids: frozenset[str] = frozenset()
 
     def group_of(self, token_id: str, groups: list[BasketGroup]) -> BasketGroup | None:
         for group in groups:
@@ -71,7 +79,7 @@ class GroupBoundaryGuard:
         same_group = group_in is not None and group_out is not None and group_in.group_id == group_out.group_id
         if same_group:
             return True
-        return trade.strategy_id == self.pm_strategy_id
+        return trade.strategy_id == self.pm_strategy_id or trade.strategy_id in self.also_exempt_ids
 
 
 @dataclass(frozen=True)
@@ -112,6 +120,7 @@ class MetricsRecorder:
     value_a_path: list[float] = field(default_factory=list)
     value_b_path: list[float] = field(default_factory=list)
     tracking_error_path: list[float] = field(default_factory=list)
+    captured_value_paths: dict[str, list[float]] = field(default_factory=dict)
 
     def record(self, world: "BasketWorld") -> None:
         view = world.view()
@@ -126,6 +135,9 @@ class MetricsRecorder:
         self.value_a_path.append(value_a)
         self.value_b_path.append(value_b)
         self.tracking_error_path.append(abs(value_a / total - self.target_weight_a))
+        for strategy in world.strategies:
+            captured = world.strategy_captured_value.get(strategy.id, 0.0)
+            self.captured_value_paths.setdefault(strategy.id, []).append(captured)
 
 
 @dataclass
@@ -148,6 +160,7 @@ class BasketWorld:
     metrics: MetricsRecorder
     reference_prices: dict[str, float] = field(default_factory=dict)
     blocked_trades: list[Trade] = field(default_factory=list)
+    strategy_captured_value: dict[str, float] = field(default_factory=dict)
 
     def view(self) -> BasketWorldView:
         return BasketWorldView(
@@ -161,6 +174,18 @@ class BasketWorld:
         mutates balances. Returns whether it was applied — `False` means the guard
         blocked it (recorded in `blocked_trades`, this is what the R6 scenario checks)
         or the pool didn't have enough of `token_out` to actually pay it out.
+
+        No `Strategy` here owns the wallet it trades against -- every registered strategy
+        is a *taker* quoting/settling against the shared pool (`token_balances`), same as
+        a real arbitrageur or organic swapper never gets to be the AMM they're trading
+        with. `strategy_captured_value` marks that split explicitly: whatever
+        mark-to-market value the pool gives up on a trade (received at `token_in`'s price,
+        paid out at `token_out`'s price) is attributed as *captured by* the strategy that
+        submitted it -- negative when the trade is bad for the pool (an arbitrage-style
+        correction), positive when it's good for the pool (e.g. organic flow paying a
+        fee). This is a notional value ledger for charting "who's winning," not a second
+        token balance sheet -- the pool's own `token_balances` remain the only real
+        reserves this world tracks.
         """
         if trade.token_in not in self.token_balances or trade.token_out not in self.token_balances:
             raise UnknownTokenError(f"trade references a token not in this world: {trade.token_in}/{trade.token_out}")
@@ -170,6 +195,9 @@ class BasketWorld:
             return False
         if trade.amount_out >= self.token_balances[trade.token_out]:
             return False
+
+        pool_value_change = trade.amount_in * self.reference_prices[trade.token_in] - trade.amount_out * self.reference_prices[trade.token_out]
+        self.strategy_captured_value[trade.strategy_id] = self.strategy_captured_value.get(trade.strategy_id, 0.0) - pool_value_change
 
         self.token_balances[trade.token_in] += trade.amount_in
         self.token_balances[trade.token_out] -= trade.amount_out

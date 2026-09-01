@@ -15,11 +15,13 @@ from __future__ import annotations
 
 from aqua_sim.basket_world import BasketGroup, BasketWorld, GroupBoundaryGuard, MetricsRecorder
 from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess, PriceProcess
+from aqua_sim.strategies.noise_trader import NoiseTraderStrategy
 from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
 
-PM_ID = "pm"
+ARBITRAGEUR_ID = "arbitrageur"
 COMPETITOR_ID = "stables_competitor"
+ORGANIC_ID = "organic_weth_usdc"
 
 
 def build_world(
@@ -38,6 +40,9 @@ def build_world(
     pm_gas_cost: float = 0.10,
     competitor_fee: float = 0.001,
     competitor_gas_cost: float = 0.01,
+    organic_arrival_prob_per_step: float = 0.0,
+    organic_fee: float = 0.003,
+    organic_mean_size_fraction: float = 0.01,
     seed: int | None = None,
 ) -> BasketWorld:
     group_weth = BasketGroup("weth", ("WETH",))
@@ -47,7 +52,7 @@ def build_world(
     if with_pm:
         strategies.append(
             PortfolioManagerStrategy(
-                id=PM_ID,
+                id=ARBITRAGEUR_ID,
                 token_a="WETH",
                 token_b="USDC",
                 group_a=group_weth,
@@ -57,6 +62,18 @@ def build_world(
                 gas_cost=pm_gas_cost,
             )
         )
+        if organic_arrival_prob_per_step > 0:
+            strategies.append(
+                NoiseTraderStrategy(
+                    id=ORGANIC_ID,
+                    token_a="WETH",
+                    token_b="USDC",
+                    arrival_prob_per_step=organic_arrival_prob_per_step,
+                    mean_size_fraction=organic_mean_size_fraction,
+                    fee=organic_fee,
+                    seed=None if seed is None else seed + 2,
+                )
+            )
     strategies.append(
         XYCCompetitorStrategy(
             id=COMPETITOR_ID, token_a="USDC", token_b="USDT", fee=competitor_fee, gas_cost=competitor_gas_cost
@@ -67,7 +84,7 @@ def build_world(
         token_balances={"WETH": initial_balance_weth, "USDC": initial_balance_usdc, "USDT": initial_balance_usdt},
         groups=[group_weth, group_stables],
         strategies=strategies,
-        guard=GroupBoundaryGuard(pm_strategy_id=PM_ID),
+        guard=GroupBoundaryGuard(pm_strategy_id=ARBITRAGEUR_ID, also_exempt_ids=frozenset({ORGANIC_ID})),
         price_process=CompositePriceProcess(
             [
                 weth_price_process
