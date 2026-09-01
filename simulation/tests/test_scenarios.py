@@ -39,6 +39,26 @@ class BasketWithWithoutPmScenarioTest(unittest.TestCase):
         world.run(300)
         self.assertEqual(world.token_balances["WETH"], 10.0)
 
+    def test_rebalancing_costs_value_under_a_forced_uptrend(self) -> None:
+        # A driftless price never systematically favors either arm, but a genuine, forced
+        # uptrend should: PM sells WETH as it appreciates past target, so NOT rebalancing
+        # (letting the initial WETH balance ride) should end with strictly more total
+        # portfolio value -- the standard rebalancing-drag-vs-buy-and-hold result.
+        for seed in range(5):
+            world_with = basket_with_without_pm.build_world(with_pm=True, weth_drift_per_step=0.0006, seed=seed)
+            world_with.run(300)
+            world_without = basket_with_without_pm.build_world(with_pm=False, weth_drift_per_step=0.0006, seed=seed)
+            world_without.run(300)
+
+            value_with = world_with.metrics.value_a_path[-1] + world_with.metrics.value_b_path[-1]
+            value_without = world_without.metrics.value_a_path[-1] + world_without.metrics.value_b_path[-1]
+
+            self.assertLess(
+                value_with,
+                value_without,
+                f"seed {seed}: rebalancing should cost value under a forced uptrend (with={value_with:.0f}, without={value_without:.0f})",
+            )
+
 
 class GuardEnforcementScenarioTest(unittest.TestCase):
     """With PM registered and correcting, a separate "rogue" strategy on the same pair

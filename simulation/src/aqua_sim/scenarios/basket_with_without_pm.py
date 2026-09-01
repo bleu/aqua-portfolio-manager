@@ -1,7 +1,13 @@
 """R5: another (profit-seeking) strategy trading within PM's declared "stables" group,
 with PM present and correcting vs. PM absent (no correction fires) — isolates what PM's
 own presence contributes to tracking error, generalized from `basket.py`'s one hardcoded
-co-basket agent to any `Strategy` implementation (here, `XYCCompetitorStrategy`)."""
+co-basket agent to any `Strategy` implementation (here, `XYCCompetitorStrategy`).
+
+`weth_drift_per_step` defaults to `0.0` (driftless, matching every other scenario in this
+suite) but can be set to force a directional price trend — e.g. to see whether PM's
+active rebalancing helps or costs the portfolio when WETH is genuinely trending up, not
+just noisily wandering.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ def build_world(
     initial_price_weth: float = 2000.0,
     target_weight_a: float = 0.5,
     weth_sigma_per_step: float = 0.01,
+    weth_drift_per_step: float = 0.0,
     usdt_depeg_sigma_per_step: float = 0.0005,
     pm_fee: float = 0.0002,
     pm_gas_cost: float = 0.10,
@@ -60,7 +67,13 @@ def build_world(
         guard=GroupBoundaryGuard(pm_strategy_id=PM_ID),
         price_process=CompositePriceProcess(
             [
-                GBMPriceProcess(token_id="WETH", sigma_per_step=weth_sigma_per_step, initial_price=initial_price_weth, seed=seed),
+                GBMPriceProcess(
+                    token_id="WETH",
+                    sigma_per_step=weth_sigma_per_step,
+                    drift_per_step=weth_drift_per_step,
+                    initial_price=initial_price_weth,
+                    seed=seed,
+                ),
                 GBMPriceProcess(
                     token_id="USDT",
                     sigma_per_step=usdt_depeg_sigma_per_step,
