@@ -44,9 +44,15 @@ class UnknownTokenError(ValueError):
 @dataclass(frozen=True)
 class GroupBoundaryGuard:
     """Simulates ADR-0011's Basket Scope Guard: every strategy except the one designated
-    `pm_strategy_id` is confined to trading *within* a single declared group. Crossing a
-    group boundary, or touching a token outside every declared group, is rejected for
-    everyone else — mirroring the real Guard's `ship()`-time check at the Safe level.
+    `pm_strategy_id` is confined to trading *within* a single declared group, but only
+    when PM is actually registered in this world.
+
+    The real `BasketScopeGuard.sol` is a Safe Transaction Guard installed on PM's own
+    dedicated maker wallet (ADR-0002) — it exists *because* PM operates there. There is
+    no real-world wallet with this Guard installed and no PM ever shipped to it; a wallet
+    with no PM simply never has this Guard in the first place, so nothing on it is
+    confined to a single group. `check`'s `pm_present` argument models exactly that: with
+    `pm_present=False`, every trade is allowed regardless of group membership.
     """
 
     pm_strategy_id: str
@@ -57,7 +63,9 @@ class GroupBoundaryGuard:
                 return group
         return None
 
-    def check(self, trade: Trade, groups: list[BasketGroup]) -> bool:
+    def check(self, trade: Trade, groups: list[BasketGroup], pm_present: bool) -> bool:
+        if not pm_present:
+            return True
         group_in = self.group_of(trade.token_in, groups)
         group_out = self.group_of(trade.token_out, groups)
         same_group = group_in is not None and group_out is not None and group_in.group_id == group_out.group_id
@@ -156,7 +164,8 @@ class BasketWorld:
         """
         if trade.token_in not in self.token_balances or trade.token_out not in self.token_balances:
             raise UnknownTokenError(f"trade references a token not in this world: {trade.token_in}/{trade.token_out}")
-        if not self.guard.check(trade, self.groups):
+        pm_present = any(s.id == self.guard.pm_strategy_id for s in self.strategies)
+        if not self.guard.check(trade, self.groups, pm_present):
             self.blocked_trades.append(trade)
             return False
         if trade.amount_out >= self.token_balances[trade.token_out]:
