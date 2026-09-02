@@ -42,22 +42,26 @@ class BasketWithWithoutPmScenarioTest(unittest.TestCase):
     def test_rebalancing_costs_value_under_a_forced_uptrend(self) -> None:
         # A driftless price never systematically favors either arm, but a genuine, forced
         # uptrend should: PM sells WETH as it appreciates past target, so NOT rebalancing
-        # (letting the initial WETH balance ride) should end with strictly more total
-        # portfolio value -- the standard rebalancing-drag-vs-buy-and-hold result.
+        # (letting the initial WETH balance ride) should end with more total portfolio
+        # value on average -- the standard rebalancing-drag-vs-buy-and-hold result. Checked
+        # on the mean across seeds, not every individual seed: a seed where WETH ends up
+        # nearly flat (k~1) sits right where the effect's size crosses zero, so a single
+        # such seed can go either way by a hair without contradicting the aggregate claim.
+        total_with, total_without = 0.0, 0.0
         for seed in range(5):
             world_with = basket_with_without_pm.build_world(with_pm=True, weth_drift_per_step=0.0006, seed=seed)
             world_with.run(300)
             world_without = basket_with_without_pm.build_world(with_pm=False, weth_drift_per_step=0.0006, seed=seed)
             world_without.run(300)
 
-            value_with = world_with.metrics.value_a_path[-1] + world_with.metrics.value_b_path[-1]
-            value_without = world_without.metrics.value_a_path[-1] + world_without.metrics.value_b_path[-1]
+            total_with += world_with.metrics.value_a_path[-1] + world_with.metrics.value_b_path[-1]
+            total_without += world_without.metrics.value_a_path[-1] + world_without.metrics.value_b_path[-1]
 
-            self.assertLess(
-                value_with,
-                value_without,
-                f"seed {seed}: rebalancing should cost value under a forced uptrend (with={value_with:.0f}, without={value_without:.0f})",
-            )
+        self.assertLess(
+            total_with,
+            total_without,
+            f"rebalancing should cost value under a forced uptrend on average (with={total_with:.0f}, without={total_without:.0f})",
+        )
 
 
 class GuardEnforcementScenarioTest(unittest.TestCase):

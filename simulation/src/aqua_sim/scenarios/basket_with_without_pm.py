@@ -1,7 +1,9 @@
 """R5: another (profit-seeking) strategy trading within PM's declared "stables" group,
 with PM present and correcting vs. PM absent (no correction fires) — isolates what PM's
 own presence contributes to tracking error, generalized from `basket.py`'s one hardcoded
-co-basket agent to any `Strategy` implementation (here, `XYCCompetitorStrategy`).
+co-basket agent to any `Strategy` implementation (here, `StableSwapCompetitorStrategy` —
+USDC/USDT are both pegged to the same value, so a Curve-style StableSwap curve is the
+right model, not a plain constant-product pool).
 
 `weth_drift_per_step` defaults to `0.0` (driftless, matching every other scenario in this
 suite) but can be set to force a directional price trend — e.g. to see whether PM's
@@ -17,7 +19,7 @@ from aqua_sim.basket_world import BasketGroup, BasketWorld, GroupBoundaryGuard, 
 from aqua_sim.price_process import CompositePriceProcess, GBMPriceProcess, PriceProcess
 from aqua_sim.strategies.noise_trader import NoiseTraderStrategy
 from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy
-from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
+from aqua_sim.strategies.stableswap_competitor import StableSwapCompetitorStrategy
 
 ARBITRAGEUR_ID = "arbitrageur"
 COMPETITOR_ID = "stables_competitor"
@@ -38,8 +40,9 @@ def build_world(
     weth_price_process: PriceProcess | None = None,
     pm_fee: float = 0.0002,
     pm_gas_cost: float = 0.10,
-    competitor_fee: float = 0.001,
+    competitor_fee: float = 0.0004,
     competitor_gas_cost: float = 0.01,
+    competitor_amplification: float = 100.0,
     organic_arrival_prob_per_step: float = 0.0,
     organic_fee: float = 0.003,
     organic_mean_size_fraction: float = 0.01,
@@ -75,8 +78,13 @@ def build_world(
                 )
             )
     strategies.append(
-        XYCCompetitorStrategy(
-            id=COMPETITOR_ID, token_a="USDC", token_b="USDT", fee=competitor_fee, gas_cost=competitor_gas_cost
+        StableSwapCompetitorStrategy(
+            id=COMPETITOR_ID,
+            token_a="USDC",
+            token_b="USDT",
+            amplification=competitor_amplification,
+            fee=competitor_fee,
+            gas_cost=competitor_gas_cost,
         )
     )
 

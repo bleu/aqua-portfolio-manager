@@ -7,6 +7,7 @@ import unittest
 from aqua_sim.basket_world import BasketGroup, BasketWorldView
 from aqua_sim.strategies.noise_trader import NoiseTraderStrategy
 from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy
+from aqua_sim.strategies.stableswap_competitor import StableSwapCompetitorStrategy
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
 
 
@@ -91,6 +92,46 @@ class XYCCompetitorStrategyTest(unittest.TestCase):
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
         self.assertIsNone(competitor.decide_trade(view))
+
+
+class StableSwapCompetitorStrategyTest(unittest.TestCase):
+    def test_corrects_toward_market_rate_when_profitable(self) -> None:
+        competitor = StableSwapCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.01)
+        view = BasketWorldView(
+            token_balances={"USDC": 12_000.0, "USDT": 8_000.0},
+            reference_prices={"USDC": 1.0, "USDT": 1.0},
+            groups=[BasketGroup("stables", ("USDC", "USDT"))],
+        )
+        trade = competitor.decide_trade(view)
+        self.assertIsNotNone(trade)
+        self.assertEqual(trade.token_in, "USDT")
+        self.assertEqual(trade.token_out, "USDC")
+
+    def test_no_trade_when_balanced(self) -> None:
+        competitor = StableSwapCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.01)
+        view = BasketWorldView(
+            token_balances={"USDC": 10_000.0, "USDT": 10_000.0},
+            reference_prices={"USDC": 1.0, "USDT": 1.0},
+            groups=[BasketGroup("stables", ("USDC", "USDT"))],
+        )
+        self.assertIsNone(competitor.decide_trade(view))
+
+    def test_smaller_price_impact_than_plain_xyc_for_the_same_trade_size(self) -> None:
+        # StableSwap's flatter curve near the peg means a given trade size moves the
+        # pool's own price much less than the same trade against a plain constant-product
+        # pool -- the actual point of using it for a pegged pair.
+        view = BasketWorldView(
+            token_balances={"USDC": 11_000.0, "USDT": 9_000.0},
+            reference_prices={"USDC": 1.0, "USDT": 1.0},
+            groups=[BasketGroup("stables", ("USDC", "USDT"))],
+        )
+        stable_trade = StableSwapCompetitorStrategy(id="s", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.0).decide_trade(view)
+        xyc_trade = XYCCompetitorStrategy(id="x", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.0).decide_trade(view)
+        self.assertIsNotNone(stable_trade)
+        self.assertIsNotNone(xyc_trade)
+        # StableSwap resists the price move harder, so it takes *more* volume to reach
+        # the same target rate -- the flatter curve, not a smaller correction, is the point.
+        self.assertGreater(stable_trade.amount_in, xyc_trade.amount_in)
 
 
 class NoiseTraderStrategyTest(unittest.TestCase):
