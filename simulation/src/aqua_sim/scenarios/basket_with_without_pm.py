@@ -1,9 +1,8 @@
-"""R5: another (profit-seeking) strategy trading within PM's declared "stables" group,
-with PM present and correcting vs. PM absent (no correction fires) — isolates what PM's
-own presence contributes to tracking error, generalized from `basket.py`'s one hardcoded
-co-basket agent to any `Strategy` implementation (here, `StableSwapCompetitorStrategy` —
-USDC/USDT are both pegged to the same value, so a Curve-style StableSwap curve is the
-right model, not a plain constant-product pool).
+"""Another (profit-seeking) strategy trading within PM's declared "stables" group, with
+PM present and correcting vs. PM absent (no correction fires) — isolates what PM's own
+presence contributes to tracking error. Uses `StableSwapCompetitorStrategy` for the
+stables pair — USDC/USDT are both pegged to the same value, so a Curve-style StableSwap
+curve is the right model, not a plain constant-product pool.
 
 `weth_drift_per_step` defaults to `0.0` (driftless, matching every other scenario in this
 suite) but can be set to force a directional price trend — e.g. to see whether PM's
@@ -82,6 +81,11 @@ def build_world(
             id=COMPETITOR_ID,
             token_a="USDC",
             token_b="USDT",
+            # Seeded from the real initial balances -- a reasonable starting point, but this
+            # competitor's own view only evolves from its own trades from here on, never
+            # resynced from the real wallet (see StableSwapCompetitorStrategy's docstring).
+            virtual_balance_a=initial_balance_usdc,
+            virtual_balance_b=initial_balance_usdt,
             amplification=competitor_amplification,
             fee=competitor_fee,
             gas_cost=competitor_gas_cost,

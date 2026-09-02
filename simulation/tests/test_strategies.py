@@ -1,4 +1,4 @@
-"""Regression tests for the Strategy implementations (BLEUDEV-334 R1/R3/R4)."""
+"""Regression tests for the Strategy implementations."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class PortfolioManagerStrategyTest(unittest.TestCase):
 
     def test_reacts_to_basket_mate_moving_without_pm_trading(self) -> None:
         # A basket-mate (USDT) in the same group as USDC grew -- PM's quote should move
-        # even though only WETH/USDC balances are directly PM's own (R5).
+        # even though only WETH/USDC balances are directly PM's own.
         group_stables = BasketGroup("B", ("USDC", "USDT"))
         pm = PortfolioManagerStrategy(
             id="pm", token_a="WETH", token_b="USDC", group_a=self.group_a, group_b=group_stables, target_weight_a=0.5
@@ -73,9 +73,11 @@ class XYCCompetitorStrategyTest(unittest.TestCase):
     def test_corrects_toward_market_rate_when_profitable(self) -> None:
         # Excess USDC relative to USDT -- the pool should shed USDC (token_out) and
         # receive USDT (token_in) to move back toward the 1:1 market rate.
-        competitor = XYCCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.001, gas_cost=0.01)
+        competitor = XYCCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=12_000.0, virtual_balance_b=8_000.0, fee=0.001, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 12_000.0, "USDT": 8_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
@@ -85,20 +87,41 @@ class XYCCompetitorStrategyTest(unittest.TestCase):
         self.assertEqual(trade.token_out, "USDC")
 
     def test_no_trade_when_balanced(self) -> None:
-        competitor = XYCCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.001, gas_cost=0.01)
+        competitor = XYCCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=10_000.0, virtual_balance_b=10_000.0, fee=0.001, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 10_000.0, "USDT": 10_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
         self.assertIsNone(competitor.decide_trade(view))
 
+    def test_does_not_affect_a_different_instances_own_reserves(self) -> None:
+        # Two competitor instances on the same pair, isolated: correcting one's own
+        # reserves must never touch the other's -- the whole point of running on virtual,
+        # isolated reserves instead of the shared real wallet balance.
+        competitor_1 = XYCCompetitorStrategy(
+            id="c1", token_a="USDC", token_b="USDT", virtual_balance_a=12_000.0, virtual_balance_b=8_000.0, fee=0.001, gas_cost=0.01
+        )
+        competitor_2 = XYCCompetitorStrategy(
+            id="c2", token_a="USDC", token_b="USDT", virtual_balance_a=10_000.0, virtual_balance_b=10_000.0, fee=0.001, gas_cost=0.01
+        )
+        view = BasketWorldView(
+            token_balances={}, reference_prices={"USDC": 1.0, "USDT": 1.0}, groups=[BasketGroup("stables", ("USDC", "USDT"))]
+        )
+        competitor_1.decide_trade(view)
+        self.assertEqual(competitor_2.virtual_balance_a, 10_000.0)
+        self.assertEqual(competitor_2.virtual_balance_b, 10_000.0)
+
 
 class StableSwapCompetitorStrategyTest(unittest.TestCase):
     def test_corrects_toward_market_rate_when_profitable(self) -> None:
-        competitor = StableSwapCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.01)
+        competitor = StableSwapCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=12_000.0, virtual_balance_b=8_000.0, fee=0.0004, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 12_000.0, "USDT": 8_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
@@ -108,9 +131,11 @@ class StableSwapCompetitorStrategyTest(unittest.TestCase):
         self.assertEqual(trade.token_out, "USDC")
 
     def test_no_trade_when_balanced(self) -> None:
-        competitor = StableSwapCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.01)
+        competitor = StableSwapCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=10_000.0, virtual_balance_b=10_000.0, fee=0.0004, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 10_000.0, "USDT": 10_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
@@ -121,12 +146,16 @@ class StableSwapCompetitorStrategyTest(unittest.TestCase):
         # pool's own price much less than the same trade against a plain constant-product
         # pool -- the actual point of using it for a pegged pair.
         view = BasketWorldView(
-            token_balances={"USDC": 11_000.0, "USDT": 9_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
-        stable_trade = StableSwapCompetitorStrategy(id="s", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.0).decide_trade(view)
-        xyc_trade = XYCCompetitorStrategy(id="x", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.0).decide_trade(view)
+        stable_trade = StableSwapCompetitorStrategy(
+            id="s", token_a="USDC", token_b="USDT", virtual_balance_a=11_000.0, virtual_balance_b=9_000.0, fee=0.0004, gas_cost=0.0
+        ).decide_trade(view)
+        xyc_trade = XYCCompetitorStrategy(
+            id="x", token_a="USDC", token_b="USDT", virtual_balance_a=11_000.0, virtual_balance_b=9_000.0, fee=0.0004, gas_cost=0.0
+        ).decide_trade(view)
         self.assertIsNotNone(stable_trade)
         self.assertIsNotNone(xyc_trade)
         # StableSwap resists the price move harder, so it takes *more* volume to reach

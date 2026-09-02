@@ -39,13 +39,21 @@ def build_world(
     group_stables = BasketGroup("stables", ("USDC", "USDT"))
 
     balances = {"WETH": initial_balance_weth, "USDC": initial_balance_usdc, "USDT": initial_balance_usdt}
+    # Each competitor gets its own private reserve pair, seeded from the real initial
+    # balances, then evolving only from that instance's own trades from there on -- so a
+    # trade on one pair (e.g. WETH/USDC) never affects a different instance's own quote
+    # (e.g. WETH/USDT), the same way two unrelated Uniswap pools don't share reserves.
     strategies = [
         XYCCompetitorStrategy(
-            id=f"competitor_{"USDC"}_{"WETH"}", token_a="USDC", token_b="WETH", fee=competitor_fee, gas_cost=competitor_gas_cost
-        ),
-        XYCCompetitorStrategy(
-            id=f"competitor_{"USDT"}_{"WETH"}", token_a="USDT", token_b="WETH", fee=competitor_fee, gas_cost=competitor_gas_cost
-        )        
+            id=f"competitor_{token_a}_{token_b}",
+            token_a=token_a,
+            token_b=token_b,
+            virtual_balance_a=balances[token_a],
+            virtual_balance_b=balances[token_b],
+            fee=competitor_fee,
+            gas_cost=competitor_gas_cost,
+        )
+        for token_a, token_b in combinations(balances.keys(), 2)
     ]
 
     world = BasketWorld(

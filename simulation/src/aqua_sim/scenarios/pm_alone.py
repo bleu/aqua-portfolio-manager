@@ -1,6 +1,5 @@
-"""R1 baseline: PM's own math, no competitors, no basket-mates — the direct successor to
-`simulate.run_mechanism_simulation`'s scope, rebuilt on `BasketWorld` so it exercises the
-exact same code path every other scenario does."""
+"""Baseline: PM's own math, no competitors, no basket-mates -- built on `BasketWorld` so
+it exercises the exact same code path every other scenario does."""
 
 from __future__ import annotations
 

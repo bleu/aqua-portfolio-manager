@@ -1,4 +1,4 @@
-"""Regression tests for the synthetic-only price processes (BLEUDEV-334 R2)."""
+"""Regression tests for the synthetic-only price processes."""
 
 from __future__ import annotations
 
