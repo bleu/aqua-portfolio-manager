@@ -1,0 +1,82 @@
+"""The Portfolio Manager itself, as a `Strategy` — the constant-mean weighted curve
+(`curve.py`, `PRICING.md`) plus ADR-0006's fee + gas-cost profitability gate, generalized
+from a raw two-token pair to two declared `BasketGroup`s (ADR-0003), so PM correctly reacts
+to another strategy moving a basket-mate's balance without PM itself having traded.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from aqua_sim.basket_world import BasketGroup, BasketWorldView
+from aqua_sim.curve import CurveState, apply_exact_in, spot_price
+from aqua_sim.strategy import Trade
+
+
+def _target_balance_in_for_price(invariant_value: float, weight_in: float, weight_out: float, target_price: float) -> float:
+    """Closed-form, fee-free sizing: the `balance_in` a curve with this invariant would
+    have if its spot price were exactly `target_price`. Same derivation as
+    `flows.py`'s private helper of the same name — kept local here since this module
+    doesn't depend on `flows.py`'s two-token-only shape."""
+    ratio = weight_in * target_price / weight_out
+    return invariant_value * ratio**weight_out
+
+
+@dataclass
+class PortfolioManagerStrategy:
+    """Quotes and trades one specific token pair (`token_a` in `group_a`, `token_b` in
+    `group_b`), but prices against each group's full oracle-valued aggregate (ADR-0003),
+    not just `token_a`/`token_b`'s own raw balances — a basket-mate's balance change
+    shows up in the quote immediately, even though only `token_a`/`token_b` ever actually
+    move from PM's own trades.
+
+    Reduces to the plain two-token case exactly when `group_a`/`group_b` each contain
+    only `token_a`/`token_b` (a group's `virtual_balance` divided by its one member's own
+    price is just that member's raw balance).
+    """
+
+    id: str
+    token_a: str
+    token_b: str
+    group_a: BasketGroup
+    group_b: BasketGroup
+    target_weight_a: float
+    fee: float = 0.0002
+    gas_cost: float = 0.10
+
+    def decide_trade(self, world: BasketWorldView) -> Trade | None:
+        price_a = world.reference_prices[self.token_a]
+        price_b = world.reference_prices[self.token_b]
+
+        # Try both orientations each step -- same pattern as the old flows.py -- since
+        # only one direction is ever actually profitable for a given skew.
+        candidates = [
+            (self.token_a, self.token_b, self.group_a, self.group_b, self.target_weight_a, price_a, price_b),
+            (self.token_b, self.token_a, self.group_b, self.group_a, 1 - self.target_weight_a, price_b, price_a),
+        ]
+        for token_in, token_out, group_in, group_out, weight_in, price_in, price_out in candidates:
+            weight_out = 1 - weight_in
+            balance_in_aug = group_in.virtual_balance(world) / price_in
+            balance_out_aug = group_out.virtual_balance(world) / price_out
+            state = CurveState(balance_in_aug, balance_out_aug, weight_in, weight_out)
+
+            # SP(i->o): units of token_in paid per unit of token_out received.
+            market_rate = price_out / price_in
+            pool_rate = spot_price(state)
+            if pool_rate >= market_rate * (1 - self.fee):
+                continue  # this side isn't cheap enough to be worth correcting
+
+            invariant_value = balance_in_aug**weight_in * balance_out_aug**weight_out
+            target_balance_in = _target_balance_in_for_price(invariant_value, weight_in, weight_out, market_rate)
+            amount_in = target_balance_in - balance_in_aug
+            if amount_in <= 0:
+                continue
+
+            _, amount_out = apply_exact_in(state, amount_in, self.fee)
+            profit_in_value = (amount_out * price_out) - (amount_in * price_in)
+            if profit_in_value < self.gas_cost:
+                continue
+
+            return Trade(strategy_id=self.id, token_in=token_in, token_out=token_out, amount_in=amount_in, amount_out=amount_out)
+
+        return None
