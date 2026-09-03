@@ -32,7 +32,7 @@ simulation/
 |---|---|---|
 | 01 | `01_pm_alone.ipynb` | Baseline: PM alone, no competitors, no basket-mates. **Result: mean tracking error stays under 0.001% across 10 seeds**, with no tunable knob beyond `fee`/`gas_cost` (`ADR-0006`). |
 | 02 | `02_basket_with_without_pm.ipynb` | Portfolio value with PM (arbitrageur + organic flow trading against PM's curve, `pm_fee=2%`) vs. without PM (static). **With PM wins 10/10 seeds** under a mean-reverting price; also charts a forced WETH uptrend. |
-| 03 | `03_cross_basket_no_pm.ipynb` | Portfolio value and tracking error with PM vs. an unconstrained competitor on every pairwise token combination (no PM, no Guard). **With PM wins on both value and tracking error** (~0.37% vs. ~16.67% mean tracking error). |
+| 03 | `03_cross_basket_no_pm.ipynb` | Portfolio value and tracking error with PM vs. an unconstrained competitor on every pairwise token combination (no PM, no Guard). **With PM wins on both value and tracking error** (~0.37% vs. ~0.67% mean tracking error). |
 
 Guard enforcement (a strategy blocked from crossing a group boundary) isn't a notebook — it's verified at the contract level (`packages/contracts/test/BasketScopeGuard.t.sol`, `BasketScopeGuardE2E.t.sol`), since the actual `ship()` accept/revert path through the Safe is what matters, not a simulated approximation of it.
 
