@@ -34,7 +34,6 @@ packages/contracts/script/  Deploy.s.sol — deploys against whichever RPC it's 
 packages/contracts/lib/     Vendored submodules: aqua, swap-vm, forge-std, safe-smart-account,
                              openzeppelin-contracts, solidity-utils, balancer-v3-monorepo
                              (balancer-v3-monorepo is reference-only, GPL-3.0 — never imported)
-packages/onboarding-check/  Pre-existing-strategy scan tool (BLEUDEV-321)
 docker-compose.yml           Forks Base via Anvil, deploys, and runs tests against real Aqua state
 docs/ARCHITECTURE.md         System diagrams + component breakdown
 docs/LICENSING-RISK.md       The Aqua-Source-1.1 finding above, in full
