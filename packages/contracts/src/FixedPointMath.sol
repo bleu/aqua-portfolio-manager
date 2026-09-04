@@ -13,11 +13,11 @@ pragma solidity 0.8.30;
 ///         textbook algorithm (range reduction + a Taylor/artanh series), independently
 ///         re-derived and re-verified against known reference points (see
 ///         `test/FixedPointMath.t.sol`).
-/// @dev Every rounding direction below is deliberate, not incidental: `PortfolioManagerSwap`'s
-///      floor/ceil discipline (`PRICING.md`) and `INVARIANT-PROOF.md`'s algebraic proof both
-///      depend on `pow` never *overstating* a value in a way that would let a trade extract
-///      more than the true formula allows. Where a choice exists, this library rounds `pow`'s
-///      result DOWN (never up) — see `pow`'s own comment for exactly where that happens.
+/// @dev Every rounding direction below is deliberate, not incidental: `PortfolioManagerPricing`'s
+///      floor/ceil discipline (`PRICING.md`) and `DONATION-RESISTANCE-PROOF.md`'s algebraic
+///      proof both depend on `pow` never *overstating* a value in a way that would let a trade
+///      extract more than the true formula allows. Where a choice exists, this library rounds
+///      `pow`'s result DOWN (never up) — see `pow`'s own comment for exactly where that happens.
 library FixedPointMath {
     /// @notice Fixed-point one: every input/output here is scaled by `WAD` (18 decimals).
     uint256 internal constant WAD = 1e18;
@@ -47,6 +47,7 @@ library FixedPointMath {
 
     error FixedPointMathLnRequiresPositive(uint256 x);
     error FixedPointMathExpInputTooLarge(int256 x);
+    error FixedPointMathExpSeriesNonPositive(int256 series);
 
     /// @notice Natural log of `x` (WAD-scaled, `x > 0`), WAD-scaled and signed (negative for
     ///         `x < WAD`, zero at `x == WAD`, positive for `x > WAD`).
@@ -120,6 +121,10 @@ library FixedPointMath {
         // series may be slightly negative-adjacent-to-zero-rounded only if r is negative and
         // term count is low; EXP_SERIES_TERMS=15 at |r|<=ln(2)/2 keeps series > 0 with wide
         // margin (e^r > 0 always, and the series converges to it well before 15 terms here).
+        // Asserted, not just commented: an explicit int->uint conversion doesn't get Solidity
+        // 0.8's checked-arithmetic protection, so a negative `series` here would silently wrap
+        // to a huge positive result instead of reverting.
+        require(series > 0, FixedPointMathExpSeriesNonPositive(series));
 
         uint256 result = uint256(series);
         if (k >= 0) {
@@ -130,21 +135,20 @@ library FixedPointMath {
     }
 
     /// @notice `base^exponent`, both WAD-scaled and positive (`exponent` — this contract's
-    ///         only caller, `PortfolioManagerSwap`, only ever raises a value to a ratio of two
-    ///         positive weights, never a negative power).
+    ///         only caller, `PortfolioManagerPricing`, only ever raises a value to a ratio of
+    ///         two positive weights, never a negative power).
     /// @dev Two exact-result shortcuts before falling back to `exp(exponent * ln(base) / WAD)`:
     ///      `exponent == WAD` returns `base` unchanged (the equal-weight case reduces here,
     ///      matching `xy=k` exactly with zero series error — see
-    ///      `test/PortfolioManagerSwap.t.sol`'s regression check), and `base == WAD` returns
+    ///      `test/PortfolioManagerPricing.t.sol`'s regression check), and `base == WAD` returns
     ///      `WAD` (`1^anything == 1`, exactly, by definition — not worth a series round-trip).
     ///      Otherwise: rounds the final result DOWN by construction — `exp`'s Taylor series is
     ///      evaluated on `ln`'s already-rounded (truncating integer division throughout)
-    ///      result, so this never *overstates* `base^exponent`. That's the direction
-    ///      `PRICING.md`'s floor/ceil rules need: called on the `(B_i/(B_i+A_i_eff))` base for
-    ///      exact-in (rounding the ratio down before it's used to compute `A_o` keeps `A_o`
-    ///      from being overstated) and on the `(B_o/(B_o-A_o))` base for exact-out (rounding
-    ///      the ratio down there is the conservative direction `PortfolioManagerSwap` corrects
-    ///      for by ceiling its own final `A_i`, per `PRICING.md`).
+    ///      result, so this never *overstates* `base^exponent` for the `base` it's actually
+    ///      given. `PortfolioManagerPricing.exactIn`/`exactOut` are responsible for feeding this
+    ///      the correctly-rounded `base` for their own direction (ceiled or floored, per
+    ///      `PRICING.md`) — this function's own floor bias composes with that input rounding,
+    ///      it doesn't substitute for choosing it correctly.
     function pow(uint256 base, uint256 exponent) internal pure returns (uint256) {
         if (exponent == WAD) return base;
         if (base == WAD) return WAD;
