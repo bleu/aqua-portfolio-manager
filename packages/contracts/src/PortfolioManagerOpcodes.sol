@@ -20,9 +20,9 @@ contract PortfolioManagerOpcodes is PortfolioManagerSwap, Fee {
     )
         internal {}
 
-    /// @dev Opcode 0 = the weighted-curve swap; opcode 1 = the protocol-fee pull, called twice
-    /// (once per recipient) by PortfolioManagerProgramBuilder when composing a strategy's
-    /// program bytes, chained *before* opcode 0 so the curve never sees the protocol's cut
+    /// @dev Opcode 0 = the weighted-curve swap; opcode 1 = the protocol-fee pull, composed by
+    /// PortfolioManagerProgramBuilder (a single call, to the 1inch DAO Treasury, at 1IP-103's
+    /// tiered rate) chained *before* opcode 0 so the curve never sees the protocol's cut
     /// (see PortfolioManagerSwap.sol's @dev note, and BLEUDEV-327 for the full derivation).
     function _opcodes()
         internal

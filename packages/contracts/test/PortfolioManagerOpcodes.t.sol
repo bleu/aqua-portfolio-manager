@@ -19,13 +19,17 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 /// @notice Exercises BLEUDEV-327's shipped fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
 /// PortfolioManagerPricing.t.sol/PortfolioManagerArgsBuilder.t.sol already cover. This file
-/// answers: does the *composition* (two chained Fee._aquaProtocolFeeAmountInXD pulls before
-/// the curve opcode) actually behave as designed end to end.
+/// answers: does the *composition* (a chained Fee._aquaProtocolFeeAmountInXD pull, tiered per
+/// 1IP-103, before the curve opcode) actually behave as designed end to end.
 contract PortfolioManagerOpcodesTest is Test {
-    uint256 internal constant WAD = 1e18;
     uint256 internal constant FEE_BPS_SCALE = 1e9;
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
+
+    /// @dev Below PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS (0.1225%) — 1/4 tier.
+    uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
+    /// @dev Above the threshold — 1/6 tier.
+    uint32 internal constant HIGH_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
@@ -34,8 +38,6 @@ contract PortfolioManagerOpcodesTest is Test {
     MockTaker internal taker;
 
     address internal maker;
-    address internal daoAddress;
-    address internal bleuAddress;
 
     address[] internal universe;
     uint256[] internal weights;
@@ -48,8 +50,6 @@ contract PortfolioManagerOpcodesTest is Test {
         tokenB = new TokenMock("Token B", "TKB");
 
         maker = vm.addr(0x1234);
-        daoAddress = vm.addr(0xDA0);
-        bleuAddress = vm.addr(0xB1EA);
 
         taker = new MockTaker(aqua, router, address(this));
 
@@ -64,8 +64,7 @@ contract PortfolioManagerOpcodesTest is Test {
     // ===== Helpers =====
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory program =
-            PortfolioManagerProgramBuilder.build(universe, weights, lpFeeBps, daoAddress, bleuAddress);
+        bytes memory program = PortfolioManagerProgramBuilder.build(universe, weights, lpFeeBps);
 
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -148,60 +147,74 @@ contract PortfolioManagerOpcodesTest is Test {
 
     // ===== Tests =====
 
-    function test_BothProtocolFeePullsLandAndSplitEvenly() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+    function test_DaoFeeBpsTiering() public pure {
+        // Pure formula check, no swap harness needed — the boundary and both tiers.
+        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(0), 0);
+        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(LOW_TIER_FEE_BPS), LOW_TIER_FEE_BPS / 4);
+        assertEq(
+            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS),
+            PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS / 4,
+            "the threshold itself is still low-tier (<=), per 1IP-103's own wording"
+        );
+        assertEq(
+            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1),
+            (PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1) / 6
+        );
+        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(HIGH_TIER_FEE_BPS), HIGH_TIER_FEE_BPS / 6);
+    }
+
+    function test_ProtocolFeeLandsInDaoTreasuryAtLowTier() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
 
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
         assertEq(amountIn, SWAP_AMOUNT, "taker pays the exact amount they specified");
 
-        uint256 daoAmount = tokenA.balanceOf(daoAddress);
-        uint256 bleuAmount = tokenA.balanceOf(bleuAddress);
-
-        uint256 expectedDaoAmount = SWAP_AMOUNT * PortfolioManagerProgramBuilder.DAO_FEE_BPS / FEE_BPS_SCALE;
-        uint256 bleuFeeBps = uint256(PortfolioManagerProgramBuilder.DAO_FEE_BPS) * FEE_BPS_SCALE
-            / (FEE_BPS_SCALE - PortfolioManagerProgramBuilder.DAO_FEE_BPS);
-        uint256 expectedBleuAmount = (SWAP_AMOUNT - expectedDaoAmount) * bleuFeeBps / FEE_BPS_SCALE;
+        uint256 expectedDaoAmount = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the chained-fee formula");
-        assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the chained-fee formula");
-        // bleuFeeBps is solved to make these equal, but integer division in that solve (not in
-        // the pull itself) leaves a few-wei rounding gap on amounts this size — dust, not a
-        // design flaw; PortfolioManagerProgramBuilder's comment derives the intended formula.
-        assertApproxEqAbs(daoAmount, bleuAmount, 1e10, "the 50/50 split must land within rounding dust");
-
-        // The wallet starts at INITIAL_BALANCE, temporarily loses both fee pulls, then is
-        // credited the taker's full amountIn by SwapVM's own settlement (Aqua.push) — so its
-        // net gain from this trade is amountIn minus both protocol pulls, not the full amountIn.
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/4-tier formula");
         assertEq(
             tokenA.balanceOf(maker),
-            INITIAL_BALANCE + amountIn - daoAmount - bleuAmount,
-            "wallet's net gain is amountIn minus both protocol pulls"
+            INITIAL_BALANCE + amountIn - daoAmount,
+            "wallet's net gain is amountIn minus the protocol pull"
         );
     }
 
-    function test_OneProtocolFeePullSkipsIndependentlyWhenMakerUnderfunded() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+    function test_ProtocolFeeLandsInDaoTreasuryAtHighTier() public {
+        ISwapVM.Order memory order = _buildOrder(HIGH_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
 
-        // Fee.sol's _aquaProtocolFeeAmountInXD wraps the rest of the program (shrinks amountIn,
-        // recurses into ctx.runLoop(), *then* pulls once that returns) — so the pull for the
-        // instruction composed FIRST in program bytes (DAO) actually executes LAST, and the one
-        // composed SECOND (Bleu) executes first, against whatever ledger is available before
-        // DAO gets a turn. Ship just enough tokenA ledger for Bleu's (first-executing) pull to
-        // land, leaving nothing for DAO's (second-executing) pull.
-        uint256 expectedDaoAmount = SWAP_AMOUNT * PortfolioManagerProgramBuilder.DAO_FEE_BPS / FEE_BPS_SCALE;
-        uint256 bleuFeeBpsForLedger = uint256(PortfolioManagerProgramBuilder.DAO_FEE_BPS) * FEE_BPS_SCALE
-            / (FEE_BPS_SCALE - PortfolioManagerProgramBuilder.DAO_FEE_BPS);
-        uint256 expectedBleuAmount = (SWAP_AMOUNT - expectedDaoAmount) * bleuFeeBpsForLedger / FEE_BPS_SCALE;
-        _shipOrder(order, expectedBleuAmount);
+        _swapExactIn(order, SWAP_AMOUNT);
+
+        uint256 expectedDaoAmount = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 6) / FEE_BPS_SCALE;
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+
+        assertGt(daoAmount, 0, "DAO must actually receive a fee");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/6-tier formula");
+    }
+
+    function test_ZeroLpFeeMeansZeroProtocolFee() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+
+        (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
+        assertEq(amountIn, SWAP_AMOUNT);
+        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0);
+        assertEq(tokenA.balanceOf(maker), INITIAL_BALANCE + amountIn, "with no LP fee, the full amountIn lands");
+    }
+
+    function test_ProtocolFeeSkipsWhenMakerUnderfunded() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        // Ship zero ledger for tokenA -- the DAO pull cannot be covered at all.
+        _shipOrder(order, 0);
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
-        assertEq(amountIn, SWAP_AMOUNT, "swap still completes even though one fee pull was skipped");
-
-        assertEq(tokenA.balanceOf(bleuAddress), expectedBleuAmount, "Bleu's pull (executes first) still lands in full");
-        assertEq(tokenA.balanceOf(daoAddress), 0, "DAO's pull (executes second) is skipped, not partially collected");
+        assertEq(amountIn, SWAP_AMOUNT, "swap still completes even though the fee pull was skipped");
+        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 skippedEvents = 0;
@@ -211,16 +224,14 @@ contract PortfolioManagerOpcodesTest is Test {
                 (, address token, address to, uint256 skippedAmount) =
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 token;
-                skippedAmount;
-                assertEq(to, daoAddress, "the skip must be reported for DAO specifically");
+                assertEq(to, PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+                assertGt(skippedAmount, 0);
             }
         }
-        assertEq(skippedEvents, 1, "exactly one ProtocolFeeSkipped, not zero and not two");
+        assertEq(skippedEvents, 1, "exactly one ProtocolFeeSkipped");
     }
 
     function test_LpOwnCurveFeeStillAppliesOnTopOfProtocolFee() public {
-        uint32 lpFeeBps = 0.01e9; // 1% — the LP's own curve fee, unrelated to the protocol fee
-
         uint256 snapshot = vm.snapshotState();
 
         ISwapVM.Order memory zeroFeeOrder = _buildOrder(0);
@@ -229,23 +240,14 @@ contract PortfolioManagerOpcodesTest is Test {
 
         vm.revertToState(snapshot);
 
-        ISwapVM.Order memory feeOrder = _buildOrder(lpFeeBps);
+        ISwapVM.Order memory feeOrder = _buildOrder(LOW_TIER_FEE_BPS);
         _shipOrder(feeOrder, INITIAL_BALANCE);
         (, uint256 amountOutWithLpFee) = _swapExactIn(feeOrder, SWAP_AMOUNT);
 
-        // Same starting balances (via the snapshot/revert), same protocol fee either way —
-        // only the LP's own curve fee differs, so it alone must explain a strictly smaller
-        // quoted output. Confirms feeWad still reaches PortfolioManagerPricing correctly,
-        // unaffected by the protocol-fee chain running ahead of it in the program.
+        // Same starting balances (via the snapshot/revert) -- only the LP's own curve fee
+        // differs, so it alone must explain a strictly smaller quoted output. Confirms feeWad
+        // still reaches PortfolioManagerPricing correctly, unaffected by the protocol-fee pull
+        // running ahead of it in the program.
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
-    }
-
-    function test_ProgramBuilderRevertsOnZeroRecipient() public {
-        vm.expectRevert(PortfolioManagerProgramBuilder.PortfolioManagerProgramBuilderZeroRecipient.selector);
-        this._buildWithZeroDao();
-    }
-
-    function _buildWithZeroDao() external view {
-        PortfolioManagerProgramBuilder.build(universe, weights, 0, address(0), bleuAddress);
     }
 }

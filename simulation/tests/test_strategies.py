@@ -6,9 +6,28 @@ import unittest
 
 from aqua_sim.basket_world import BasketGroup, BasketWorldView
 from aqua_sim.strategies.noise_trader import NoiseTraderStrategy
-from aqua_sim.strategies.portfolio_manager import PROTOCOL_FEE_BPS_TOTAL, PortfolioManagerStrategy
+from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy, protocol_fee_bps
 from aqua_sim.strategies.stableswap_competitor import StableSwapCompetitorStrategy
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
+
+
+class ProtocolFeeBpsTest(unittest.TestCase):
+    """1IP-103's tiered formula, mirrored from `PortfolioManagerProgramBuilder.daoFeeBps`."""
+
+    def test_low_tier_is_one_quarter(self) -> None:
+        self.assertAlmostEqual(protocol_fee_bps(0.0005), 0.0005 / 4)
+
+    def test_high_tier_is_one_sixth(self) -> None:
+        self.assertAlmostEqual(protocol_fee_bps(0.005), 0.005 / 6)
+
+    def test_threshold_itself_is_low_tier(self) -> None:
+        self.assertAlmostEqual(protocol_fee_bps(0.001225), 0.001225 / 4)
+
+    def test_just_above_threshold_is_high_tier(self) -> None:
+        self.assertAlmostEqual(protocol_fee_bps(0.0012251), 0.0012251 / 6)
+
+    def test_zero_fee_yields_zero(self) -> None:
+        self.assertEqual(protocol_fee_bps(0.0), 0.0)
 
 
 class PortfolioManagerStrategyTest(unittest.TestCase):
@@ -44,10 +63,25 @@ class PortfolioManagerStrategyTest(unittest.TestCase):
         self.assertGreater(trade.amount_in, 0)
         self.assertGreater(trade.amount_out, 0)
 
-    def test_protocol_fee_is_isolated_from_the_lp_curve_fee(self) -> None:
-        # BLEUDEV-327: the protocol fee is a fixed, non-LP-configurable cut of amount_in,
-        # unrelated to `self.fee` (the LP's own curve fee, which stays 0 here so it can't
-        # be the thing producing this amount).
+    def test_protocol_fee_is_a_tiered_fraction_of_the_lp_curve_fee(self) -> None:
+        # BLEUDEV-327 / 1IP-103: the protocol fee is not fixed -- it's 1/4 or 1/6 of
+        # whatever `self.fee` (the LP's own curve fee) is, not an independent number.
+        view = BasketWorldView(
+            token_balances={"WETH": 15.0, "USDC": 20_000.0},
+            reference_prices={"WETH": 2000.0, "USDC": 1.0},
+            groups=[self.group_a, self.group_b],
+        )
+        pm_low_tier_fee = PortfolioManagerStrategy(
+            id="pm", token_a="WETH", token_b="USDC", group_a=self.group_a, group_b=self.group_b,
+            target_weight_a=0.5, fee=0.0002,  # 2bps, below the 0.1225% tier threshold
+        )
+        trade = pm_low_tier_fee.decide_trade(view)
+        self.assertIsNotNone(trade)
+        self.assertGreater(trade.protocol_fee_amount, 0)
+        self.assertAlmostEqual(trade.protocol_fee_amount, trade.amount_in * protocol_fee_bps(0.0002))
+        self.assertAlmostEqual(protocol_fee_bps(0.0002), 0.0002 / 4)
+
+    def test_zero_lp_fee_means_zero_protocol_fee(self) -> None:
         view = BasketWorldView(
             token_balances={"WETH": 15.0, "USDC": 20_000.0},
             reference_prices={"WETH": 2000.0, "USDC": 1.0},
@@ -59,8 +93,7 @@ class PortfolioManagerStrategyTest(unittest.TestCase):
         )
         trade = pm_zero_fee.decide_trade(view)
         self.assertIsNotNone(trade)
-        self.assertAlmostEqual(trade.protocol_fee_amount, trade.amount_in * PROTOCOL_FEE_BPS_TOTAL)
-        self.assertGreater(trade.protocol_fee_amount, 0)
+        self.assertEqual(trade.protocol_fee_amount, 0.0)
 
     def test_reacts_to_basket_mate_moving_without_pm_trading(self) -> None:
         # A basket-mate (USDT) in the same group as USDC grew -- PM's quote should move

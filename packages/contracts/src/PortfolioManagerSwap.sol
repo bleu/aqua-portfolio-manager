@@ -17,12 +17,12 @@ import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 /// @dev Single-token-per-group scope only (matches PortfolioManagerArgsBuilder's current
 ///      scope, BLEUDEV-281) — multi-token oracle-valued groups (ADR-0003) are a routing detail
 ///      PRICING.md explicitly defers to a later milestone, not decided here.
-/// @dev This instruction's `feeWad` is the LP's own curve fee only. Protocol revenue (Bleu +
-///      1inch DAO) is a separate, additive mechanism composed *before* this instruction in the
-///      program (chained `Fee._aquaProtocolFeeAmountInXD` calls, BLEUDEV-327) — this contract
-///      has no awareness of it and needs none: whatever `amountIn` survives that chain is what
-///      this instruction prices off, exactly as it would price off the taker's raw amount if no
-///      protocol fee were composed at all.
+/// @dev This instruction's `feeWad` is the LP's own curve fee only. The protocol fee (1inch
+///      DAO's tiered cut per 1IP-103) is a separate, additive mechanism composed *before* this
+///      instruction in the program (a chained `Fee._aquaProtocolFeeAmountInXD` call,
+///      BLEUDEV-327) — this contract has no awareness of it and needs none: whatever
+///      `amountIn` survives that pull is what this instruction prices off, exactly as it would
+///      price off the taker's raw amount if no protocol fee were composed at all.
 contract PortfolioManagerSwap {
     using ContextLib for Context;
 

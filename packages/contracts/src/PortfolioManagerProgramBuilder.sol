@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {FeeArgsBuilder, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
+import {FeeArgsBuilder} from "swap-vm/instructions/Fee.sol";
 import {PortfolioManagerArgsBuilder} from "./PortfolioManagerArgsBuilder.sol";
 
 /// @title PortfolioManagerProgramBuilder — composes a PM strategy's swap-vm program bytes
@@ -15,9 +15,10 @@ import {PortfolioManagerArgsBuilder} from "./PortfolioManagerArgsBuilder.sol";
 ///         `PortfolioManagerOpcodes`' opcode indices are fixed and known here directly.
 /// @dev Wire format matches `VM.sol`'s `runLoop` exactly: repeated
 ///      `[opcode:1 byte][argsLength:1 byte][args:argsLength bytes]`.
-/// @dev BLEUDEV-327: this is the only place the protocol fee (recipients, split, rate) is
-///      decided. The LP's own `tokens`/`weights`/`feeBps` never influence it, and nothing here
-///      is settable through `PortfolioManagerArgsBuilder`'s LP-facing encoding.
+/// @dev BLEUDEV-327: this is the only place the protocol fee (recipient, rate) is decided. The
+///      LP's own `tokens`/`weights`/`feeBps` never influence it beyond feeding the tiered
+///      formula below, and nothing here is settable through `PortfolioManagerArgsBuilder`'s
+///      LP-facing encoding.
 library PortfolioManagerProgramBuilder {
     using SafeCast for uint256;
 
@@ -25,48 +26,38 @@ library PortfolioManagerProgramBuilder {
     uint8 internal constant CURVE_OPCODE = 0;
     uint8 internal constant PROTOCOL_FEE_OPCODE = 1;
 
-    /// @dev 1 bps at Fee.sol's own BPS scale (1e9 = 100%) — BLEUDEV-327's fixed protocol fee,
-    ///      split evenly between 1inch DAO and Bleu (the PM owner).
-    uint32 internal constant DAO_FEE_BPS = 1e5;
+    /// @dev 1inch DAO Treasury's main wallet, disclosed in 1IP-103 (the governance proposal
+    ///      that activated Aqua's protocol fee): the sole recipient of the protocol fee this
+    ///      builder composes. Fixed, not LP-settable — see PortfolioManagerSwap.sol's @dev note.
+    address internal constant DAO_TREASURY_ADDRESS = 0x7951c7ef839e26F63DA87a42C9a87986507f1c07;
 
-    error PortfolioManagerProgramBuilderZeroRecipient();
+    /// @dev 1IP-103's tier boundary: 0.1225% at `PM_BPS = 1e9` scale (0.001225 * 1e9).
+    uint32 internal constant TIER_THRESHOLD_BPS = 1_225_000;
 
-    /// @param tokens, weights, feeBps  The LP's own declared universe and curve fee — passed
-    ///        straight through to `PortfolioManagerArgsBuilder`, unrelated to the protocol fee.
-    /// @param daoAddress, bleuAddress  Protocol-fee recipients. Zero for either reverts here,
-    ///        at build time, not silently at swap time.
-    function build(
-        address[] memory tokens,
-        uint256[] memory weights,
-        uint32 feeBps,
-        address daoAddress,
-        address bleuAddress
-    ) internal pure returns (bytes memory program) {
-        require(daoAddress != address(0) && bleuAddress != address(0), PortfolioManagerProgramBuilderZeroRecipient());
-
-        // Chained *before* the curve opcode, DAO composed first: each _aquaProtocolFeeAmountInXD
-        // call wraps the rest of the program (shrinks amountIn, recurses into ctx.runLoop(),
-        // *then* pulls once that returns), so the curve only ever sees amountIn net of both
-        // pulls — but that wrapping also means DAO's own pull runs LAST in real execution, after
-        // Bleu's nested call already ran and pulled first (confirmed in
-        // PortfolioManagerOpcodes.t.sol). This doesn't change the amounts (each instruction's
-        // fee is still computed off the amountIn live when *it* runs, matching program order,
-        // not pull order) or the independence of the two pulls, but it does mean "composed
-        // first" and "collected first" are different things here — worth knowing before reading
-        // a trace. (see PortfolioManagerSwap.sol's @dev note; BLEUDEV-327's "why no proof changes are
-        // needed"). bleuFeeBps is solved so the two pulled amounts land exactly equal despite
-        // the chain's multiplicative composition (Bleu's bps applies to the amount already net
-        // of DAO's cut, not the taker's original amountIn):
-        //   daoAmount    = A_i * DAO_FEE_BPS / BPS
-        //   ownerAmount  = (A_i - daoAmount) * bleuFeeBps / BPS
-        // Solving daoAmount == ownerAmount for bleuFeeBps gives the line below.
-        uint32 bleuFeeBps = uint32(uint256(DAO_FEE_BPS) * FEE_BPS / (FEE_BPS - DAO_FEE_BPS));
-
+    /// @param tokens, weights, feeBps  The LP's own declared universe and curve fee. `feeBps`
+    ///        is passed straight through to `PortfolioManagerArgsBuilder` for curve pricing,
+    ///        and separately feeds the protocol-fee formula below — the two uses are
+    ///        independent (see PortfolioManagerSwap.sol's @dev note on why the curve is
+    ///        unaffected by the protocol fee regardless of what `feeBps` happens to be).
+    function build(address[] memory tokens, uint256[] memory weights, uint32 feeBps)
+        internal
+        pure
+        returns (bytes memory program)
+    {
         program = bytes.concat(
-            _instruction(PROTOCOL_FEE_OPCODE, FeeArgsBuilder.buildProtocolFee(DAO_FEE_BPS, daoAddress)),
-            _instruction(PROTOCOL_FEE_OPCODE, FeeArgsBuilder.buildProtocolFee(bleuFeeBps, bleuAddress)),
+            _instruction(PROTOCOL_FEE_OPCODE, FeeArgsBuilder.buildProtocolFee(daoFeeBps(feeBps), DAO_TREASURY_ADDRESS)),
             _instruction(CURVE_OPCODE, PortfolioManagerArgsBuilder.build(tokens, weights, feeBps))
         );
+    }
+
+    /// @notice 1IP-103's tiered protocol fee: 1/4 of the LP's own `feeBps` at or below the
+    ///         tier threshold, 1/6 above it. Not a flat rate — it scales with whatever the LP
+    ///         configured, because that's what the proposal actually specifies ("a slice of
+    ///         the LP fee on each strategy"), not an independently-set number. `feeBps == 0`
+    ///         correctly yields `0`: no LP fee means nothing for the protocol to take a slice
+    ///         of, and `_aquaProtocolFeeAmountInXD` already treats a zero rate as a no-op.
+    function daoFeeBps(uint32 feeBps) internal pure returns (uint32) {
+        return feeBps <= TIER_THRESHOLD_BPS ? feeBps / 4 : feeBps / 6;
     }
 
     function _instruction(uint8 opcode, bytes memory args) private pure returns (bytes memory) {
