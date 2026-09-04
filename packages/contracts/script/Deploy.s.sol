@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
+import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 
@@ -135,6 +136,34 @@ contract Deploy is Script {
         require(attested, "attestOnboardingClean failed");
         console.log("Onboarding attested");
 
+        // A second, separate dedicated maker wallet (ADR-0002) for the PM strategy E2E suite
+        // (BLEUDEV-340 and children) — deliberately *not* the Guard-protected Safe above: those
+        // tests exercise the real weighted-curve opcode and protocol fee, not BasketScopeGuard
+        // (already fully covered by BasketScopeGuardE2E.t.sol on the Safe above), so a plain,
+        // guard-less Safe keeps this deploy from having to coordinate a real PM strategy hash
+        // against the other Safe's placeholder Guard config.
+        Safe pmSafe = Safe(
+            payable(address(
+                    factory.createProxyWithNonce(
+                        address(singleton),
+                        setupData,
+                        1 // different salt nonce than the Guard-protected Safe above
+                    )
+                ))
+        );
+        console.log("PM Safe deployed at", address(pmSafe));
+
+        // Fresh universe tokens for the PM E2E suite — not real Base assets, matching the
+        // Guard's own SYNTHETIC_TOKEN_B convention above, but real functioning ERC20s (unlike
+        // that placeholder address) since these actually need to move balances and be priced by
+        // the curve. `mint` is owner-gated (TokenMock), owner = deployer, so E2E tests fund
+        // themselves via `vm.prank(deployer)` rather than this script pre-guessing amounts for
+        // scenarios it doesn't know about yet.
+        TokenMock pmTokenA = new TokenMock("PM Universe Token A", "PMA");
+        TokenMock pmTokenB = new TokenMock("PM Universe Token B", "PMB");
+        console.log("PM universe token A deployed at", address(pmTokenA));
+        console.log("PM universe token B deployed at", address(pmTokenB));
+
         vm.stopBroadcast();
 
         string memory json = string.concat(
@@ -159,6 +188,18 @@ contract Deploy is Script {
             '",',
             '"basketTwoToken":"',
             vm.toString(SYNTHETIC_TOKEN_B),
+            '",',
+            '"pmSafe":"',
+            vm.toString(address(pmSafe)),
+            '",',
+            '"pmTokenA":"',
+            vm.toString(address(pmTokenA)),
+            '",',
+            '"pmTokenB":"',
+            vm.toString(address(pmTokenB)),
+            '",',
+            '"deployer":"',
+            vm.toString(deployer),
             '"',
             "}"
         );
