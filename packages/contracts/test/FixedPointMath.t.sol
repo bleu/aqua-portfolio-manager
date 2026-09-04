@@ -151,12 +151,12 @@ contract FixedPointMathTest is Test {
         _assertApproxRelWad(result, 5 * WAD, REL_TOL);
     }
 
-    // ---- monotonicity: the property PortfolioManagerInvariant.t.sol's proof actually needs ----
+    // ---- monotonicity: the property PortfolioManagerPricing.t.sol's invariant fuzz test needs ----
     //
     // Bounds below keep |exponent * ln(base) / WAD| under EXP_MAX_INPUT (130 WAD) with margin,
     // so a legitimate domain-cap revert never masquerades as a monotonicity failure. Base is
     // bounded to a real value in [1e-5, 1e5] (|ln| <= ~11.5 WAD) and exponent to [0.01, 10]
-    // WAD (a generous superset of the weight-ratio domain `PortfolioManagerSwap` actually
+    // WAD (a generous superset of the weight-ratio domain `PortfolioManagerPricing` actually
     // calls `pow` with) -- worst case product is ~115 WAD, comfortably under the 130 WAD cap.
 
     function testFuzz_PowMonotonicInBaseAboveOne(uint256 baseLow, uint256 baseHigh, uint256 exponent) public pure {

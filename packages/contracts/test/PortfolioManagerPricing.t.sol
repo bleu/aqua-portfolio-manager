@@ -67,6 +67,19 @@ contract PortfolioManagerPricingTest is Test {
         );
     }
 
+    function test_ExactInRoundsInThePoolsFavorAtEqualWeights() public pure {
+        // Regression test: balanceIn == balanceOut == 1e18, amountIn == 2e18, no fee, equal
+        // weights (hits FixedPointMath.pow's exact `exponent == WAD` shortcut, so this is exact
+        // arithmetic, not series-approximated). The true value is balanceOut * 2/3 =
+        // 666666666666666666.666... -- flooring in the pool's favor must return
+        // 666666666666666666, not 666666666666666667. Before ceiling the ratio fed into `pow`,
+        // this returned the latter: flooring `balanceIn*WAD/(balanceIn+amountInEff)` floored
+        // `poweredRatio` too, which inflated `WAD - poweredRatio` past the true value.
+        PortfolioManagerPricing.Quote memory q = _quote(1e18, 1e18, 0.5e18, 0.5e18, 0);
+        uint256 amountOut = PortfolioManagerPricing.exactIn(q, 2e18);
+        assertEq(amountOut, 666666666666666666, "amountOut must floor toward the pool, never round up to the trader");
+    }
+
     function test_ExactInFeeReducesOutputVersusZeroFee() public pure {
         PortfolioManagerPricing.Quote memory noFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
         PortfolioManagerPricing.Quote memory withFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0.0002e18);
