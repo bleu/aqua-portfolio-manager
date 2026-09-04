@@ -6,7 +6,7 @@ import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
-import {PoCRouter} from "../src/PoCRouter.sol";
+import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 
 /// @notice Deploys this repo's contracts against whichever RPC it's pointed at, installs the
 /// Guard on the Safe, and writes their addresses to deployments/local.json so E2E tests
@@ -56,9 +56,13 @@ contract Deploy is Script {
 
         vm.startBroadcast(deployerPk);
 
-        // Own independent router (ADR-0010), pointed at the real Aqua registry.
-        PoCRouter router = new PoCRouter(aqua, weth, deployer, "AquaPortfolioManager", "1");
-        console.log("PoCRouter deployed at", address(router));
+        // Own independent router (ADR-0010), pointed at the real Aqua registry. Real opcode
+        // table (weighted curve, BLEUDEV-285 + protocol fee, BLEUDEV-327) — no longer the
+        // PoCRouter placeholder. Actually shipping a real order through it (MakerTraits/Order
+        // encoding, PortfolioManagerProgramBuilder) is BLEUDEV-286's scope, not this script's
+        // yet — this only proves the real router itself deploys against real Aqua state.
+        PortfolioManagerRouter router = new PortfolioManagerRouter(aqua, weth, deployer, "AquaPortfolioManager", "1");
+        console.log("PortfolioManagerRouter deployed at", address(router));
 
         // A fresh Safe (ADR-0002/ADR-0011) — the dedicated maker wallet convention — owned
         // solely by the deployer for this environment.

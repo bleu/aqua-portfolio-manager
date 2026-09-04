@@ -6,7 +6,7 @@ import unittest
 
 from aqua_sim.basket_world import BasketGroup, BasketWorldView
 from aqua_sim.strategies.noise_trader import NoiseTraderStrategy
-from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy
+from aqua_sim.strategies.portfolio_manager import PROTOCOL_FEE_BPS_TOTAL, PortfolioManagerStrategy
 from aqua_sim.strategies.stableswap_competitor import StableSwapCompetitorStrategy
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
 
@@ -43,6 +43,24 @@ class PortfolioManagerStrategyTest(unittest.TestCase):
         self.assertEqual(trade.token_out, "WETH")
         self.assertGreater(trade.amount_in, 0)
         self.assertGreater(trade.amount_out, 0)
+
+    def test_protocol_fee_is_isolated_from_the_lp_curve_fee(self) -> None:
+        # BLEUDEV-327: the protocol fee is a fixed, non-LP-configurable cut of amount_in,
+        # unrelated to `self.fee` (the LP's own curve fee, which stays 0 here so it can't
+        # be the thing producing this amount).
+        view = BasketWorldView(
+            token_balances={"WETH": 15.0, "USDC": 20_000.0},
+            reference_prices={"WETH": 2000.0, "USDC": 1.0},
+            groups=[self.group_a, self.group_b],
+        )
+        pm_zero_fee = PortfolioManagerStrategy(
+            id="pm", token_a="WETH", token_b="USDC", group_a=self.group_a, group_b=self.group_b,
+            target_weight_a=0.5, fee=0.0,
+        )
+        trade = pm_zero_fee.decide_trade(view)
+        self.assertIsNotNone(trade)
+        self.assertAlmostEqual(trade.protocol_fee_amount, trade.amount_in * PROTOCOL_FEE_BPS_TOTAL)
+        self.assertGreater(trade.protocol_fee_amount, 0)
 
     def test_reacts_to_basket_mate_moving_without_pm_trading(self) -> None:
         # A basket-mate (USDT) in the same group as USDC grew -- PM's quote should move
