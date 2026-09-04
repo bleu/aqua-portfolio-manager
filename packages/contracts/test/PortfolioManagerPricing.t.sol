@@ -28,11 +28,7 @@ contract PortfolioManagerPricingTest is Test {
         returns (PortfolioManagerPricing.Quote memory)
     {
         return PortfolioManagerPricing.Quote({
-            balanceIn: balanceIn,
-            balanceOut: balanceOut,
-            weightIn: weightIn,
-            weightOut: weightOut,
-            feeWad: feeWad
+            balanceIn: balanceIn, balanceOut: balanceOut, weightIn: weightIn, weightOut: weightOut, feeWad: feeWad
         });
     }
 
@@ -66,7 +62,9 @@ contract PortfolioManagerPricingTest is Test {
         // Not bit-exact: this formula's WAD-scaled ratio division loses sub-WAD precision
         // before multiplying back up by balanceOut, an extra rounding step plain xy=k's
         // single division doesn't have. The resulting slack scales with balanceOut/WAD.
-        assertApproxEqAbs(amountOut, xykExpected, balanceOut / 1e14, "equal-weight curve should match plain xy=k closely");
+        assertApproxEqAbs(
+            amountOut, xykExpected, balanceOut / 1e14, "equal-weight curve should match plain xy=k closely"
+        );
     }
 
     function test_ExactInFeeReducesOutputVersusZeroFee() public pure {
@@ -89,7 +87,9 @@ contract PortfolioManagerPricingTest is Test {
         PortfolioManagerPricing.Quote memory q = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 100_000e18, 100_000e18
+                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector,
+                100_000e18,
+                100_000e18
             )
         );
         this._exactOut(q, 100_000e18);

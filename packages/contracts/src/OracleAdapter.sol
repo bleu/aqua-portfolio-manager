@@ -38,7 +38,9 @@ library OracleAdapter {
     function priceWad(PriceFeed memory config) internal view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = config.feed.latestRoundData();
         require(answer > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
-        require(updatedAt <= block.timestamp, OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness));
+        require(
+            updatedAt <= block.timestamp, OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness)
+        );
         require(
             block.timestamp - updatedAt <= config.maxStaleness,
             OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness)

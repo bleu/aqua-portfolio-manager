@@ -21,11 +21,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         return PortfolioManagerArgsBuilder.build(tokens, weights, feeBps);
     }
 
-    function _callParse(bytes calldata args)
-        external
-        pure
-        returns (address[] memory, uint256[] memory, uint32)
-    {
+    function _callParse(bytes calldata args) external pure returns (address[] memory, uint256[] memory, uint32) {
         return PortfolioManagerArgsBuilder.parse(args);
     }
 
@@ -38,8 +34,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         weights[0] = WAD;
 
         bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, 2e5); // 2bps, ADR-0008 default
-        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) =
-            this._callParse(args);
+        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsedTokens.length, 1);
         assertEq(parsedTokens[0], TOKEN_A);
@@ -58,8 +53,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         weights[2] = 0.2e18;
 
         bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, 0);
-        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) =
-            this._callParse(args);
+        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsedTokens.length, 3);
         for (uint256 i = 0; i < 3; i++) {
@@ -84,8 +78,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         }
 
         bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, feeBps);
-        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) =
-            this._callParse(args);
+        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsedTokens.length, n);
         for (uint256 i = 0; i < n; i++) {
