@@ -13,20 +13,29 @@ import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 /// shared setup and why this uses a separate, guard-less Safe from BasketScopeGuardE2ETest's.
 contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {
     function test_FreshWalletStartsWithNoUniverseTokenBalance() public {
-        // "Dedicated" per ADR-0002 means nothing else has touched this wallet yet -- confirmed
-        // directly, not assumed, since Deploy.s.sol deploys a brand new Safe proxy per run.
+        // "Dedicated" per ADR-0002 means nothing else has touched this wallet yet in a fresh
+        // deployment -- Deploy.s.sol deploys a brand new Safe proxy per run. Note this only
+        // holds for the very first test to touch pmSafe in a given run: forge doesn't
+        // snapshot/revert state between test *contracts* any more than between test functions
+        // on a live --rpc-url run, so this assertion is meaningful pre-deploy verification, not
+        // a property every test in this suite can independently rely on (the other tests below
+        // assert balance deltas instead, for exactly that reason).
         assertEq(pmTokenA.balanceOf(address(pmSafe)), 0, "fresh Safe must start with zero universe-token balance");
         assertEq(pmTokenB.balanceOf(address(pmSafe)), 0, "fresh Safe must start with zero universe-token balance");
     }
 
     function test_ShipsStrategyFromFreshDedicatedWallet() public {
+        uint256 tokenABalanceBefore = pmTokenA.balanceOf(address(pmSafe));
+        uint256 tokenBBalanceBefore = pmTokenB.balanceOf(address(pmSafe));
+
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         bytes32 strategyHash = _fundAndShip(order, INITIAL_BALANCE);
 
-        // The Safe is now funded *only* with universe tokens (ADR-0002) -- exactly what
-        // _fundAndShip minted, nothing else.
-        assertEq(pmTokenA.balanceOf(address(pmSafe)), INITIAL_BALANCE);
-        assertEq(pmTokenB.balanceOf(address(pmSafe)), INITIAL_BALANCE);
+        // Asserts the delta _fundAndShip itself minted, not pmSafe's absolute balance: pmSafe is
+        // shared across this whole E2E suite on a live --rpc-url run (no snapshot/revert between
+        // test contracts), so another suite's own _fundAndShip may have already funded it.
+        assertEq(pmTokenA.balanceOf(address(pmSafe)), tokenABalanceBefore + INITIAL_BALANCE);
+        assertEq(pmTokenB.balanceOf(address(pmSafe)), tokenBBalanceBefore + INITIAL_BALANCE);
 
         // Aqua's own ledger reflects the real ship() call, not just a locally-computed hash --
         // rawBalances is the actual per-(maker, app, strategyHash) accounting entry the fee
@@ -62,10 +71,14 @@ contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {
         amounts[0] = INITIAL_BALANCE;
         amounts[1] = INITIAL_BALANCE;
 
-        // Compute the signed calldata *before* arming vm.expectRevert() -- getTransactionHash
-        // is a view call and vm.sign is a cheatcode, but keeping them entirely outside the
-        // armed window means vm.expectRevert() can only possibly attach to the one call that's
-        // actually expected to revert: execTransaction itself.
+        // Deliberately NOT routed through _shipOnly: that helper bundles the (non-reverting)
+        // getTransactionHash view call together with the (reverting) execTransaction call in a
+        // single internal function, and vm.expectRevert() attaches to the next *external* call
+        // regardless of which internal function it's nested inside -- arming it immediately
+        // before calling _shipOnly would actually attach to getTransactionHash, not
+        // execTransaction. Computing the signed calldata inline, entirely outside the armed
+        // window, keeps vm.expectRevert() pointed at the one call that's actually expected to
+        // revert.
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
         bytes32 txHash = pmSafe.getTransactionHash(
             address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), pmSafe.nonce()

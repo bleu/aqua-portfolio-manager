@@ -142,10 +142,15 @@ abstract contract PortfolioManagerE2EBase is Test {
         return strategyHash;
     }
 
-    /// @dev Just the sign-and-execTransaction ship() call, no funding/approval -- split out so
-    ///      a negative test (e.g. re-shipping the same strategy must revert) can `vm.expectRevert()`
-    ///      immediately before the one call actually expected to revert, instead of accidentally
-    ///      attaching to an earlier, non-reverting setup call inside `_fundAndShip`.
+    /// @dev Just the sign-and-execTransaction ship() call, no funding/approval -- split out of
+    ///      `_fundAndShip` so that caller can skip straight to shipping once a wallet is already
+    ///      funded/approved. NOT safe to call under `vm.expectRevert()`: it bundles the
+    ///      non-reverting `getTransactionHash` view call together with the reverting
+    ///      `execTransaction` call in one internal function, and `vm.expectRevert()` attaches to
+    ///      the next *external* call regardless of which internal function it's nested inside --
+    ///      a negative test needs to compute the signed calldata inline, entirely outside the
+    ///      armed window, the way `PortfolioManagerShipE2E.t.sol`'s
+    ///      `test_ShippedStrategyIsImmutableOnReattempt` does.
     function _shipOnly(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
         internal
         returns (bool)

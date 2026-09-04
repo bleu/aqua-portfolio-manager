@@ -16,8 +16,14 @@ import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant TRADE_AMOUNT = 1_000e18;
 
+    /// @dev Distinct from every other `feeBps` this E2E suite ships through the same `pmSafe`
+    ///      (`LOW_TIER_FEE_BPS`, `LOW_TIER_FEE_BPS + 1`, `PortfolioManagerProtocolFeeE2E`'s
+    ///      `LOW_TIER_FEE_BPS + 2`) so this order's `strategyHash` never collides with theirs;
+    ///      see `PortfolioManagerSkewWorseningE2E.t.sol`'s note on the same hazard.
+    uint32 internal constant FEE_SKIP_TEST_BPS = LOW_TIER_FEE_BPS + 3;
+
     function test_ProtocolFeeSkipsWithoutBlockingTheSwap() public {
-        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        ISwapVM.Order memory order = _buildOrder(FEE_SKIP_TEST_BPS);
         // Ship with zero tokenA ledger -- the DAO pull cannot be covered at all, even though
         // the wallet's real balance (what the curve prices off) is fully funded.
         _fundAndShip(order, 0);
