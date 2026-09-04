@@ -107,7 +107,9 @@ contract OracleAdapterTest is Test {
         vm.warp(1_000_000);
         MockAggregatorV3 mock = new MockAggregatorV3(8, 0, block.timestamp);
 
-        vm.expectRevert(abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(0))
+        );
         this._priceWad(_feed(mock, 1 hours));
     }
 
@@ -115,7 +117,9 @@ contract OracleAdapterTest is Test {
         vm.warp(1_000_000);
         MockAggregatorV3 mock = new MockAggregatorV3(8, -1, block.timestamp);
 
-        vm.expectRevert(abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(-1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(-1))
+        );
         this._priceWad(_feed(mock, 1 hours));
     }
 

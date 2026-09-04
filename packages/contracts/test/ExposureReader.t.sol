@@ -19,11 +19,7 @@ contract ExposureReaderTest is Test {
 
     // See FixedPointMath.t.sol for why internal library calls need an external wrapper for
     // `vm.expectRevert` to intercept the revert at the right call depth.
-    function _callBalanceOf(address token, address account, address[] memory universe)
-        external
-        view
-        returns (uint256)
-    {
+    function _callBalanceOf(address token, address account, address[] memory universe) external view returns (uint256) {
         return ExposureReader.balanceOf(token, account, universe);
     }
 
@@ -36,12 +32,14 @@ contract ExposureReaderTest is Test {
     function test_ReadsRealWalletBalance() public {
         tokenA.mint(maker, 1_000e18);
 
-        uint256 balance = ExposureReader.balanceOf(address(tokenA), maker, _universeOf(address(tokenA), address(tokenB)));
+        uint256 balance =
+            ExposureReader.balanceOf(address(tokenA), maker, _universeOf(address(tokenA), address(tokenB)));
         assertEq(balance, 1_000e18);
     }
 
     function test_ReadsZeroForUntouchedInUniverseToken() public view {
-        uint256 balance = ExposureReader.balanceOf(address(tokenB), maker, _universeOf(address(tokenA), address(tokenB)));
+        uint256 balance =
+            ExposureReader.balanceOf(address(tokenB), maker, _universeOf(address(tokenA), address(tokenB)));
         assertEq(balance, 0);
     }
 
