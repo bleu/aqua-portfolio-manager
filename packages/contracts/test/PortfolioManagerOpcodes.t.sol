@@ -16,6 +16,7 @@ import {MockTaker} from "../lib/swap-vm/test/mocks/MockTaker.sol";
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 
 /// @notice Exercises BLEUDEV-327's shipped fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
@@ -160,6 +161,53 @@ contract PortfolioManagerOpcodesTest is Test {
         return taker.swap(order, address(tokenA), address(tokenB), amount, takerData);
     }
 
+    function _swapExactOut(ISwapVM.Order memory order, uint256 amountOut) internal returns (uint256, uint256) {
+        bytes memory takerData = TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: false,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
+
+        // Exact-out grosses amountIn up by both the LP's own curve fee and the protocol fee on
+        // top -- mint generously past amountOut so the taker never runs short regardless of tier.
+        tokenA.mint(address(taker), amountOut * 3);
+        return taker.swap(order, address(tokenA), address(tokenB), amountOut, takerData);
+    }
+
+    /// @dev Replicates PortfolioManagerSwap's own exact-out math (clean amountIn via the curve,
+    ///      then grossed up by daoBps/(FEE_BPS - daoBps)) so tests can assert an independently
+    ///      derived expected value instead of just "some nonzero fee landed".
+    function _expectedExactOutDaoAmount(uint32 lpFeeBps, uint256 amountOut) internal view returns (uint256) {
+        PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
+            balanceIn: INITIAL_BALANCE,
+            balanceOut: INITIAL_BALANCE,
+            weightIn: weights[0],
+            weightOut: weights[1],
+            feeWad: uint256(lpFeeBps) * (1e18 / FEE_BPS_SCALE)
+        });
+        uint256 cleanAmountIn = PortfolioManagerPricing.exactOut(quote, amountOut);
+        uint32 daoBps = PortfolioManagerProgramBuilder.daoFeeBps(lpFeeBps);
+        return cleanAmountIn * daoBps / (FEE_BPS_SCALE - daoBps);
+    }
+
     // ===== Tests =====
 
     function test_DaoFeeBpsTiering() public pure {
@@ -241,6 +289,62 @@ contract PortfolioManagerOpcodesTest is Test {
                 token;
                 assertEq(to, PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
                 assertGt(skippedAmount, 0);
+            }
+        }
+        assertEq(skippedEvents, 1, "exactly one ProtocolFeeSkipped");
+    }
+
+    function test_ProtocolFeeLandsInDaoTreasuryAtLowTierExactOut() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+
+        _swapExactOut(order, SWAP_AMOUNT);
+
+        uint256 expectedDaoAmount = _expectedExactOutDaoAmount(LOW_TIER_FEE_BPS, SWAP_AMOUNT);
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+
+        assertGt(daoAmount, 0, "DAO must actually receive a fee");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/4-tier exact-out formula");
+    }
+
+    function test_ProtocolFeeLandsInDaoTreasuryAtHighTierExactOut() public {
+        ISwapVM.Order memory order = _buildOrder(HIGH_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+
+        _swapExactOut(order, SWAP_AMOUNT);
+
+        uint256 expectedDaoAmount = _expectedExactOutDaoAmount(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+
+        assertGt(daoAmount, 0, "DAO must actually receive a fee");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/6-tier exact-out formula");
+    }
+
+    function test_ZeroLpFeeMeansZeroProtocolFeeExactOut() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+
+        (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
+        assertEq(amountOut, SWAP_AMOUNT);
+        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0);
+    }
+
+    function test_ProtocolFeeSkipsWhenMakerUnderfundedExactOut() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        // Ship zero ledger for tokenA -- the DAO pull cannot be covered at all.
+        _shipOrder(order, 0);
+
+        vm.recordLogs();
+        (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
+        assertEq(amountOut, SWAP_AMOUNT, "swap still completes even though the fee pull was skipped");
+        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 skippedEvents = 0;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == Fee.ProtocolFeeSkipped.selector) {
+                skippedEvents++;
             }
         }
         assertEq(skippedEvents, 1, "exactly one ProtocolFeeSkipped");

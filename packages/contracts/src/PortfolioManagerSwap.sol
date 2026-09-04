@@ -75,8 +75,9 @@ contract PortfolioManagerSwap is Fee {
             ctx.swap.amountIn = fullAmountIn;
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
-            // Exact-out: the curve first computes the clean amountIn a fee-free trade would
-            // need, then the protocol fee is grossed up on top — mirrors Fee.sol's own
+            // Exact-out: the curve first computes the amountIn needed including the LP's own
+            // curve fee (PortfolioManagerPricing.exactOut already grosses that up internally),
+            // then the protocol fee is grossed up on top of that — mirrors Fee.sol's own
             // exact-out branch, which fees only once the swap amount is known.
             ctx.swap.amountIn = PortfolioManagerPricing.exactOut(quote, ctx.swap.amountOut);
             daoAmount = ctx.swap.amountIn * daoBps / (FEE_BPS - daoBps);
