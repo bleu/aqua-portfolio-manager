@@ -43,14 +43,22 @@ library PortfolioManagerPricing {
 
     /// @notice Amount of token `o` received for exactly `amountIn` of token `i`.
     /// @dev Rounds `amountOut` DOWN — the pool keeps the remainder, never the trader, same
-    ///      direction `BasketXYCSwap.sol`'s xy=k special case already uses. Solidity's default
-    ///      integer division already floors for these (positive-only) operands, so no explicit
-    ///      rounding helper is needed here, unlike `exactOut` below.
+    ///      direction `BasketXYCSwap.sol`'s xy=k special case already uses. That requires
+    ///      `ratio` to be rounded UP (ceiled), not down: `poweredRatio` is monotonic in `ratio`,
+    ///      so flooring `ratio` would floor `poweredRatio` too, which *inflates*
+    ///      `WAD - poweredRatio` (and therefore `amountOut`) past the true value — handing the
+    ///      trader up to a few wei the curve doesn't actually allow (caught by
+    ///      `test_ExactInRoundsInThePoolsFavorAtEqualWeights`, which hits `pow`'s exact
+    ///      `exponent == WAD` shortcut, so this fix is exact there). Off the equal-weight
+    ///      shortcut, `pow`'s own series truncation (already floor-biased, see
+    ///      `FixedPointMath.pow`) is composed on top of this ceiled input rather than proven
+    ///      bit-exact through the general case — PoC-grade precision, not a closed rounding
+    ///      proof through `ln`/`exp`.
     function exactIn(Quote memory q, uint256 amountIn) internal pure returns (uint256 amountOut) {
         _requireNonZeroBalances(q);
 
         uint256 amountInEff = amountIn * (WAD - q.feeWad) / WAD;
-        uint256 ratio = q.balanceIn * WAD / (q.balanceIn + amountInEff);
+        uint256 ratio = _ceilDiv(q.balanceIn * WAD, q.balanceIn + amountInEff);
         uint256 exponent = q.weightIn * WAD / q.weightOut;
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
 
