@@ -31,8 +31,10 @@ library PortfolioManagerArgsBuilder {
     uint256 private constant TOKEN_ENTRY_SIZE = 36;
 
     error PortfolioManagerEmptyUniverse();
+    error PortfolioManagerTooManyTokens(uint256 count);
     error PortfolioManagerTokensWeightsLengthMismatch();
     error PortfolioManagerFeeBpsOutOfRange(uint32 feeBps);
+    error PortfolioManagerZeroWeight(uint256 index);
     error PortfolioManagerWeightsMustSumToWad(uint256 sum);
     error PortfolioManagerMissingTokenCount();
     error PortfolioManagerMissingTokenEntry();
@@ -48,13 +50,14 @@ library PortfolioManagerArgsBuilder {
     {
         require(tokens.length > 0, PortfolioManagerEmptyUniverse());
         require(tokens.length == weights.length, PortfolioManagerTokensWeightsLengthMismatch());
-        require(tokens.length <= type(uint8).max, PortfolioManagerEmptyUniverse());
+        require(tokens.length <= type(uint8).max, PortfolioManagerTooManyTokens(tokens.length));
         require(feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
 
         args = abi.encodePacked(uint8(tokens.length));
 
         uint256 sum;
         for (uint256 i = 0; i < tokens.length; i++) {
+            require(weights[i] > 0, PortfolioManagerZeroWeight(i));
             sum += weights[i];
             args = abi.encodePacked(args, tokens[i], uint128(weights[i]));
         }
@@ -63,10 +66,14 @@ library PortfolioManagerArgsBuilder {
         args = abi.encodePacked(args, feeBps);
     }
 
-    /// @dev Independently re-validates `sum(weights) == WAD` on every parse, not just at
-    ///      `build()` time — `args` is maker-supplied strategy calldata and can be hand-crafted
-    ///      to bypass `build()` entirely, and `INVARIANT-PROOF.md`'s algebraic proof depends on
-    ///      the weights actually summing to one, not merely being labeled as such.
+    /// @dev Independently re-validates `sum(weights) == WAD` and every individual weight `> 0`
+    ///      on every parse, not just at `build()` time — `args` is maker-supplied strategy
+    ///      calldata and can be hand-crafted to bypass `build()` entirely, and
+    ///      `DONATION-RESISTANCE-PROOF.md`'s algebraic proof depends on the weights actually
+    ///      summing to one, not merely being labeled as such. A zero weight isn't caught by the
+    ///      sum check alone (it just shifts the remainder onto other tokens) but would make
+    ///      `PortfolioManagerPricing`'s `weightIn/weightOut` ratio divide by zero on every trade
+    ///      for that token — rejected here instead, at ship()-time, not at first-trade-time.
     function parse(bytes calldata args)
         internal
         pure
@@ -86,6 +93,7 @@ library PortfolioManagerArgsBuilder {
             args.slice(offset, offset + TOKEN_ENTRY_SIZE, PortfolioManagerMissingTokenEntry.selector);
             tokens[i] = address(bytes20(args.slice(offset, offset + 20)));
             weights[i] = uint256(uint128(bytes16(args.slice(offset + 20, offset + TOKEN_ENTRY_SIZE))));
+            require(weights[i] > 0, PortfolioManagerZeroWeight(i));
             sum += weights[i];
             offset += TOKEN_ENTRY_SIZE;
         }

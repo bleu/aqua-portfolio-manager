@@ -21,11 +21,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         return PortfolioManagerArgsBuilder.build(tokens, weights, feeBps);
     }
 
-    function _callParse(bytes calldata args)
-        external
-        pure
-        returns (address[] memory, uint256[] memory, uint32)
-    {
+    function _callParse(bytes calldata args) external pure returns (address[] memory, uint256[] memory, uint32) {
         return PortfolioManagerArgsBuilder.parse(args);
     }
 
@@ -38,8 +34,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         weights[0] = WAD;
 
         bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, 2e5); // 2bps, ADR-0008 default
-        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) =
-            this._callParse(args);
+        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsedTokens.length, 1);
         assertEq(parsedTokens[0], TOKEN_A);
@@ -58,8 +53,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         weights[2] = 0.2e18;
 
         bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, 0);
-        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) =
-            this._callParse(args);
+        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsedTokens.length, 3);
         for (uint256 i = 0; i < 3; i++) {
@@ -84,8 +78,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         }
 
         bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, feeBps);
-        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) =
-            this._callParse(args);
+        (address[] memory parsedTokens, uint256[] memory parsedWeights, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsedTokens.length, n);
         for (uint256 i = 0; i < n; i++) {
@@ -130,6 +123,28 @@ contract PortfolioManagerArgsBuilderTest is Test {
         this._callBuild(tokens, weights, 0);
     }
 
+    function test_BuildRevertsOnZeroWeight() public {
+        address[] memory tokens = new address[](2);
+        tokens[0] = TOKEN_A;
+        tokens[1] = TOKEN_B;
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0;
+        weights[1] = WAD;
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerZeroWeight.selector, 0));
+        this._callBuild(tokens, weights, 0);
+    }
+
+    function test_BuildRevertsOnTooManyTokens() public {
+        uint256 n = uint256(type(uint8).max) + 1; // 256, one past the packed uint8 count field
+        address[] memory tokens = new address[](n);
+        uint256[] memory weights = new uint256[](n);
+        // Values don't need to sum to WAD -- the length check reverts before the weights loop.
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerTooManyTokens.selector, n));
+        this._callBuild(tokens, weights, 0);
+    }
+
     function test_BuildRevertsOnFeeBpsAboveHundredPercent() public {
         address[] memory tokens = new address[](1);
         tokens[0] = TOKEN_A;
@@ -151,6 +166,16 @@ contract PortfolioManagerArgsBuilderTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerWeightsMustSumToWad.selector, 0.5e18)
         );
+        this._callParse(malformed);
+    }
+
+    function test_ParseRevertsOnHandCraftedZeroWeight() public {
+        // 2 tokens, weights [0, WAD] -- sums to WAD, so only the per-weight check catches this,
+        // not the sum check. A zero weight here would otherwise divide by zero on every trade
+        // for TOKEN_A once PortfolioManagerPricing computes its weight ratio.
+        bytes memory malformed = abi.encodePacked(uint8(2), TOKEN_A, uint128(0), TOKEN_B, uint128(WAD), uint32(0));
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerZeroWeight.selector, 0));
         this._callParse(malformed);
     }
 
