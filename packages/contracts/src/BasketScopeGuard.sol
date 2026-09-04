@@ -28,10 +28,10 @@ import {IAqua} from "aqua/interfaces/IAqua.sol";
 ///      contract has no way to scan historical event logs. `attestOnboardingClean` closes the
 ///      resulting gap not by detecting a pre-existing forbidden strategy automatically (not
 ///      possible on-chain), but by requiring the Safe to explicitly attest, via its own signed
-///      transaction, that the off-chain onboarding pre-existing-strategy check
-///      (BLEUDEV-321, `packages/onboarding-check`) has been run and came back clean. Until that
-///      attestation happens, PM's own strategy cannot ship at all — closing the gap where
-///      shipping PM was previously unconditional regardless of whether that check was ever run.
+///      transaction, that an off-chain onboarding pre-existing-strategy check (BLEUDEV-321) has
+///      been run and came back clean. Until that attestation happens, PM's own strategy cannot
+///      ship at all — closing the gap where shipping PM was previously unconditional regardless
+///      of whether that check was ever run.
 contract BasketScopeGuard is BaseGuard {
     /// @notice The Aqua core contract this guard watches `ship()` calls to.
     address public immutable AQUA;

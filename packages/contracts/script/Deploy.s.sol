@@ -110,12 +110,12 @@ contract Deploy is Script {
         console.log("Guard installed on Safe");
 
         // Attest onboarding is clean. In a real onboarding flow this only happens after
-        // actually running the off-chain onboarding-check tool (BLEUDEV-321,
-        // packages/onboarding-check) against this Safe's real Shipped-event history and
-        // confirming no violation. Here it's auto-attested: this is a fresh Safe on a fresh
-        // fork with no prior activity, so there is nothing for that check to find — but the
-        // attestation call itself is real and signed, exactly as it would be in production,
-        // so this still exercises the actual gate PM's strategy ships through.
+        // actually running an off-chain onboarding pre-existing-strategy check (BLEUDEV-321)
+        // against this Safe's real Shipped-event history and confirming no violation. Here it's
+        // auto-attested: this is a fresh Safe on a fresh fork with no prior activity, so there
+        // is nothing for that check to find — but the attestation call itself is real and
+        // signed, exactly as it would be in production, so this still exercises the actual gate
+        // PM's strategy ships through.
         bytes memory attestData = abi.encodeWithSignature("attestOnboardingClean()");
         bytes32 attestTxHash = safe.getTransactionHash(
             address(guard), 0, attestData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce()
