@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-/// @dev Real opcode table, successor to PoCOpcodes.sol. Mirrors AquaOpcodes.sol's pattern:
-/// registers our own curve instruction alongside swap-vm's `Fee` mixin, reused unmodified
-/// (BLEUDEV-327) rather than reimplemented, so the protocol-fee pull's best-effort
-/// try/catch/skip-event behavior is exactly the audited one 1inch's own router relies on.
+/// @dev Real opcode table, successor to PoCOpcodes.sol. Mirrors PoCOpcodes.sol's minimal shape:
+/// a single real instruction (the weighted-curve swap). The protocol fee is not a separate
+/// opcode entry — it's baked directly into PortfolioManagerSwap's own execution (BLEUDEV-327),
+/// so it can't be omitted by a hand-crafted program that never uses our own program-builder.
 
 import {Context} from "swap-vm/libs/VM.sol";
-import {Fee} from "swap-vm/instructions/Fee.sol";
 import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 
-contract PortfolioManagerOpcodes is PortfolioManagerSwap, Fee {
-    constructor(address aqua) Fee(aqua) {}
+contract PortfolioManagerOpcodes is PortfolioManagerSwap {
+    constructor(address aqua) PortfolioManagerSwap(aqua) {}
 
     function _notInstruction(
         Context memory,
@@ -20,18 +19,15 @@ contract PortfolioManagerOpcodes is PortfolioManagerSwap, Fee {
     )
         internal {}
 
-    /// @dev Opcode 0 = the weighted-curve swap; opcode 1 = the protocol-fee pull, composed by
-    /// PortfolioManagerProgramBuilder (a single call, to the 1inch DAO Treasury, at 1IP-103's
-    /// tiered rate) chained *before* opcode 0 so the curve never sees the protocol's cut
-    /// (see PortfolioManagerSwap.sol's @dev note, and BLEUDEV-327 for the full derivation).
+    /// @dev Opcode 0 = the weighted-curve swap, protocol fee included.
     function _opcodes()
         internal
         pure
         virtual
         returns (function(Context memory, bytes calldata) internal[] memory result)
     {
-        function(Context memory, bytes calldata) internal[3] memory instructions =
-            [_notInstruction, PortfolioManagerSwap._portfolioManagerSwapXD, Fee._aquaProtocolFeeAmountInXD];
+        function(Context memory, bytes calldata) internal[2] memory instructions =
+            [_notInstruction, PortfolioManagerSwap._portfolioManagerSwapXD];
 
         // Same trick AquaOpcodes.sol uses: rewrite the leading _notInstruction with the array's
         // length, turning a fixed-size literal into a dynamic array with that entry dropped.

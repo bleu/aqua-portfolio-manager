@@ -15,12 +15,14 @@ import {MockTaker} from "../lib/swap-vm/test/mocks/MockTaker.sol";
 
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 
 /// @notice Exercises BLEUDEV-327's shipped fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
 /// PortfolioManagerPricing.t.sol/PortfolioManagerArgsBuilder.t.sol already cover. This file
-/// answers: does the *composition* (a chained Fee._aquaProtocolFeeAmountInXD pull, tiered per
-/// 1IP-103, before the curve opcode) actually behave as designed end to end.
+/// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
+/// per 1IP-103) actually behave as designed end to end, and is it actually mandatory — not just
+/// something PortfolioManagerProgramBuilder happens to include.
 contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant FEE_BPS_SCALE = 1e9;
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
@@ -64,8 +66,21 @@ contract PortfolioManagerOpcodesTest is Test {
     // ===== Helpers =====
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory program = PortfolioManagerProgramBuilder.build(universe, weights, lpFeeBps);
+        return _orderForProgram(PortfolioManagerProgramBuilder.build(universe, weights, lpFeeBps));
+    }
 
+    /// @dev Deliberately does NOT call PortfolioManagerProgramBuilder — hand-packs the wire
+    ///      format directly (opcode 0, the curve, per VM.sol's runLoop) the way any third party
+    ///      who never heard of our builder still could, using only the LP-facing
+    ///      PortfolioManagerArgsBuilder encoding (public, documented, nothing secret about it).
+    ///      Proves the protocol fee survives bypassing our own tooling entirely.
+    function _buildOrderFromHandCraftedProgram(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
+        bytes memory args = PortfolioManagerArgsBuilder.build(universe, weights, lpFeeBps);
+        bytes memory program = abi.encodePacked(uint8(0), uint8(args.length), args);
+        return _orderForProgram(program);
+    }
+
+    function _orderForProgram(bytes memory program) internal view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,
@@ -249,5 +264,24 @@ contract PortfolioManagerOpcodesTest is Test {
         // still reaches PortfolioManagerPricing correctly, unaffected by the protocol-fee pull
         // running ahead of it in the program.
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
+    }
+
+    /// @notice BLEUDEV-327's central guarantee: the protocol fee is not merely a convention our
+    /// own program-builder happens to follow. A strategy shipped from program bytes that never
+    /// touched PortfolioManagerProgramBuilder -- built by hand, exactly as any third party
+    /// could -- still pays the DAO the moment it invokes our curve opcode, because the pull is
+    /// baked into PortfolioManagerSwap's own execution, not a separate, omittable instruction.
+    function test_ProtocolFeeIsMandatoryEvenBypassingOurProgramBuilder() public {
+        ISwapVM.Order memory order = _buildOrderFromHandCraftedProgram(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+
+        _swapExactIn(order, SWAP_AMOUNT);
+
+        uint256 expectedDaoAmount = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        assertEq(
+            tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS),
+            expectedDaoAmount,
+            "the DAO still gets paid even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
+        );
     }
 }
