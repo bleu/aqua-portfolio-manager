@@ -28,11 +28,7 @@ contract PortfolioManagerPricingTest is Test {
         returns (PortfolioManagerPricing.Quote memory)
     {
         return PortfolioManagerPricing.Quote({
-            balanceIn: balanceIn,
-            balanceOut: balanceOut,
-            weightIn: weightIn,
-            weightOut: weightOut,
-            feeWad: feeWad
+            balanceIn: balanceIn, balanceOut: balanceOut, weightIn: weightIn, weightOut: weightOut, feeWad: feeWad
         });
     }
 
@@ -66,7 +62,22 @@ contract PortfolioManagerPricingTest is Test {
         // Not bit-exact: this formula's WAD-scaled ratio division loses sub-WAD precision
         // before multiplying back up by balanceOut, an extra rounding step plain xy=k's
         // single division doesn't have. The resulting slack scales with balanceOut/WAD.
-        assertApproxEqAbs(amountOut, xykExpected, balanceOut / 1e14, "equal-weight curve should match plain xy=k closely");
+        assertApproxEqAbs(
+            amountOut, xykExpected, balanceOut / 1e14, "equal-weight curve should match plain xy=k closely"
+        );
+    }
+
+    function test_ExactInRoundsInThePoolsFavorAtEqualWeights() public pure {
+        // Regression test: balanceIn == balanceOut == 1e18, amountIn == 2e18, no fee, equal
+        // weights (hits FixedPointMath.pow's exact `exponent == WAD` shortcut, so this is exact
+        // arithmetic, not series-approximated). The true value is balanceOut * 2/3 =
+        // 666666666666666666.666... -- flooring in the pool's favor must return
+        // 666666666666666666, not 666666666666666667. Before ceiling the ratio fed into `pow`,
+        // this returned the latter: flooring `balanceIn*WAD/(balanceIn+amountInEff)` floored
+        // `poweredRatio` too, which inflated `WAD - poweredRatio` past the true value.
+        PortfolioManagerPricing.Quote memory q = _quote(1e18, 1e18, 0.5e18, 0.5e18, 0);
+        uint256 amountOut = PortfolioManagerPricing.exactIn(q, 2e18);
+        assertEq(amountOut, 666666666666666666, "amountOut must floor toward the pool, never round up to the trader");
     }
 
     function test_ExactInFeeReducesOutputVersusZeroFee() public pure {
@@ -89,7 +100,9 @@ contract PortfolioManagerPricingTest is Test {
         PortfolioManagerPricing.Quote memory q = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 100_000e18, 100_000e18
+                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector,
+                100_000e18,
+                100_000e18
             )
         );
         this._exactOut(q, 100_000e18);
