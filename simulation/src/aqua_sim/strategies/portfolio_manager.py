@@ -20,10 +20,11 @@ from aqua_sim.strategy import Trade
 #: (the proposal defers operator compensation to a separate governance process). Mirrors
 #: `PortfolioManagerProgramBuilder.daoFeeBps` exactly. Not a `PortfolioManagerStrategy`
 #: field: on-chain this is computed by Bleu's own strategy-building tooling from the LP's
-#: `feeBps`, never something an LP configures directly. Composed as a single chained
-#: `Fee._aquaProtocolFeeAmountInXD` pull *before* the curve opcode, so — as modeled here
-#: too — it comes out of the wallet's `amount_in` credit, not out of the curve's own
-#: pricing math; the taker pays/receives exactly what the curve quotes either way.
+#: `feeBps`, never something an LP configures directly. Pulled directly from inside the
+#: curve opcode's own execution, not a separate chainable instruction (`Aqua.ship()` is
+#: permissionless, so a separate instruction could be omitted by a hand-crafted program) —
+#: so, as modeled here too, it comes out of the wallet's `amount_in` credit, not out of the
+#: curve's own pricing math; the taker pays/receives exactly what the curve quotes either way.
 PROTOCOL_FEE_TIER_THRESHOLD = 0.001225  # 0.1225%, 1IP-103's tier boundary
 PROTOCOL_FEE_LOW_TIER_SHARE = 1 / 4
 PROTOCOL_FEE_HIGH_TIER_SHARE = 1 / 6

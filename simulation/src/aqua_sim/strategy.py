@@ -35,7 +35,7 @@ class Trade:
 
     `protocol_fee_amount` (default 0, most strategies never set it) is BLEUDEV-327's
     protocol fee: value pulled from the wallet's `token_in` credit on top of
-    `amount_in` actually landing, split to 1inch DAO and Bleu outside this ledger, not
+    `amount_in` actually landing, pulled to the 1inch DAO Treasury outside this ledger, not
     part of the trade's own pricing (`curve.py`'s `fee` argument, which stays whatever
     the LP configured, is unaffected — see `strategies/portfolio_manager.py`). Real
     only for the Portfolio Manager's own trades; a competing strategy has no such

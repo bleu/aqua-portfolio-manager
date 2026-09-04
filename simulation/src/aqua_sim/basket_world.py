@@ -163,9 +163,9 @@ class BasketWorld:
     strategy_captured_value: dict[str, float] = field(default_factory=dict)
     #: Cumulative BLEUDEV-327 protocol fee pulled from wallet balances across every
     #: applied trade (any strategy's — 0 for one that never sets `Trade.protocol_fee_amount`).
-    #: Tracked in aggregate, not split DAO/Bleu, since the 1bps/1bps split is a fixed
-    #: constant at collection time (`strategies/portfolio_manager.py`), not something
-    #: this economic model needs to attribute separately to study cost/tracking-error.
+    #: Tracked in aggregate, not attributed per-recipient, since 100% goes to the 1inch DAO
+    #: Treasury at collection time (`strategies/portfolio_manager.py`) — there's no split to
+    #: attribute for this economic model to study cost/tracking-error.
     protocol_fee_revenue: float = 0.0
 
     def view(self) -> BasketWorldView:
