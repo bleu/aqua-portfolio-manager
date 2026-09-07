@@ -15,10 +15,24 @@ pnpm codegen   # regenerate .envio/types.d.ts and envio-env.d.ts from config.yam
 pnpm dev       # starts a local Postgres via Docker, then indexes + serves the GraphQL API
 ```
 
-`pnpm dev` requires Docker running locally (Envio's local dev stack) — this hasn't been run
-end-to-end in this repo yet; `codegen` and `pnpm typecheck` (`tsc --noEmit` against the real
-generated types) have both been verified to pass, but the actual indexing run against a live
-chain has not.
+`pnpm dev` requires Docker running locally, and an `ENVIO_API_TOKEN` env var (free at
+[envio.dev/app/api-tokens](https://envio.dev/app/api-tokens)) — Base is a HyperSync-supported
+chain, and HyperSync stays the primary data source for those chains even with a local `rpc:`
+override in `config.yaml` (confirmed by testing: `rpc` only serves as a *fallback* role for
+HyperSync-supported chains, so a local anvil fork's own new blocks are invisible to it — there's
+currently no config-level way to force pure-RPC mode for a chain HyperSync already supports).
+
+**Verified end-to-end against real Base mainnet** (2026-09-07, `start_block: 0`, full historical
+backfill via HyperSync): the real Aqua registry's actual `Shipped`/`Docked` history indexed
+correctly, `isActive`/`dockedAtBlock`/`dockedAtTimestamp`/`dockedAtTxHash` transition correctly on
+dock, and `getWhere`-style filtering on `@index`-marked fields (`maker`, `app`, `isActive`,
+`status`) works at runtime, not just at codegen. The `CompatibilityAlert` detection/resolution
+logic was also verified for real: found a real maker with two concurrently-active strategies
+under different apps, temporarily pointed `PM_ROUTER_ADDRESSES` at one of those real apps, and
+confirmed both an `OPEN` alert (for a still-active conflict) and a `RESOLVED` one (for a pair
+where one side had since docked) appeared with correctly cross-referenced `pmStrategyId`/
+`conflictingStrategyId`. Reverted before committing — the shipped `PM_ROUTER_ADDRESSES` map stays
+empty by design (see below).
 
 ## Configuring which `app` is our own Portfolio Manager router
 
@@ -32,10 +46,11 @@ before relying on the alerting feature for a given chain.
 ## Known gaps (see `thoughts/indexer-architecture.md`'s "Open questions" for the full list)
 
 - `start_block: 0` in `config.yaml` is a placeholder, not Aqua's real per-chain deployment block —
-  works, but re-syncs far more history than necessary.
-- No local-anvil-fork RPC override is wired up yet (the doc's docker-compose sketch assumes one);
-  this indexer currently targets Base directly via Envio's hosted HyperSync data source.
+  works (verified — backfilled real Base history in well under a second via HyperSync), but
+  re-syncs more than strictly necessary.
+- No local-anvil-fork testing path exists for chains HyperSync already supports (see "Running
+  locally" above) — local dev iteration currently means indexing real Base mainnet directly.
 - `strategyBytes` stays raw/undecoded — no PM-specific token/weight/feeBps decoding (deliberately
   deferred, see the doc).
-- No automated test suite yet — `pnpm codegen` + `pnpm typecheck` are the only verification run
-  so far, both against the real Envio toolchain (not hand-simulated).
+- No automated test suite yet — verification so far is `pnpm codegen` + `pnpm typecheck` plus a
+  manual `pnpm dev` run against real Base mainnet (see above), not an automated regression suite.
