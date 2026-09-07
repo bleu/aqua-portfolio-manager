@@ -8,9 +8,20 @@ contracts:
   - name: Aqua
     handler: src/EventHandlers.ts
     events:
-      # Shipped/Docked only for v1 -- see "Events indexed" in the architecture doc for why
-      # Pulled/Pushed are deliberately out of scope.
       - event: "Shipped(address maker, address app, bytes32 strategyHash, bytes strategy)"
+        field_selection:
+          transaction_fields:
+            - hash
+      # Pushed also fires on every later trade (pull/push cycle), not just at ship() time --
+      # the handler tells the two apart by comparing transaction hashes against the strategy's
+      # own shippedAtTxHash, not by indexing scope. Needed to learn the token universe a strategy
+      # declared at ship() time: Shipped's own event args don't carry `tokens`/`amounts` (only
+      # `strategy`, the opaque program bytes), and the maker's wallet is required to be a Safe
+      # (ADR-0011), so the top-level transaction is Safe.execTransaction(...), not a direct
+      # ship() call -- decoding transaction calldata directly would silently break for every
+      # real PM wallet. Pushed events are emitted by Aqua.sol itself, so they're unaffected by
+      # how the call arrived.
+      - event: "Pushed(address maker, address app, bytes32 strategyHash, address token, uint256 amount)"
         field_selection:
           transaction_fields:
             - hash

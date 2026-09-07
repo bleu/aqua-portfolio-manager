@@ -6,34 +6,10 @@ type Strategy {
   maker: String! @index
   app: String! @index
   strategyHash: String!
-  strategyBytes: String! # raw `strategy` field from Shipped, ABI-encoded ISwapVM.Order
+  tokens: [String!]! # declared at ship() time, via same-tx Pushed events (see EventHandlers.ts)
   isActive: Boolean! @index # true from Shipped; flips false on the matching Docked
-  shippedAtBlock: BigInt!
-  shippedAtTimestamp: BigInt!
-  shippedAtTxHash: String!
-  dockedAtBlock: BigInt
-  dockedAtTimestamp: BigInt
+  shippedAt: BigInt! # unix timestamp
+  shippedAtTxHash: String! # also used to tell ship-time Pushed events from later trade-time ones
+  dockedAt: BigInt
   dockedAtTxHash: String
-}
-
-enum AlertStatus {
-  OPEN
-  RESOLVED
-}
-
-# Opened when a maker has an active PM-app strategy AND an active non-PM-app strategy
-# simultaneously; resolved (not deleted) once either strategy docks. See "Compatibility
-# alerting" in the architecture doc for the detection rule and why it's deliberately
-# conservative rather than case-by-case.
-type CompatibilityAlert {
-  id: ID! # `${pmStrategyId}-${conflictingStrategyId}`
-  maker: String! @index
-  pmStrategyId: String! # references Strategy.id
-  conflictingStrategyId: String! # references Strategy.id
-  conflictingApp: String!
-  status: AlertStatus! @index
-  detectedAtBlock: BigInt!
-  detectedAtTimestamp: BigInt!
-  resolvedAtBlock: BigInt
-  resolvedAtTimestamp: BigInt
 }

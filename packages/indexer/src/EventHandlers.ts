@@ -1,5 +1,4 @@
 import { indexer } from "envio";
-import { onStrategyChanged } from "./compatibilityChecker";
 
 function strategyId(maker: string, app: string, strategyHash: string): string {
   return `${maker}-${app}-${strategyHash}`.toLowerCase();
@@ -12,23 +11,27 @@ indexer.onEvent({ contract: "Aqua", event: "Shipped" }, async ({ event, context 
     maker: event.params.maker,
     app: event.params.app,
     strategyHash: event.params.strategyHash,
-    strategyBytes: event.params.strategy,
+    tokens: [], // filled in as this same transaction's Pushed events arrive, below
     isActive: true,
-    shippedAtBlock: BigInt(event.block.number),
-    shippedAtTimestamp: BigInt(event.block.timestamp),
+    shippedAt: BigInt(event.block.timestamp),
     shippedAtTxHash: event.transaction.hash,
-    dockedAtBlock: undefined,
-    dockedAtTimestamp: undefined,
+    dockedAt: undefined,
     dockedAtTxHash: undefined,
   });
+});
 
-  await onStrategyChanged(
-    event.params.maker,
-    event.chainId,
-    BigInt(event.block.number),
-    BigInt(event.block.timestamp),
-    context,
-  );
+indexer.onEvent({ contract: "Aqua", event: "Pushed" }, async ({ event, context }) => {
+  const id = strategyId(event.params.maker, event.params.app, event.params.strategyHash);
+  const strategy = await context.Strategy.get(id);
+  // A Pushed event for a strategy we have no Shipped record for is expected once start_block
+  // is set later than that strategy's ship() -- ignore rather than fail, this handler only
+  // enriches an existing row, it never creates one.
+  if (strategy === undefined) return;
+  // Pushed also fires on every later trade's pull/push cycle -- only the batch emitted in the
+  // exact same transaction as this strategy's own Shipped event is its declared token universe.
+  if (strategy.shippedAtTxHash !== event.transaction.hash) return;
+  if (strategy.tokens.includes(event.params.token)) return;
+  context.Strategy.set({ ...strategy, tokens: [...strategy.tokens, event.params.token] });
 });
 
 indexer.onEvent({ contract: "Aqua", event: "Docked" }, async ({ event, context }) => {
@@ -40,16 +43,7 @@ indexer.onEvent({ contract: "Aqua", event: "Docked" }, async ({ event, context }
   context.Strategy.set({
     ...strategy,
     isActive: false,
-    dockedAtBlock: BigInt(event.block.number),
-    dockedAtTimestamp: BigInt(event.block.timestamp),
+    dockedAt: BigInt(event.block.timestamp),
     dockedAtTxHash: event.transaction.hash,
   });
-
-  await onStrategyChanged(
-    event.params.maker,
-    event.chainId,
-    BigInt(event.block.number),
-    BigInt(event.block.timestamp),
-    context,
-  );
 });

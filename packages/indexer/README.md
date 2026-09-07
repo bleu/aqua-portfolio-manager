@@ -1,11 +1,12 @@
 # @aqua-portfolio-manager/indexer
 
-Indexes `Shipped`/`Docked` events from the real Aqua registry contract
+Indexes `Shipped`/`Docked`/`Pushed` events from the real Aqua registry contract
 (`0x499943e74fb0ce105688beee8ef2abec5d936d31` — same address on every chain Aqua is live on)
-across **all apps**, and flags any wallet that has an active Portfolio Manager strategy *and* an
-active non-PM strategy at the same time. Built with [Envio HyperIndex](https://docs.envio.dev/).
+across **all apps**, and exposes a single `Strategy` entity: which wallet, which app, which
+tokens it declared at ship time, whether it's still active, and when it shipped/docked. Built
+with [Envio HyperIndex](https://docs.envio.dev/).
 
-Full design, the "why", and the class diagram: `thoughts/indexer-architecture.md` (BLEUDEV-339).
+Full design and the class diagram: `thoughts/indexer-architecture.md` (BLEUDEV-339).
 
 ## Running locally
 
@@ -23,25 +24,26 @@ HyperSync-supported chains, so a local anvil fork's own new blocks are invisible
 currently no config-level way to force pure-RPC mode for a chain HyperSync already supports).
 
 **Verified end-to-end against real Base mainnet** (2026-09-07, `start_block: 0`, full historical
-backfill via HyperSync): the real Aqua registry's actual `Shipped`/`Docked` history indexed
-correctly, `isActive`/`dockedAtBlock`/`dockedAtTimestamp`/`dockedAtTxHash` transition correctly on
-dock, and `getWhere`-style filtering on `@index`-marked fields (`maker`, `app`, `isActive`,
-`status`) works at runtime, not just at codegen. The `CompatibilityAlert` detection/resolution
-logic was also verified for real: found a real maker with two concurrently-active strategies
-under different apps, temporarily pointed `PM_ROUTER_ADDRESSES` at one of those real apps, and
-confirmed both an `OPEN` alert (for a still-active conflict) and a `RESOLVED` one (for a pair
-where one side had since docked) appeared with correctly cross-referenced `pmStrategyId`/
-`conflictingStrategyId`. Reverted before committing — the shipped `PM_ROUTER_ADDRESSES` map stays
-empty by design (see below).
+backfill via HyperSync): `Shipped`/`Docked` lifecycle tracking is correct (`isActive`,
+`dockedAt`/`dockedAtTxHash` populate exactly on dock, stay `null` while active), and the
+`tokens` extraction is correct against real strategies — confirmed real WETH/USDC pairs and other
+real token pairs, each correctly scoped to its own strategy with no cross-contamination between
+different makers' strategies.
 
-## Configuring which `app` is our own Portfolio Manager router
+## How `tokens` gets populated
 
-`src/pmAppRegistry.ts`'s `PM_ROUTER_ADDRESSES` map is empty by default — it's deployment-specific
-(differs per chain, same pattern as `packages/contracts/script/Deploy.s.sol`'s `AQUA_ADDRESS`)
-and can't be derived from a `Shipped` event alone. Without an entry for the chain being indexed,
-`isPmApp` always returns `false`, which means **compatibility alerts will never fire** — every
-active strategy looks "non-PM" with nothing to conflict against. Fill in the real router address
-before relying on the alerting feature for a given chain.
+`Shipped`'s own event args don't carry the `tokens`/`amounts` arrays passed to `ship()` — only
+the opaque `strategy` program bytes. Decoding the top-level transaction's calldata directly was
+the first approach tried and rejected: PM maker wallets are required to be Safes (`ADR-0011`), so
+the top-level transaction is `Safe.execTransaction(...)`, not a direct `ship()` call — decoding
+`transaction.input` as `ship()` calldata would silently break for every real PM wallet.
+
+Instead, the indexer also tracks `Pushed` (`Aqua.sol` emits one per token, in the same
+transaction as `Shipped`, right after it, regardless of how the call arrived) and appends a
+token to `Strategy.tokens` only when a `Pushed` event's transaction hash matches that strategy's
+own `shippedAtTxHash` — this is what tells the initial ship-time token declaration apart from
+every later trade's own `Pushed` event (pull/push cycles happen on every swap, not just at ship
+time).
 
 ## Known gaps (see `thoughts/indexer-architecture.md`'s "Open questions" for the full list)
 
@@ -50,7 +52,5 @@ before relying on the alerting feature for a given chain.
   re-syncs more than strictly necessary.
 - No local-anvil-fork testing path exists for chains HyperSync already supports (see "Running
   locally" above) — local dev iteration currently means indexing real Base mainnet directly.
-- `strategyBytes` stays raw/undecoded — no PM-specific token/weight/feeBps decoding (deliberately
-  deferred, see the doc).
-- No automated test suite yet — verification so far is `pnpm codegen` + `pnpm typecheck` plus a
-  manual `pnpm dev` run against real Base mainnet (see above), not an automated regression suite.
+- No automated test suite yet — verification so far is `pnpm codegen` + `pnpm typecheck` plus
+  manual `pnpm dev` runs against real Base mainnet, not an automated regression suite.
