@@ -23,12 +23,13 @@ override in `config.yaml` (confirmed by testing: `rpc` only serves as a *fallbac
 HyperSync-supported chains, so a local anvil fork's own new blocks are invisible to it — there's
 currently no config-level way to force pure-RPC mode for a chain HyperSync already supports).
 
-**Verified end-to-end against real Base mainnet** (2026-09-07, `start_block: 0`, full historical
+**Manually verified against real Base mainnet** (2026-09-07, `start_block: 0`, full historical
 backfill via HyperSync): `Shipped`/`Docked` lifecycle tracking is correct (`isActive`,
 `dockedAt`/`dockedAtTxHash` populate exactly on dock, stay `null` while active), and the
 `tokens` extraction is correct against real strategies — confirmed real WETH/USDC pairs and other
 real token pairs, each correctly scoped to its own strategy with no cross-contamination between
-different makers' strategies.
+different makers' strategies. This was a one-off manual check via the GraphQL API against a live
+`pnpm dev` run, not something reproducible from this diff alone — see "Known gaps" below.
 
 ## How `tokens` gets populated
 
@@ -54,3 +55,7 @@ time).
   locally" above) — local dev iteration currently means indexing real Base mainnet directly.
 - No automated test suite yet — verification so far is `pnpm codegen` + `pnpm typecheck` plus
   manual `pnpm dev` runs against real Base mainnet, not an automated regression suite.
+- `Strategy` doesn't store the raw `strategy` program bytes from `Shipped` at all (an earlier
+  revision did, as `strategyBytes`) — a strategy's actual program (curve, weights, fees) is
+  entirely unrecoverable from the indexed data, not merely undecoded. Cheap to add back
+  (`event.params.strategy` is already available in the handler) if a future consumer needs it.
