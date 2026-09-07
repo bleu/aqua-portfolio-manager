@@ -1,0 +1,19 @@
+{
+  "name": "@aqua-portfolio-manager/indexer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Indexes Aqua Shipped/Docked events across all apps and flags wallets with a strategy incompatible with the Portfolio Manager (BLEUDEV-339)",
+  "scripts": {
+    "codegen": "envio codegen",
+    "dev": "envio dev",
+    "start": "envio start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "envio": "^3.9.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

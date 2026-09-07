@@ -1,0 +1,39 @@
+# See thoughts/indexer-architecture.md ("Database schema") for the full design and the
+# equivalent Postgres DDL Envio's codegen produces from this file.
+
+type Strategy {
+  id: ID! # `${maker}-${app}-${strategyHash}`, lowercase -- matches Aqua's own balance-state key
+  maker: String! @index
+  app: String! @index
+  strategyHash: String!
+  strategyBytes: String! # raw `strategy` field from Shipped, ABI-encoded ISwapVM.Order
+  isActive: Boolean! @index # true from Shipped; flips false on the matching Docked
+  shippedAtBlock: BigInt!
+  shippedAtTimestamp: BigInt!
+  shippedAtTxHash: String!
+  dockedAtBlock: BigInt
+  dockedAtTimestamp: BigInt
+  dockedAtTxHash: String
+}
+
+enum AlertStatus {
+  OPEN
+  RESOLVED
+}
+
+# Opened when a maker has an active PM-app strategy AND an active non-PM-app strategy
+# simultaneously; resolved (not deleted) once either strategy docks. See "Compatibility
+# alerting" in the architecture doc for the detection rule and why it's deliberately
+# conservative rather than case-by-case.
+type CompatibilityAlert {
+  id: ID! # `${pmStrategyId}-${conflictingStrategyId}`
+  maker: String! @index
+  pmStrategyId: String! # references Strategy.id
+  conflictingStrategyId: String! # references Strategy.id
+  conflictingApp: String!
+  status: AlertStatus! @index
+  detectedAtBlock: BigInt!
+  detectedAtTimestamp: BigInt!
+  resolvedAtBlock: BigInt
+  resolvedAtTimestamp: BigInt
+}

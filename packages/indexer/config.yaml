@@ -1,0 +1,29 @@
+# See thoughts/indexer-architecture.md for the design this implements.
+#
+# Indexes the real Aqua registry contract -- one deterministic address, identical across every
+# chain Aqua is live on (lib/aqua/README.md's deployment table) -- not something we deploy.
+name: indexer
+ecosystem: evm
+contracts:
+  - name: Aqua
+    handler: src/EventHandlers.ts
+    events:
+      # Shipped/Docked only for v1 -- see "Events indexed" in the architecture doc for why
+      # Pulled/Pushed are deliberately out of scope.
+      - event: "Shipped(address maker, address app, bytes32 strategyHash, bytes strategy)"
+        field_selection:
+          transaction_fields:
+            - hash
+      - event: "Docked(address maker, address app, bytes32 strategyHash)"
+        field_selection:
+          transaction_fields:
+            - hash
+chains:
+  - id: 8453 # Base -- matches Deploy.s.sol's AQUA_MAINNET default already in use for local dev.
+    # TODO(open item #1, thoughts/indexer-architecture.md): this is block 0, not Aqua's real
+    # deployment block on Base -- works, but wastes sync time. Needs a block-explorer lookup.
+    start_block: 0
+    contracts:
+      - name: Aqua
+        address:
+          - "0x499943e74fb0ce105688beee8ef2abec5d936d31"
