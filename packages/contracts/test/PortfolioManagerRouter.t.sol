@@ -10,8 +10,11 @@ import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 /// together (see its own header comment: "mirrors AquaSwapVMRouter.sol exactly") -- its
 /// opcode dispatch is already exhaustively exercised by every PortfolioManagerOpcodes.t.sol
 /// and E2E test that ships/swaps through a deployed instance. What's never independently
-/// checked anywhere else is that the constructor actually wires its arguments into the base
-/// contracts it inherits, rather than, say, swapping two constructor arguments by accident.
+/// checked anywhere else is that the constructor forwards `aqua`/`owner` into the base
+/// contracts it inherits, rather than, say, swapping two constructor arguments by accident --
+/// `weth` isn't checked here: `SwapVM`'s base `OnlyWethReceiver` stores it in a private
+/// immutable with no accessor anywhere in the inheritance chain, so it's structurally
+/// unobservable from a test.
 contract PortfolioManagerRouterTest is Test {
     function test_ConstructorWiresAquaAndOwnerCorrectly() public {
         address aqua = address(0xA11CE00000000000000000000000000000000A);
