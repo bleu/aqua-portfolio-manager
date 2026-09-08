@@ -6,6 +6,7 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {Aqua} from "aqua/Aqua.sol";
+import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
@@ -368,6 +369,57 @@ contract PortfolioManagerOpcodesTest is Test {
         // still reaches PortfolioManagerPricing correctly, unaffected by the protocol-fee pull
         // running ahead of it in the program.
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
+    }
+
+    /// @notice `PortfolioManagerSwap._weightOf` has its own `PortfolioManagerSwapTokenNotDeclared`
+    /// revert for exactly this case, and `ExposureReader.balanceOf` has `ExposureReaderTokenOutsideDeclaredUniverse`
+    /// -- but a real external taker never reaches either: `SwapVM` itself reads
+    /// `AQUA.safeBalances(maker, app, strategyHash, tokenIn, tokenOut)` before dispatching to
+    /// our opcode at all, and Aqua's own ledger rejects a token that was never part of the
+    /// shipped strategy first (`SafeBalancesForTokenNotInActiveStrategy`, confirmed empirically
+    /// -- not assumed). Both of our own checks are correct defense-in-depth (reachable if
+    /// something calls `_portfolioManagerSwapXD`/`ExposureReader.balanceOf` directly, e.g. a
+    /// different, less-guarded router), just not through this particular external path.
+    function test_RevertsWhenTakerRequestsTokenOutsideDeclaredUniverse() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        bytes32 strategyHash = _shipOrder(order, INITIAL_BALANCE);
+
+        TokenMock outsideToken = new TokenMock("Outside", "OUT");
+        bytes memory takerData = TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: true,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
+
+        outsideToken.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAqua.SafeBalancesForTokenNotInActiveStrategy.selector,
+                maker,
+                address(router),
+                strategyHash,
+                address(outsideToken)
+            )
+        );
+        taker.swap(order, address(outsideToken), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
     /// @notice BLEUDEV-327's central guarantee: the protocol fee is not merely a convention our
