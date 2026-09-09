@@ -26,6 +26,14 @@ library ExposureReader {
     ///      check membership first. Reverting here, rather than silently returning a stale or
     ///      zero balance, makes an out-of-universe read a loud caller bug instead of a silent
     ///      mispricing.
+    /// @dev BLEUDEV-345: this revert is unreachable through the current router when called from
+    ///      `PortfolioManagerSwap` — `SwapVM.swap()` already calls
+    ///      `AQUA.safeBalances(maker, app, strategyHash, tokenIn, tokenOut)` before ever
+    ///      dispatching to that opcode, and Aqua's own ledger rejects an undeclared token first
+    ///      (`IAqua.SafeBalancesForTokenNotInActiveStrategy`). Kept rather than stripped: this is
+    ///      a library, not something owned by any one caller — the ADR-0002 requirement above
+    ///      applies to `ExposureReader` itself, independent of which instruction ends up calling
+    ///      it, including ones that don't route through `SwapVM`'s own gate.
     function balanceOf(address token, address maker, address[] memory universe) internal view returns (uint256) {
         bool inUniverse = false;
         for (uint256 i = 0; i < universe.length; i++) {
