@@ -101,6 +101,16 @@ contract PortfolioManagerSwap is Fee {
     /// @dev `tokens`/`weights` already passed `PortfolioManagerArgsBuilder.parse`'s
     ///      sum-to-WAD re-validation; a token not found here means `ctx.query.tokenIn`/
     ///      `tokenOut` was never part of the declared universe at all.
+    /// @dev BLEUDEV-345: this revert is unreachable through the current router — `SwapVM.swap()`
+    ///      already calls `AQUA.safeBalances(maker, app, strategyHash, tokenIn, tokenOut)` before
+    ///      ever dispatching to this opcode, and Aqua's own ledger rejects an undeclared token
+    ///      first (`IAqua.SafeBalancesForTokenNotInActiveStrategy`). `ExposureReader.balanceOf`
+    ///      above gates the identical `tokens` array a second time for the same reason. Kept
+    ///      rather than stripped: Solidity does not guarantee the `Quote` struct literal's field
+    ///      evaluation order, so this function isn't provably reached only after
+    ///      `ExposureReader`'s check has already run for the same token — and it's real
+    ///      defense-in-depth for any future caller of this private function that isn't wired
+    ///      through `ExposureReader` first.
     function _weightOf(address[] memory tokens, uint256[] memory weights, address token)
         private
         pure
