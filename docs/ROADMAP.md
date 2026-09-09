@@ -5,6 +5,6 @@ Detailed task tracking lives in Linear. Status against the 1inch Aqua Incubator 
 | Milestone | Status |
 |---|---|
 | M1 — Research & Spec | Complete |
-| M2 — PoC on testnet | Not started |
+| M2 — PoC against forked mainnet | Not started |
 | M3 — Full implementation | Not started |
 | M4 — 1inch integration & audit gate | Not started |
