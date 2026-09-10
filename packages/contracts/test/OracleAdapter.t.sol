@@ -86,9 +86,9 @@ contract OracleAdapterTest is Test {
 
     function test_ScalesDownFeedWithMoreThan18Decimals() public {
         vm.warp(1_000_000);
-        // No real Chainlink feed reports more than 18 decimals today, but priceWad's own
-        // if/else if/else chain has a third branch for it -- exercised nowhere else in this
-        // file (only 8- and 18-decimal feeds appear above).
+        // Chainlink feeds cap at 18 decimals (8 for most USD pairs, 18 for ETH-denominated
+        // ones) -- this branch guards a case no real feed hits, but priceWad's own
+        // if/else if/else chain still has it, so it needs coverage.
         MockAggregatorV3 mock = new MockAggregatorV3(24, 2000e24, block.timestamp); // $2000, 24 decimals
         uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours));
         assertEq(price, 2000e18);

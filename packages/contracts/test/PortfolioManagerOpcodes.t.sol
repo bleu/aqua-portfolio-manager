@@ -18,6 +18,7 @@ import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
+import {ExposureReader} from "../src/ExposureReader.sol";
 
 /// @notice Exercises BLEUDEV-327's shipped fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
@@ -133,8 +134,8 @@ contract PortfolioManagerOpcodesTest is Test {
         return strategyHash;
     }
 
-    function _swapExactIn(ISwapVM.Order memory order, uint256 amount) internal returns (uint256, uint256) {
-        bytes memory takerData = TakerTraitsLib.build(
+    function _exactInTakerData() internal view returns (bytes memory) {
+        return TakerTraitsLib.build(
             TakerTraitsLib.Args({
                 taker: address(taker),
                 isExactIn: true,
@@ -157,6 +158,10 @@ contract PortfolioManagerOpcodesTest is Test {
                 signature: ""
             })
         );
+    }
+
+    function _swapExactIn(ISwapVM.Order memory order, uint256 amount) internal returns (uint256, uint256) {
+        bytes memory takerData = _exactInTakerData();
 
         tokenA.mint(address(taker), amount * 2);
         return taker.swap(order, address(tokenA), address(tokenB), amount, takerData);
@@ -371,43 +376,15 @@ contract PortfolioManagerOpcodesTest is Test {
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
     }
 
-    /// @notice `PortfolioManagerSwap._weightOf` has its own `PortfolioManagerSwapTokenNotDeclared`
-    /// revert for exactly this case, and `ExposureReader.balanceOf` has `ExposureReaderTokenOutsideDeclaredUniverse`
-    /// -- but a real external taker never reaches either: `SwapVM` itself reads
-    /// `AQUA.safeBalances(maker, app, strategyHash, tokenIn, tokenOut)` before dispatching to
-    /// our opcode at all, and Aqua's own ledger rejects a token that was never part of the
-    /// shipped strategy first (`SafeBalancesForTokenNotInActiveStrategy`, confirmed empirically
-    /// -- not assumed). Both of our own checks are correct defense-in-depth (reachable if
-    /// something calls `_portfolioManagerSwapXD`/`ExposureReader.balanceOf` directly, e.g. a
-    /// different, less-guarded router), just not through this particular external path.
+    /// @notice A token never shipped to Aqua at all: `SwapVM`'s own `AQUA.safeBalances()` gate
+    /// rejects it before dispatch reaches this opcode. See `ExposureReader.sol`/
+    /// `PortfolioManagerSwap.sol` for why our own declared-universe checks exist anyway.
     function test_RevertsWhenTakerRequestsTokenOutsideDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         bytes32 strategyHash = _shipOrder(order, INITIAL_BALANCE);
 
         TokenMock outsideToken = new TokenMock("Outside", "OUT");
-        bytes memory takerData = TakerTraitsLib.build(
-            TakerTraitsLib.Args({
-                taker: address(taker),
-                isExactIn: true,
-                shouldUnwrapWeth: false,
-                isStrictThresholdAmount: false,
-                isFirstTransferFromTaker: false,
-                useTransferFromAndAquaPush: false,
-                threshold: "",
-                to: address(0),
-                deadline: 0,
-                hasPreTransferInCallback: true,
-                hasPreTransferOutCallback: false,
-                preTransferInHookData: "",
-                postTransferInHookData: "",
-                preTransferOutHookData: "",
-                postTransferOutHookData: "",
-                preTransferInCallbackData: "",
-                preTransferOutCallbackData: "",
-                instructionsArgs: "",
-                signature: ""
-            })
-        );
+        bytes memory takerData = _exactInTakerData();
 
         outsideToken.mint(address(taker), SWAP_AMOUNT * 2);
         vm.expectRevert(
@@ -420,6 +397,45 @@ contract PortfolioManagerOpcodesTest is Test {
             )
         );
         taker.swap(order, address(outsideToken), address(tokenB), SWAP_AMOUNT, takerData);
+    }
+
+    /// @notice The one case where our own declared-universe checks are genuinely reachable, not
+    /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
+    /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
+    /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
+    /// strategy -- so dispatch reaches this opcode, and `ExposureReader.balanceOf` is what
+    /// actually catches it.
+    function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        TokenMock tokenC = new TokenMock("Token C", "TKC");
+        tokenA.mint(maker, INITIAL_BALANCE);
+        tokenB.mint(maker, INITIAL_BALANCE);
+        tokenC.mint(maker, INITIAL_BALANCE);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        tokenC.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+
+        address[] memory tokens = new address[](3);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        tokens[2] = address(tokenC);
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = INITIAL_BALANCE;
+        amounts[1] = INITIAL_BALANCE;
+        amounts[2] = INITIAL_BALANCE;
+
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), tokens, amounts);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(ExposureReader.ExposureReaderTokenOutsideDeclaredUniverse.selector, address(tokenC))
+        );
+        taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
     /// @notice BLEUDEV-327's central guarantee: the protocol fee is not merely a convention our
