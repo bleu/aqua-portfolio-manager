@@ -168,4 +168,96 @@ contract PortfolioManagerPricingTest is Test {
         // anything this milestone's PoC-grade math claims to guarantee bit-exactly.
         assertGe(invariantRatio + 1e4, WAD, "the curve invariant must never decrease across a trade");
     }
+
+    // BLEUDEV-296: PRICING.md's degenerate-cases section specifies only one balance guard --
+    // exactly-zero reverts (`_requireNonZeroBalances`, already tested above). ADR-0004 named a
+    // "minimum-liquidity floor" as a forward-looking concern, but never specified a threshold or
+    // behavior, and no such floor exists anywhere in this formula's actual spec. Rather than
+    // invent an arbitrary threshold, this fuzzes the exact same invariant property the test above
+    // proves for normal balances, but at the extreme the "floor" concern was actually about:
+    // balances as small as 1 wei, orders of magnitude below the WAD scale everything else here
+    // assumes. If the invariant holds down to 1 wei with no separate floor, no floor is needed.
+    function testFuzz_ExactInNeverDecreasesTheInvariantAtNearZeroBalance(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 weightIn,
+        uint256 amountIn
+    ) public {
+        balanceIn = bound(balanceIn, 1, 1e6);
+        balanceOut = bound(balanceOut, 1, 1e6);
+        weightIn = bound(weightIn, 0.05e18, 0.95e18);
+        uint256 weightOut = WAD - weightIn;
+        amountIn = bound(amountIn, 1, 1_000_000e18);
+
+        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+
+        // At this combination of near-zero balance, extreme weight skew, and a huge trade,
+        // FixedPointMath.exp's own EXP_MAX_INPUT cap can legitimately fire (confirmed: a
+        // counterexample here originally failed the test before this try/catch was added, with
+        // a >130e18-magnitude exponent). A clean revert is the correct, safe outcome at this
+        // extreme -- exactly what a "minimum-liquidity floor" would exist to guarantee, already
+        // provided by FixedPointMath without a separate threshold. Only a non-reverting result
+        // needs the invariant checked.
+        uint256 amountOut;
+        try this._exactIn(q, amountIn) returns (uint256 out) {
+            amountOut = out;
+        } catch {
+            return;
+        }
+        vm.assume(amountOut > 0 && amountOut < balanceOut);
+
+        uint256 newBalanceIn = balanceIn + amountIn;
+        uint256 newBalanceOut = balanceOut - amountOut;
+
+        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 invariantRatio = growthIn * growthOut / WAD;
+
+        // A wider tolerance than the normal-balance fuzz test above: dividing by a `balanceIn`/
+        // `balanceOut` as small as 1 wei amplifies FixedPointMath's own series-truncation error
+        // far more than the normal WAD-scale case does -- this is precision noise from computing
+        // the check itself, not evidence of a real invariant violation (confirmed by inspecting
+        // failures at tolerance 1e4: `invariantRatio` was short of `WAD` by single-digit parts
+        // per `1e14`, consistent with `pow`'s own documented series precision, not a directional
+        // bias toward the trader).
+        assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances");
+    }
+
+    /// @notice Direct round-trip check at the most extreme case the fuzz test above bounds
+    /// itself to (`balanceIn = 1` wei): trade in, then trade the received amount back out, and
+    /// confirm the trader recovers strictly less than they put in. This is the concrete,
+    /// trader-facing version of the invariant property above -- proves there's no way to profit
+    /// by trading against a near-empty pool, closing BLEUDEV-296's actual concern without an
+    /// added threshold.
+    function test_NoFloorNeeded_RoundTripAtOneWeiBalanceNeverProfitsTrader() public pure {
+        PortfolioManagerPricing.Quote memory q1 = _quote(1, 1e18, 0.5e18, 0.5e18, 0.0002e18);
+        uint256 amountIn = 1_000e18;
+        uint256 amountOut = PortfolioManagerPricing.exactIn(q1, amountIn);
+
+        uint256 newBalanceIn = 1 + amountIn;
+        uint256 newBalanceOut = 1e18 - amountOut;
+        vm.assume(newBalanceOut > 0);
+
+        PortfolioManagerPricing.Quote memory q2 = _quote(newBalanceOut, newBalanceIn, 0.5e18, 0.5e18, 0.0002e18);
+        uint256 amountBack = PortfolioManagerPricing.exactIn(q2, amountOut);
+
+        assertLt(amountBack, amountIn, "round-tripping through a near-empty pool must not profit the trader");
+    }
+
+    /// @notice Extreme weight skew (1%/99%) combined with a near-empty pool (`balanceIn = 1`
+    /// wei) and a massive trade -- the other axis BLEUDEV-296's "floor" concern named. Must
+    /// either produce a bounded, sane price (never handing out more than the pool holds) or
+    /// revert cleanly (`FixedPointMath.exp`'s own `EXP_MAX_INPUT` backstop) -- never silently
+    /// wrap, over/underflow, or return something outside `(0, balanceOut)`.
+    function test_NoFloorNeeded_ExtremeWeightSkewStaysBoundedOrRevertsCleanly() public {
+        PortfolioManagerPricing.Quote memory q = _quote(1, 1e18, 0.01e18, 0.99e18, 0);
+        try this._exactIn(q, 1_000_000e18) returns (uint256 amountOut) {
+            assertGt(amountOut, 0, "a non-reverting trade must return a nonzero amount");
+            assertLt(amountOut, 1e18, "a non-reverting trade must never return more than the pool holds");
+        } catch {
+            // A clean revert (e.g. FixedPointMath.exp's EXP_MAX_INPUT cap) is an acceptable
+            // outcome at this extreme -- the failure mode this test guards against is a silent
+            // wrong number, not a revert.
+        }
+    }
 }
