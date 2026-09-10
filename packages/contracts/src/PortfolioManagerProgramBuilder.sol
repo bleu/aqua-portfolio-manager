@@ -14,7 +14,7 @@ import {PortfolioManagerArgsBuilder} from "./PortfolioManagerArgsBuilder.sol";
 ///         `PortfolioManagerOpcodes`' opcode index is fixed and known here directly.
 /// @dev Wire format matches `VM.sol`'s `runLoop` exactly: `[opcode:1 byte][argsLength:1
 ///      byte][args:argsLength bytes]`.
-/// @dev BLEUDEV-327: the protocol fee itself is *not* composed here — it's baked directly into
+/// @dev The protocol fee itself is *not* composed here — it's baked directly into
 ///      `PortfolioManagerSwap`'s own execution so it can't be omitted by a hand-crafted program
 ///      that skips this builder entirely. This library still owns the tiered-rate formula and
 ///      the DAO Treasury address, since `PortfolioManagerSwap` needs the same constants and a

@@ -17,9 +17,9 @@ import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.s
 ///         which is a same-strategy-only accounting entry, not a wallet-wide reading),
 ///         resolves tokenIn's/tokenOut's declared weight, and prices the trade.
 /// @dev Single-token-per-group scope only (matches PortfolioManagerArgsBuilder's current
-///      scope, BLEUDEV-281) — multi-token oracle-valued groups (ADR-0003) are a routing detail
-///      PRICING.md explicitly defers to a later milestone, not decided here.
-/// @dev BLEUDEV-327: the 1inch DAO protocol fee (1IP-103's tiered cut) is pulled directly from
+///      scope) — multi-token oracle-valued groups (ADR-0003) are a routing detail PRICING.md
+///      explicitly defers to a later milestone, not decided here.
+/// @dev The 1inch DAO protocol fee (1IP-103's tiered cut) is pulled directly from
 ///      inside this instruction's own execution, not composed as a separate chainable
 ///      instruction — `Aqua.ship()` is permissionless, so a program that only invokes this
 ///      opcode (skipping any separate fee instruction) would otherwise pay nothing. Baking the

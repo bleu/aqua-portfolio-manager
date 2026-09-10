@@ -11,9 +11,9 @@ uint256 constant PM_BPS = 1e9;
 
 /// @title PortfolioManagerArgsBuilder — packed-bytes encoding of the Portfolio Manager's
 ///        declared token universe, per-token target weight, and protocol fee
-/// @notice One token per group this milestone (BLEUDEV-281's scope; multi-token group routing
-///         is BLEUDEV-75, separately unbuilt), so "group id per token" degenerates to "each
-///         token is its own group" — this stores a (token, weight) pair per declared token
+/// @notice One token per group this milestone; multi-token group routing is separately unbuilt,
+///         so "group id per token" degenerates to "each token is its own group" — this stores a
+///         (token, weight) pair per declared token
 ///         rather than a separate group-id field that would always equal the token's own
 ///         index. Weights are otherwise fully general (not required equal): `PRICING.md`'s
 ///         formula already reduces correctly at equal weights, so there is nothing to
