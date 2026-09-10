@@ -20,7 +20,7 @@ import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.so
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {ExposureReader} from "../src/ExposureReader.sol";
 
-/// @notice Exercises BLEUDEV-327's shipped fee mechanism through a real SwapVM.swap() call
+/// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
 /// PortfolioManagerPricing.t.sol/PortfolioManagerArgsBuilder.t.sol already cover. This file
 /// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
@@ -438,8 +438,8 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice BLEUDEV-327's central guarantee: the protocol fee is not merely a convention our
-    /// own program-builder happens to follow. A strategy shipped from program bytes that never
+    /// @notice The central guarantee: the protocol fee is not merely a convention our own
+    /// program-builder happens to follow. A strategy shipped from program bytes that never
     /// touched PortfolioManagerProgramBuilder -- built by hand, exactly as any third party
     /// could -- still pays the DAO the moment it invokes our curve opcode, because the pull is
     /// baked into PortfolioManagerSwap's own execution, not a separate, omittable instruction.
