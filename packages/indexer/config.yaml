@@ -31,9 +31,9 @@ contracts:
             - hash
 chains:
   - id: 8453 # Base -- matches Deploy.s.sol's AQUA_MAINNET default already in use for local dev.
-    # TODO(open item #1, thoughts/indexer-architecture.md): this is block 0, not Aqua's real
-    # deployment block on Base -- works, but wastes sync time. Needs a block-explorer lookup.
-    start_block: 0
+    # Aqua's real deployment block on Base, found via binary search on eth_getCode (empty at
+    # 38281776, present at 38281777) -- avoids wasting sync time indexing from genesis.
+    start_block: 38281777
     contracts:
       - name: Aqua
         address:
