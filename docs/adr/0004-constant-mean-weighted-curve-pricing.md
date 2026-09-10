@@ -22,7 +22,7 @@ Pricing uses a constant-mean weighted curve (Balancer-style weighted-pool math),
 - The round-trip-always-favors-the-pool property becomes a proof obligation for this specific implementation (Milestone 1's headline security deliverable — see ADR-0007), not something inherited for free just by citing Balancer's whitepaper.
 - Reframes what "the innovation" is: not the curve itself (that's the settlement engine), but the layer above it — group targets, the declared-universe exposure read (ADR-0002/0003), and Chainlink-anchored valuation (ADR-0005).
 - Team has prior Balancer-contributor experience, which strengthens the implementation and audit story for M3/M4 — but this ADR's decision doesn't depend on that continuing to be true.
-- Precision/edge behavior near an empty pool needs the same handling as any weighted pool (minimum-liquidity floor, round in the pool's favor). **Resolved (BLEUDEV-296):** rounding-in-the-pool's-favor is implemented and tested; a separate minimum-liquidity floor above the exact-zero case turned out not to be needed — see [`../PRICING.md`](../PRICING.md)'s Degenerate cases section for the analysis (the donation-resistance proof is scale-invariant, confirmed empirically to `1` wei, with `FixedPointMath`'s own overflow cap as a clean-revert backstop at the extreme).
+- Precision/edge behavior near an empty pool needs the same handling as any weighted pool (round in the pool's favor, and never let a trade compute to the pool's entire balance). **Resolved:** rounding-in-the-pool's-favor is implemented and tested; the entire-pool-drain case is guarded explicitly rather than via an arbitrary minimum-balance threshold — see [`../PRICING.md`](../PRICING.md)'s Degenerate cases section for the full reasoning.
 
 ## References
 

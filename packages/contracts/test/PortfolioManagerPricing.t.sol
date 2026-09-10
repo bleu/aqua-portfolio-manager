@@ -169,14 +169,12 @@ contract PortfolioManagerPricingTest is Test {
         assertGe(invariantRatio + 1e4, WAD, "the curve invariant must never decrease across a trade");
     }
 
-    // BLEUDEV-296: PRICING.md's degenerate-cases section specifies only one balance guard --
-    // exactly-zero reverts (`_requireNonZeroBalances`, already tested above). ADR-0004 named a
-    // "minimum-liquidity floor" as a forward-looking concern, but never specified a threshold or
-    // behavior, and no such floor exists anywhere in this formula's actual spec. Rather than
-    // invent an arbitrary threshold, this fuzzes the exact same invariant property the test above
-    // proves for normal balances, but at the extreme the "floor" concern was actually about:
-    // balances as small as 1 wei, orders of magnitude below the WAD scale everything else here
-    // assumes. If the invariant holds down to 1 wei with no separate floor, no floor is needed.
+    // PRICING.md's degenerate-cases section specifies the exactly-zero balance guard
+    // (`_requireNonZeroBalances`, already tested above) plus a guard against a trade computing
+    // to the pool's entire output balance or more -- `exactIn` reverts on that the same way
+    // `exactOut` already reverted on it being requested directly. Neither is a minimum-balance
+    // threshold; both are output-side bounds checks. This fuzzes the invariant property the test
+    // above proves for normal balances, extended down to balances as small as 1 wei.
     function testFuzz_ExactInNeverDecreasesTheInvariantAtNearZeroBalance(
         uint256 balanceIn,
         uint256 balanceOut,
@@ -191,20 +189,16 @@ contract PortfolioManagerPricingTest is Test {
 
         PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
-        // At this combination of near-zero balance, extreme weight skew, and a huge trade,
-        // FixedPointMath.exp's own EXP_MAX_INPUT cap can legitimately fire (confirmed: a
-        // counterexample here originally failed the test before this try/catch was added, with
-        // a >130e18-magnitude exponent). A clean revert is the correct, safe outcome at this
-        // extreme -- exactly what a "minimum-liquidity floor" would exist to guarantee, already
-        // provided by FixedPointMath without a separate threshold. Only a non-reverting result
-        // needs the invariant checked.
+        // Two independent revert paths can legitimately fire here: FixedPointMath.exp's own
+        // exponent cap at extreme weight skew, and exactIn's own would-drain-the-pool guard. Both
+        // are correct, safe outcomes -- only a non-reverting result needs the invariant checked.
         uint256 amountOut;
         try this._exactIn(q, amountIn) returns (uint256 out) {
             amountOut = out;
         } catch {
             return;
         }
-        vm.assume(amountOut > 0 && amountOut < balanceOut);
+        vm.assume(amountOut > 0);
 
         uint256 newBalanceIn = balanceIn + amountIn;
         uint256 newBalanceOut = balanceOut - amountOut;
@@ -223,13 +217,10 @@ contract PortfolioManagerPricingTest is Test {
         assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances");
     }
 
-    /// @notice Direct round-trip check at the most extreme case the fuzz test above bounds
-    /// itself to (`balanceIn = 1` wei): trade in, then trade the received amount back out, and
-    /// confirm the trader recovers strictly less than they put in. This is the concrete,
-    /// trader-facing version of the invariant property above -- proves there's no way to profit
-    /// by trading against a near-empty pool, closing BLEUDEV-296's actual concern without an
-    /// added threshold.
-    function test_NoFloorNeeded_RoundTripAtOneWeiBalanceNeverProfitsTrader() public pure {
+    /// @notice Direct round-trip check at an extreme balance (`balanceIn = 1` wei): trade in,
+    /// then trade the received amount back out, and confirm the trader recovers strictly less
+    /// than they put in -- no way to profit by trading against a near-empty pool.
+    function test_RoundTripAtOneWeiBalanceNeverProfitsTrader() public pure {
         PortfolioManagerPricing.Quote memory q1 = _quote(1, 1e18, 0.5e18, 0.5e18, 0.0002e18);
         uint256 amountIn = 1_000e18;
         uint256 amountOut = PortfolioManagerPricing.exactIn(q1, amountIn);
@@ -245,19 +236,56 @@ contract PortfolioManagerPricingTest is Test {
     }
 
     /// @notice Extreme weight skew (1%/99%) combined with a near-empty pool (`balanceIn = 1`
-    /// wei) and a massive trade -- the other axis BLEUDEV-296's "floor" concern named. Must
-    /// either produce a bounded, sane price (never handing out more than the pool holds) or
-    /// revert cleanly (`FixedPointMath.exp`'s own `EXP_MAX_INPUT` backstop) -- never silently
-    /// wrap, over/underflow, or return something outside `(0, balanceOut)`.
-    function test_NoFloorNeeded_ExtremeWeightSkewStaysBoundedOrRevertsCleanly() public {
+    /// wei) and a massive trade. Must either produce a bounded, sane price (never handing out
+    /// more than the pool holds) or revert cleanly -- never silently wrap, over/underflow, or
+    /// return something outside `(0, balanceOut)`.
+    function test_ExtremeWeightSkewStaysBoundedOrRevertsCleanly() public {
         PortfolioManagerPricing.Quote memory q = _quote(1, 1e18, 0.01e18, 0.99e18, 0);
         try this._exactIn(q, 1_000_000e18) returns (uint256 amountOut) {
             assertGt(amountOut, 0, "a non-reverting trade must return a nonzero amount");
             assertLt(amountOut, 1e18, "a non-reverting trade must never return more than the pool holds");
         } catch {
-            // A clean revert (e.g. FixedPointMath.exp's EXP_MAX_INPUT cap) is an acceptable
-            // outcome at this extreme -- the failure mode this test guards against is a silent
-            // wrong number, not a revert.
+            // A clean revert (e.g. FixedPointMath.exp's EXP_MAX_INPUT cap, or the would-drain
+            // guard below) is an acceptable outcome at this extreme -- the failure mode this
+            // test guards against is a silent wrong number, not a revert.
         }
+    }
+
+    /// @notice At sufficiently skewed weights (`weightIn/weightOut` large), `poweredRatio` can
+    /// underflow to exactly 0 in fixed-point for a small-enough `ratio` -- the true value is
+    /// real but below WAD's representable precision. Without a guard, `amountOut` computes to
+    /// exactly `balanceOut`: the entire pool, handed out for an ordinary-sized trade against an
+    /// imbalanced-but-not-degenerate pool. Confirmed to have reverted only after this guard was
+    /// added; this is the regression test for it.
+    function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
+        PortfolioManagerPricing.Quote memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 1_000_000, 1_000_000)
+        );
+        this._exactIn(q, 1000);
+    }
+
+    /// @notice Cross-checks `exactIn` against a reference implementation of PRICING.md's exact
+    /// real-number formula, independent of `FixedPointMath`'s own series-based `ln`/`exp` --
+    /// catches a systematic formula error that reusing `FixedPointMath` to verify itself would
+    /// miss. Tolerance is relative (1e-12), far tighter than any real formula error would produce
+    /// but wide enough for the series-truncation/rounding difference between the two
+    /// implementations (observed: Solidity's result differs from the exact reference by roughly
+    /// 1 part in 1e15-1e19 across these vectors, and can fall on either side of it -- consistent
+    /// with the un-proven-bit-exact precision `exactIn`'s own rounding-direction note already
+    /// discloses, not a directional bias worth chasing at PoC-grade precision).
+    function test_ExactInMatchesIndependentReferenceImplementation() public pure {
+        // Reference values computed independently via Decimal arithmetic at 60 significant
+        // digits, from PRICING.md's formula directly (not via this contract's code).
+        PortfolioManagerPricing.Quote memory q1 = _quote(100_000e18, 100_000e18, 0.3e18, 0.7e18, 0.0002e18);
+        _assertMatchesReference(PortfolioManagerPricing.exactIn(q1, 1000e18), 425450270259556705827);
+
+        PortfolioManagerPricing.Quote memory q2 = _quote(1_000_000e18, 1_000_000e18, 0.9e18, 0.1e18, 0.0002e18);
+        _assertMatchesReference(PortfolioManagerPricing.exactIn(q2, 50_000e18), 355335828958235306891709);
+    }
+
+    function _assertMatchesReference(uint256 actual, uint256 expected) internal pure {
+        uint256 diff = actual > expected ? actual - expected : expected - actual;
+        assertLe(diff * 1e12, expected, "exactIn must match an independent reference implementation within 1e-12 relative");
     }
 }

@@ -54,6 +54,11 @@ library PortfolioManagerPricing {
     ///      `FixedPointMath.pow`) is composed on top of this ceiled input rather than proven
     ///      bit-exact through the general case — PoC-grade precision, not a closed rounding
     ///      proof through `ln`/`exp`.
+    /// @dev At an extreme weight ratio combined with a small `balanceIn` and a large trade,
+    ///      `poweredRatio` can underflow to exactly 0 in fixed-point (the true value is real but
+    ///      below WAD's precision floor), which would otherwise silently return the pool's
+    ///      entire `balanceOut`. Guarded below the same way `exactOut` already guards its own
+    ///      output side.
     function exactIn(Quote memory q, uint256 amountIn) internal pure returns (uint256 amountOut) {
         _requireNonZeroBalances(q);
 
@@ -63,6 +68,7 @@ library PortfolioManagerPricing {
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
 
         amountOut = q.balanceOut * (WAD - poweredRatio) / WAD;
+        require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
     }
 
     /// @notice Gross amount of token `i` (fee included) required to receive exactly
