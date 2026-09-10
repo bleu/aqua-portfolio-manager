@@ -19,21 +19,10 @@ library ExposureReader {
     error ExposureReaderTokenOutsideDeclaredUniverse(address token);
 
     /// @notice Real balance of `token` in `maker`'s wallet, gated to the declared universe.
-    /// @dev ADR-0002's "Consequences" section requires the exposure reader itself to filter to
-    ///      the declared universe ("a spec requirement, not a documentation note") — anything
-    ///      that lands in the wallet outside that universe (accidental transfer, deliberate
-    ///      donation) must be ignored by the reading, not merely by callers remembering to
-    ///      check membership first. Reverting here, rather than silently returning a stale or
-    ///      zero balance, makes an out-of-universe read a loud caller bug instead of a silent
-    ///      mispricing.
-    /// @dev BLEUDEV-345: this revert is unreachable through the current router when called from
-    ///      `PortfolioManagerSwap` — `SwapVM.swap()` already calls
-    ///      `AQUA.safeBalances(maker, app, strategyHash, tokenIn, tokenOut)` before ever
-    ///      dispatching to that opcode, and Aqua's own ledger rejects an undeclared token first
-    ///      (`IAqua.SafeBalancesForTokenNotInActiveStrategy`). Kept rather than stripped: this is
-    ///      a library, not something owned by any one caller — the ADR-0002 requirement above
-    ///      applies to `ExposureReader` itself, independent of which instruction ends up calling
-    ///      it, including ones that don't route through `SwapVM`'s own gate.
+    /// @dev ADR-0002 requires filtering to the declared universe here, not just by callers
+    ///      remembering to check first — an accidental transfer or donation outside the universe
+    ///      must be ignored by the reading itself. Reverting (rather than returning a stale/zero
+    ///      balance) makes an out-of-universe read a loud caller bug, not a silent mispricing.
     function balanceOf(address token, address maker, address[] memory universe) internal view returns (uint256) {
         bool inUniverse = false;
         for (uint256 i = 0; i < universe.length; i++) {
