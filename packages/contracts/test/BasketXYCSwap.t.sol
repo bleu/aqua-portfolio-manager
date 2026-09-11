@@ -94,9 +94,7 @@ contract BasketXYCSwapTest is BasketXYCSwapTestBase {
         uint256 plainOut = _swap(plainOrder, amountIn);
 
         assertGt(
-            basketOut,
-            plainOut,
-            "basket-aware pricing must beat a comparator strategy structurally blind to token C"
+            basketOut, plainOut, "basket-aware pricing must beat a comparator strategy structurally blind to token C"
         );
 
         uint256 expectedPlainOut = (amountIn * 1_000e18) / (1_000e18 + amountIn);
