@@ -28,10 +28,7 @@ contract BasketScopeGuardE2ETest is Test {
     address internal basketOneToken;
     address internal basketTwoToken;
     bytes32 internal pmStrategyHash;
-
-    /// @dev Matches script/Deploy.s.sol's DEFAULT_DEPLOYER_KEY — the deployer is also the
-    /// Safe's sole owner in this environment, test-only, never a real key.
-    uint256 internal constant DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    address internal deployer;
 
     address internal unknownToken = address(0xF00D);
 
@@ -53,6 +50,7 @@ contract BasketScopeGuardE2ETest is Test {
         basketOneToken = vm.parseJsonAddress(json, ".basketOneToken");
         basketTwoToken = vm.parseJsonAddress(json, ".basketTwoToken");
         pmStrategyHash = vm.parseJsonBytes32(json, ".pmStrategyHash");
+        deployer = vm.parseJsonAddress(json, ".deployer");
 
         // The manifest only tells us addresses — confirm the Guard is *actually* wired up on
         // the deployed Safe, not just sitting deployed-but-uninstalled somewhere.
@@ -70,12 +68,23 @@ contract BasketScopeGuardE2ETest is Test {
         return abi.encodeCall(Aqua.ship, (address(0xAAAA), strategy, tokens, amounts));
     }
 
+    /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash, with the approving
+    ///      owner's address packed into `r` (`s` unused) -- and when the transaction's executor
+    ///      (`execTransaction`'s `msg.sender`) IS that owner, the check passes immediately with
+    ///      no prior `approveHash()` call and no real ECDSA signature at all (`Safe.sol`'s
+    ///      `executor != currentOwner` short-circuit, checked before the `approvedHashes`
+    ///      fallback). `deployer` is `safe`'s sole owner and every caller of this signature
+    ///      pranks as `deployer` first, so this replaces needing a hardcoded private key to
+    ///      produce a real signature -- matches PortfolioManagerE2EBase.sol's own fix (PR review).
+    function _selfApprovedSignature() internal view returns (bytes memory) {
+        return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
+    }
+
+    /// @dev Contains exactly one external call (`execTransaction`), so it's safe to call directly
+    ///      under `vm.expectRevert()` too.
     function _shipThroughSafe(bytes memory strategy, address[] memory tokens) internal returns (bool) {
         bytes memory shipData = _shipCalldata(strategy, tokens);
-        bytes32 txHash = safe.getTransactionHash(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce()
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DEPLOYER_KEY, txHash);
+        vm.prank(deployer);
         return safe.execTransaction(
             address(aqua),
             0,
@@ -86,7 +95,7 @@ contract BasketScopeGuardE2ETest is Test {
             0,
             address(0),
             payable(address(0)),
-            abi.encodePacked(r, s, v)
+            _selfApprovedSignature()
         );
     }
 
@@ -120,25 +129,8 @@ contract BasketScopeGuardE2ETest is Test {
         tokens[0] = basketOneToken;
         tokens[1] = basketTwoToken;
 
-        bytes memory shipData = _shipCalldata("e2e attacker strategy", tokens);
-        bytes32 txHash = safe.getTransactionHash(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce()
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DEPLOYER_KEY, txHash);
-
         vm.expectRevert();
-        safe.execTransaction(
-            address(aqua),
-            0,
-            shipData,
-            Enum.Operation.Call,
-            0,
-            0,
-            0,
-            address(0),
-            payable(address(0)),
-            abi.encodePacked(r, s, v)
-        );
+        _shipThroughSafe("e2e attacker strategy", tokens);
     }
 
     function test_E2E_DeployedSafeBlocksTokenOutsideUniverse() public {
@@ -146,24 +138,7 @@ contract BasketScopeGuardE2ETest is Test {
         tokens[0] = basketOneToken;
         tokens[1] = unknownToken;
 
-        bytes memory shipData = _shipCalldata("e2e outside-universe strategy", tokens);
-        bytes32 txHash = safe.getTransactionHash(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), safe.nonce()
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DEPLOYER_KEY, txHash);
-
         vm.expectRevert();
-        safe.execTransaction(
-            address(aqua),
-            0,
-            shipData,
-            Enum.Operation.Call,
-            0,
-            0,
-            0,
-            address(0),
-            payable(address(0)),
-            abi.encodePacked(r, s, v)
-        );
+        _shipThroughSafe("e2e outside-universe strategy", tokens);
     }
 }
