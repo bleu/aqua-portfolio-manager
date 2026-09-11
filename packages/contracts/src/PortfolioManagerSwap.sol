@@ -3,19 +3,19 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
-import {ExposureReader} from "./ExposureReader.sol";
 import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
 
 /// @title PortfolioManagerSwap — the real weighted-curve SwapVM instruction, per PRICING.md
 /// @notice Wires PortfolioManagerArgsBuilder's declared universe and PortfolioManagerPricing's
-///         curve math into an actual instruction: reads real wallet balances via
-///         ExposureReader (ADR-0002 — never AQUA's own ledger via ctx.swap.balanceIn/Out,
-///         which is a same-strategy-only accounting entry, not a wallet-wide reading),
-///         resolves tokenIn's/tokenOut's declared weight, and prices the trade.
+///         curve math into an actual instruction: reads real wallet balances via plain
+///         `balanceOf` (ADR-0002 — never AQUA's own ledger via ctx.swap.balanceIn/Out, which is
+///         a same-strategy-only accounting entry, not a wallet-wide reading), resolves
+///         tokenIn's/tokenOut's declared weight, and prices the trade.
 /// @dev Single-token-per-group scope only (matches PortfolioManagerArgsBuilder's current
 ///      scope) — multi-token oracle-valued groups (ADR-0003) are a routing detail PRICING.md
 ///      explicitly defers to a later milestone, not decided here.
@@ -51,8 +51,8 @@ contract PortfolioManagerSwap is Fee {
         (address[] memory tokens, uint256[] memory weights, uint32 feeBps) = PortfolioManagerArgsBuilder.parse(args);
 
         PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
-            balanceIn: ExposureReader.balanceOf(ctx.query.tokenIn, ctx.query.maker, tokens),
-            balanceOut: ExposureReader.balanceOf(ctx.query.tokenOut, ctx.query.maker, tokens),
+            balanceIn: IERC20(ctx.query.tokenIn).balanceOf(ctx.query.maker),
+            balanceOut: IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker),
             weightIn: _weightOf(tokens, weights, ctx.query.tokenIn),
             weightOut: _weightOf(tokens, weights, ctx.query.tokenOut),
             feeWad: uint256(feeBps) * FEE_WAD_PER_BPS
@@ -98,10 +98,12 @@ contract PortfolioManagerSwap is Fee {
         }
     }
 
-    /// @dev A token not found here was never part of the declared universe. In practice
-    ///      unreachable: `SwapVM.swap()` already rejects an undeclared `tokenIn`/`tokenOut` via
-    ///      `AQUA.safeBalances()` before dispatch reaches this opcode. Kept as a direct guard
-    ///      anyway, since Solidity doesn't guarantee struct-literal field evaluation order.
+    /// @dev A token not found here was never part of the declared universe — the sole guard for
+    ///      that now, since `balanceOf` above is a plain, ungated read. Reachable in practice:
+    ///      `ship()`'s own `tokens` array can include a token this contract's declared universe
+    ///      never gave a weight to (an encoding mismatch, not just a malicious taker) —
+    ///      `AQUA.safeBalances()` only checks the token is part of the shipped strategy, not that
+    ///      it matches this instruction's own args.
     function _weightOf(address[] memory tokens, uint256[] memory weights, address token)
         private
         pure

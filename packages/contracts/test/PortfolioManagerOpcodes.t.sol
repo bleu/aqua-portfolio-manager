@@ -18,7 +18,7 @@ import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
-import {ExposureReader} from "../src/ExposureReader.sol";
+import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 
 /// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
@@ -377,8 +377,8 @@ contract PortfolioManagerOpcodesTest is Test {
     }
 
     /// @notice A token never shipped to Aqua at all: `SwapVM`'s own `AQUA.safeBalances()` gate
-    /// rejects it before dispatch reaches this opcode. See `ExposureReader.sol`/
-    /// `PortfolioManagerSwap.sol` for why our own declared-universe checks exist anyway.
+    /// rejects it before dispatch reaches this opcode. See `PortfolioManagerSwap.sol` for why
+    /// our own declared-universe check exists anyway.
     function test_RevertsWhenTakerRequestsTokenOutsideDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         bytes32 strategyHash = _shipOrder(order, INITIAL_BALANCE);
@@ -399,12 +399,11 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(outsideToken), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice The one case where our own declared-universe checks are genuinely reachable, not
+    /// @notice The one case where our own declared-universe check is genuinely reachable, not
     /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
     /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
     /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
-    /// strategy -- so dispatch reaches this opcode, and `ExposureReader.balanceOf` is what
-    /// actually catches it.
+    /// strategy -- so dispatch reaches this opcode, and `_weightOf` is what actually catches it.
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -433,7 +432,7 @@ contract PortfolioManagerOpcodesTest is Test {
         bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), SWAP_AMOUNT * 2);
         vm.expectRevert(
-            abi.encodeWithSelector(ExposureReader.ExposureReaderTokenOutsideDeclaredUniverse.selector, address(tokenC))
+            abi.encodeWithSelector(PortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
         );
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }
