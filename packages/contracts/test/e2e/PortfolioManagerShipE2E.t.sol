@@ -3,8 +3,10 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
+import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
+import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
 
 /// @notice Ships a real PM strategy from a fresh dedicated maker wallet (ADR-0002)
 /// against the actually deployed router and Aqua registry — see PortfolioManagerE2EBase for the
@@ -69,11 +71,43 @@ contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {
         amounts[0] = INITIAL_BALANCE;
         amounts[1] = INITIAL_BALANCE;
 
-        // _shipOnly now contains exactly one external call (execTransaction), so arming
-        // vm.expectRevert() immediately before it attaches to the right call. execTransaction
-        // bubbles the inner revert rather than swallowing it into a `false` return on this Safe
-        // version -- confirmed empirically against the real deployed Safe.
-        vm.expectRevert();
+        // _shipOnly contains exactly one external call (execTransaction), so arming
+        // vm.expectRevert() immediately before it attaches to the right call. Targets the
+        // specific Aqua error, not just any revert, so this only passes for the immutability
+        // check -- not e.g. a stray allowance or gas issue elsewhere in the call.
+        vm.expectRevert(
+            abi.encodeWithSelector(IAqua.StrategiesMustBeImmutable.selector, address(router), router.hash(order))
+        );
         _shipOnly(order, tokens, amounts);
+    }
+
+    function test_ShipRevertsAtomicallyOnMismatchedUniverseThroughTheRealMultiSendBatch() public {
+        // Distinct feeBps so this order's strategyHash can't collide with any other test's.
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS + 2);
+
+        deal(address(pmTokenA), address(pmSafe), INITIAL_BALANCE);
+        vm.prank(address(pmSafe));
+        pmTokenA.approve(address(aqua), type(uint256).max);
+
+        // order declares both pmTokenA and pmTokenB (see _buildOrder), but only pmTokenA is
+        // shipped here -- the exact mismatch _shipOnly's MultiSendCallOnly batch exists to catch
+        // before it reaches Aqua's ledger, not just in the factory's own isolated unit tests.
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(pmTokenA);
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = INITIAL_BALANCE;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryDeclaredTokenNotShipped.selector,
+                address(pmTokenB)
+            )
+        );
+        _shipOnly(order, tokens, amounts);
+
+        // MultiSendCallOnly reverts the whole batch on the first failed leg -- confirm the
+        // mismatch never reached Aqua's ledger at all, not just that the call reverted.
+        (, uint8 tokensCountA) = aqua.rawBalances(address(pmSafe), address(router), router.hash(order), address(pmTokenA));
+        assertEq(tokensCountA, 0, "a rejected ship() must never register on Aqua's ledger");
     }
 }
