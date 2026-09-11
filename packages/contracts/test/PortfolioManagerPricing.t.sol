@@ -210,10 +210,8 @@ contract PortfolioManagerPricingTest is Test {
         // A wider tolerance than the normal-balance fuzz test above: dividing by a `balanceIn`/
         // `balanceOut` as small as 1 wei amplifies FixedPointMath's own series-truncation error
         // far more than the normal WAD-scale case does -- this is precision noise from computing
-        // the check itself, not evidence of a real invariant violation (confirmed by inspecting
-        // failures at tolerance 1e4: `invariantRatio` was short of `WAD` by single-digit parts
-        // per `1e14`, consistent with `pow`'s own documented series precision, not a directional
-        // bias toward the trader).
+        // the check itself (consistent with `pow`'s own documented series precision), not
+        // evidence of a real invariant violation or a directional bias toward the trader.
         assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances");
     }
 
@@ -255,8 +253,7 @@ contract PortfolioManagerPricingTest is Test {
     /// underflow to exactly 0 in fixed-point for a small-enough `ratio` -- the true value is
     /// real but below WAD's representable precision. Without a guard, `amountOut` computes to
     /// exactly `balanceOut`: the entire pool, handed out for an ordinary-sized trade against an
-    /// imbalanced-but-not-degenerate pool. Confirmed to have reverted only after this guard was
-    /// added; this is the regression test for it.
+    /// imbalanced-but-not-degenerate pool. Regression test for that guard.
     function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
         PortfolioManagerPricing.Quote memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
         vm.expectRevert(
@@ -268,12 +265,9 @@ contract PortfolioManagerPricingTest is Test {
     /// @notice Cross-checks `exactIn` against a reference implementation of PRICING.md's exact
     /// real-number formula, independent of `FixedPointMath`'s own series-based `ln`/`exp` --
     /// catches a systematic formula error that reusing `FixedPointMath` to verify itself would
-    /// miss. Tolerance is relative (1e-12), far tighter than any real formula error would produce
-    /// but wide enough for the series-truncation/rounding difference between the two
-    /// implementations (observed: Solidity's result differs from the exact reference by roughly
-    /// 1 part in 1e15-1e19 across these vectors, and can fall on either side of it -- consistent
-    /// with the un-proven-bit-exact precision `exactIn`'s own rounding-direction note already
-    /// discloses, not a directional bias worth chasing at PoC-grade precision).
+    /// miss. Tolerance is relative (1e-12) -- far tighter than a real formula error would
+    /// produce, but wide enough for the two implementations' own series-truncation/rounding
+    /// differences, which can fall on either side and aren't a directional bias worth chasing.
     function test_ExactInMatchesIndependentReferenceImplementation() public pure {
         // Reference values computed independently via Decimal arithmetic at 60 significant
         // digits, from PRICING.md's formula directly (not via this contract's code).
