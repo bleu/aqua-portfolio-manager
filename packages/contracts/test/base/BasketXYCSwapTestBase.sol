@@ -29,8 +29,9 @@ abstract contract BasketXYCSwapTestBase is Test {
 
     // _opcodes()'s array-shrinking trick overwrites index 0 with the new length, shifting
     // everything down by one — the second literal element (_basketXycSwapXD) ends up at
-    // result[0], not result[1].
+    // result[0], the third (plain XYCSwap._xycSwapXD) at result[1].
     uint8 constant OPCODE_BASKET_XYC_SWAP = 0;
+    uint8 constant OPCODE_PLAIN_XYC_SWAP = 1;
 
     function setUp() public virtual {
         aqua = new AquaRouter(owner);
@@ -92,6 +93,57 @@ abstract contract BasketXYCSwapTestBase is Test {
         amounts[0] = initA;
         amounts[1] = initB;
         amounts[2] = initC;
+
+        vm.prank(maker);
+        bytes32 shippedHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
+        assertEq(shippedHash, orderHash, "strategyHash must equal SwapVM's own orderHash");
+    }
+
+    /// @dev Ships a maker running swap-vm's own plain XYCSwap instead of the basket-aware curve
+    /// — a real, independently-implemented comparison baseline with no notion of a third token
+    /// at all (not even a zero-balance one), rather than just BasketXYCSwap parameterized at
+    /// C=0. Never mints or references tokenC for this maker.
+    function _shipPlainXYCMaker(address maker, uint256 initA, uint256 initB)
+        internal
+        returns (ISwapVM.Order memory order)
+    {
+        tokenB.mint(maker, initB);
+        vm.prank(maker);
+        tokenB.approve(address(aqua), type(uint256).max);
+
+        bytes memory program = abi.encodePacked(OPCODE_PLAIN_XYC_SWAP, uint8(0));
+
+        order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        bytes32 orderHash = keccak256(abi.encode(order));
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = initA;
+        amounts[1] = initB;
 
         vm.prank(maker);
         bytes32 shippedHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
