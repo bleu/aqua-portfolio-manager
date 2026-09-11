@@ -6,15 +6,8 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 
-/// @notice The router itself has no logic beyond wiring `SwapVM`/`PortfolioManagerOpcodes`
-/// together (see its own header comment: "mirrors AquaSwapVMRouter.sol exactly") -- its
-/// opcode dispatch is already exhaustively exercised by every PortfolioManagerOpcodes.t.sol
-/// and E2E test that ships/swaps through a deployed instance. What's never independently
-/// checked anywhere else is that the constructor forwards `aqua`/`owner` into the base
-/// contracts it inherits, rather than, say, swapping two constructor arguments by accident --
-/// `weth` isn't checked here: `SwapVM`'s base `OnlyWethReceiver` stores it in a private
-/// immutable with no accessor anywhere in the inheritance chain, so it's structurally
-/// unobservable from a test.
+/// @notice Constructor wiring isn't exercised by any opcode-dispatch test elsewhere. `weth`
+/// isn't asserted: `OnlyWethReceiver` stores it in a private immutable with no accessor.
 contract PortfolioManagerRouterTest is Test {
     function test_ConstructorWiresAquaAndOwnerCorrectly() public {
         address aqua = address(0xA11CE00000000000000000000000000000000A);

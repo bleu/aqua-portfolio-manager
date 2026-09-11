@@ -52,8 +52,9 @@ library FixedPointMath {
     /// @notice Natural log of `x` (WAD-scaled, `x > 0`), WAD-scaled and signed (negative for
     ///         `x < WAD`, zero at `x == WAD`, positive for `x > WAD`).
     /// @dev Algorithm: write the real value `x/WAD` as `m * 2^k` with `m` in `[1, 2)` (found by
-    ///      repeated halving/doubling — simple and easy to verify correct by inspection, not yet
-    ///      gas-optimized). Then `ln(x/WAD) = k*ln(2) + ln(m)`, and `ln(m)` for `m` in `[1, 2)` is
+    ///      repeated halving/doubling — simple and easy to verify correct by inspection;
+    ///      gas-optimizing the search is a deliberately deferred, separate concern). Then
+    ///      `ln(x/WAD) = k*ln(2) + ln(m)`, and `ln(m)` for `m` in `[1, 2)` is
     ///      computed via the artanh identity `ln(m) = 2*artanh(z)`, `z = (m-1)/(m+1)`, which
     ///      keeps `z` in `[0, 1/3)` — a fast-converging domain for the odd-power series below.
     function ln(uint256 x) internal pure returns (int256) {
