@@ -12,7 +12,7 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 ///         sensor"), reimplemented from scratch (see THIRD_PARTY_NOTICES.md / ADR-0004), not
 ///         Balancer's GPL Solidity.
 /// @dev `balanceIn`/`balanceOut` here are already-resolved values — either a single-token
-///      group's raw `ExposureReader.balanceOf` reading, or a multi-token group's
+///      group's raw wallet `balanceOf` reading, or a multi-token group's
 ///      `OracleAdapter.groupValueWad` sum (ADR-0003). This library is opaque to which case
 ///      produced them and never itself reads a balance or a price — PRICING.md's own scope
 ///      note is explicit that resolving `B_i`/`B_o` is a prior step, not this formula's job.
