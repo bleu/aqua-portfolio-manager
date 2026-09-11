@@ -107,7 +107,8 @@ contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {
 
         // MultiSendCallOnly reverts the whole batch on the first failed leg -- confirm the
         // mismatch never reached Aqua's ledger at all, not just that the call reverted.
-        (, uint8 tokensCountA) = aqua.rawBalances(address(pmSafe), address(router), router.hash(order), address(pmTokenA));
+        (, uint8 tokensCountA) =
+            aqua.rawBalances(address(pmSafe), address(router), router.hash(order), address(pmTokenA));
         assertEq(tokensCountA, 0, "a rejected ship() must never register on Aqua's ledger");
     }
 }
