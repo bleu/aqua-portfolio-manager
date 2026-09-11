@@ -34,7 +34,11 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         maker = vm.addr(0x1234);
     }
 
-    function _order(address[] memory declaredTokens, uint256[] memory weights) internal view returns (ISwapVM.Order memory) {
+    function _order(address[] memory declaredTokens, uint256[] memory weights)
+        internal
+        view
+        returns (ISwapVM.Order memory)
+    {
         bytes memory program = PortfolioManagerProgramBuilder.build(declaredTokens, weights, 0);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({

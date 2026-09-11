@@ -70,15 +70,13 @@ contract DeployMock is Script, StdCheats {
             Safe.setup.selector, owners, 1, address(0), "", address(0), address(0), 0, payable(address(0))
         );
         Safe pmSafe = Safe(
-            payable(
-                address(
+            payable(address(
                     factory.createProxyWithNonce(
                         address(singleton),
                         setupData,
                         1 // different salt nonce than Deploy.s.sol's Guard-protected Safe
                     )
-                )
-            )
+                ))
         );
         console.log("PM Safe deployed at", address(pmSafe));
 
