@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {Aqua} from "aqua/Aqua.sol";
-import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
@@ -16,21 +16,26 @@ import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
-/// @notice Shared setup for the PM strategy E2E suite (BLEUDEV-340 and children): connects to
-/// the actually deployed contracts `script/Deploy.s.sol` puts on chain
+/// @notice Shared setup for the PM strategy E2E suite: connects to the actually deployed
+/// contracts `script/Deploy.s.sol` + `script/Deploy.mock.sol` put on chain
 /// (`deployments/local.json`), not fresh in-test instances — mirroring
 /// `BasketScopeGuardE2ETest`'s own pattern, but for the weighted-curve opcode and protocol fee
-/// (BLEUDEV-327) rather than the Guard.
+/// rather than the Guard.
 ///
-/// Deliberately uses a *separate*, guard-less Safe (`Deploy.s.sol`'s `pmSafe`) rather than the
-/// Guard-protected one `BasketScopeGuardE2ETest` uses: these scenarios exercise the curve and
-/// fee, not `BasketScopeGuard` (already fully covered on its own Safe), and reusing that Safe
-/// would require coordinating a real PM strategy hash against its placeholder Guard config for
-/// no benefit to what these tests actually check.
+/// Deliberately uses a *separate*, guard-less Safe (`Deploy.mock.sol`'s `pmSafe`) rather than
+/// the Guard-protected one `BasketScopeGuardE2ETest` uses: these scenarios exercise the curve
+/// and fee, not `BasketScopeGuard` (already fully covered on its own Safe), and reusing that
+/// Safe would require coordinating a real PM strategy hash against its placeholder Guard config
+/// for no benefit to what these tests actually check.
 ///
-/// Requires `deployments/local.json` — skips entirely if it doesn't exist, so plain `forge
-/// test` without a prior `forge script script/Deploy.s.sol --broadcast` (or `docker compose
-/// up`) still passes instead of failing on a missing file.
+/// Trades real WETH/DAI (`Deploy.mock.sol`'s `pmTokenA`/`pmTokenB`, funded via `deal()`), not
+/// mock tokens — same-decimal (both 18) real tokens on purpose, since the single-token-group
+/// curve does no decimal normalization; see `Deploy.mock.sol`'s own note on why not USDC.
+///
+/// Requires `deployments/local.json` with the PM fixture fields `Deploy.mock.sol` adds — skips
+/// entirely if the file's missing, so plain `forge test` without a prior `forge script
+/// script/Deploy.s.sol --broadcast && forge script script/Deploy.mock.sol --broadcast` (or
+/// `docker compose up`) still passes instead of failing on a missing file.
 abstract contract PortfolioManagerE2EBase is Test {
     string internal constant MANIFEST_PATH = "deployments/local.json";
 
@@ -47,8 +52,8 @@ abstract contract PortfolioManagerE2EBase is Test {
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
     Safe internal pmSafe;
-    TokenMock internal pmTokenA;
-    TokenMock internal pmTokenB;
+    IERC20 internal pmTokenA;
+    IERC20 internal pmTokenB;
     address internal deployer;
     MockTaker internal taker;
 
@@ -57,7 +62,10 @@ abstract contract PortfolioManagerE2EBase is Test {
 
     function setUp() public virtual {
         if (!vm.exists(MANIFEST_PATH)) {
-            vm.skip(true, "deployments/local.json missing - run `forge script script/Deploy.s.sol --broadcast` first");
+            vm.skip(
+                true,
+                "deployments/local.json missing - run `forge script script/Deploy.s.sol --broadcast` then `forge script script/Deploy.mock.sol --broadcast` first"
+            );
             return;
         }
 
@@ -65,8 +73,8 @@ abstract contract PortfolioManagerE2EBase is Test {
         aqua = Aqua(vm.parseJsonAddress(json, ".aqua"));
         router = PortfolioManagerRouter(payable(vm.parseJsonAddress(json, ".router")));
         pmSafe = Safe(payable(vm.parseJsonAddress(json, ".pmSafe")));
-        pmTokenA = TokenMock(vm.parseJsonAddress(json, ".pmTokenA"));
-        pmTokenB = TokenMock(vm.parseJsonAddress(json, ".pmTokenB"));
+        pmTokenA = IERC20(vm.parseJsonAddress(json, ".pmTokenA"));
+        pmTokenB = IERC20(vm.parseJsonAddress(json, ".pmTokenB"));
         deployer = vm.parseJsonAddress(json, ".deployer");
 
         taker = new MockTaker(aqua, router, address(this));
@@ -106,21 +114,19 @@ abstract contract PortfolioManagerE2EBase is Test {
         );
     }
 
-    /// @dev Funds the PM Safe with real universe-token balances (what `ExposureReader` actually
-    ///      reads, ADR-0002), then ships `order` through the Safe for real — a genuine
-    ///      `execTransaction`, signed by the deployer (the Safe's sole owner here), not a
-    ///      `vm.prank` shortcut, because "ship from the dedicated wallet" is exactly what
-    ///      BLEUDEV-286 exists to prove. Funding itself uses `vm.prank` since it's just setup
+    /// @dev Funds the PM Safe with real universe-token balances (what `PortfolioManagerSwap`
+    ///      actually reads via `balanceOf`, ADR-0002), then ships `order` through the Safe for
+    ///      real — a genuine `execTransaction`, signed by the deployer (the Safe's sole owner
+    ///      here), not a `vm.prank` shortcut, because "ship from the dedicated wallet" is the
+    ///      scenario under test here. Funding itself uses `deal()` since it's just setup
     ///      plumbing, not the scenario under test.
     /// @param tokenInLedgerAmount Aqua-ledger amount shipped for tokenA specifically — kept
     ///        separate from the Safe's real wallet balance (always `INITIAL_BALANCE`, since
     ///        that's what the curve actually prices off) so a test can starve just the ledger
     ///        `_AQUA.pull()` draws from without touching real exposure.
     function _fundAndShip(ISwapVM.Order memory order, uint256 tokenInLedgerAmount) internal returns (bytes32) {
-        vm.prank(deployer);
-        pmTokenA.mint(address(pmSafe), INITIAL_BALANCE);
-        vm.prank(deployer);
-        pmTokenB.mint(address(pmSafe), INITIAL_BALANCE);
+        deal(address(pmTokenA), address(pmSafe), INITIAL_BALANCE);
+        deal(address(pmTokenB), address(pmSafe), INITIAL_BALANCE);
 
         vm.prank(address(pmSafe));
         pmTokenA.approve(address(aqua), type(uint256).max);
@@ -202,8 +208,7 @@ abstract contract PortfolioManagerE2EBase is Test {
             })
         );
 
-        vm.prank(deployer);
-        TokenMock(tokenIn).mint(address(taker), amount * 2);
+        deal(tokenIn, address(taker), amount * 2);
         return taker.swap(order, tokenIn, tokenOut, amount, takerData);
     }
 }

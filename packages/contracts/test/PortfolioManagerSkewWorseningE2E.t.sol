@@ -8,7 +8,7 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
-/// @notice BLEUDEV-291: trades that move the wallet's exposure away from its declared 50/50
+/// @notice Trades that move the wallet's exposure away from its declared 50/50
 /// target — confirm the curve's own price impact penalizes this direction, matching
 /// PRICING.md's prediction, against the actually deployed router.
 contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
@@ -62,14 +62,13 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     function test_SkewWorseningTradeGetsPenalizedRate() public {
         // feeBps = 0 isolates the curve's own price-impact penalty from any fee distortion.
         // Full ledger on both sides -- this test isn't exercising the fee-skip ledger-starving
-        // scenario (that's BLEUDEV-342).
+        // scenario.
         ISwapVM.Order memory order = _buildOrderWithReversedUniverse();
         _fundAndShip(order, INITIAL_BALANCE);
 
         // Wallet starts perfectly balanced; skew it by donating extra tokenA so the wallet is
         // already overweight tokenA relative to target.
-        vm.prank(deployer);
-        pmTokenA.mint(address(pmSafe), SKEW_AMOUNT);
+        deal(address(pmTokenA), address(pmSafe), INITIAL_BALANCE + SKEW_AMOUNT);
 
         // Skew-worsening: the taker brings in MORE tokenA (already overweight) and receives
         // tokenB -- pushing the wallet further from 50/50, the opposite correction direction.

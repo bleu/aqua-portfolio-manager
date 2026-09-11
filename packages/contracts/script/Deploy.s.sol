@@ -5,14 +5,14 @@ import {Script, console} from "forge-std/Script.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
-import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 
-/// @notice Deploys this repo's contracts against whichever RPC it's pointed at, installs the
-/// Guard on the Safe, and writes their addresses to deployments/local.json so E2E tests
-/// (test/BasketScopeGuardE2E.t.sol) can connect to these exact deployed instances instead of
-/// deploying their own.
+/// @notice Deploys only this repo's real contracts against whichever RPC it's pointed at,
+/// installs the Guard on the Safe, and writes their addresses to deployments/local.json so E2E
+/// tests can connect to these exact deployed instances instead of deploying their own. No mock
+/// tokens or test-only fixtures here — see Deploy.mock.sol for those, run separately, after
+/// this script, only for the E2E suites that need something to trade.
 ///
 /// Meant for the docker-compose forked-Anvil environment (see ../../../docker-compose.yml):
 /// on a real Base fork, `AQUA_ADDRESS` defaults to Aqua's real deployed registry
@@ -21,10 +21,11 @@ import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 /// contracts against real protocol state, not a clean-room chain.
 ///
 /// The Guard's example basket config (WETH in basket 1, a synthetic placeholder in basket 2)
-/// and the PM trusted-strategy hash are placeholders — there is no real Portfolio Manager
-/// strategy to trust yet, that's M2/M3 implementation work (BLEUDEV-258 and its children).
-/// This script's job is proving the fork -> deploy -> test pipeline works end to end against
-/// real Aqua state, not shipping final parameters.
+/// and the PM trusted-strategy hash are real deployment parameters, not test mocks — they're
+/// placeholders because no real Portfolio Manager strategy or second basket asset has been
+/// decided yet (M2/M3 implementation work), the same way they'd be placeholders in any real
+/// deployment made ahead of that decision. This script's job is proving the deploy pipeline
+/// works end to end against real Aqua state, not shipping final parameters.
 contract Deploy is Script {
     /// @dev Aqua's real registry address — deterministic, same on every supported chain
     /// (Ethereum, Base, Optimism, Arbitrum, ... — see lib/aqua/README.md's deployment table).
@@ -58,10 +59,10 @@ contract Deploy is Script {
         vm.startBroadcast(deployerPk);
 
         // Own independent router (ADR-0010), pointed at the real Aqua registry. Real opcode
-        // table (weighted curve, BLEUDEV-285 + protocol fee, BLEUDEV-327) — no longer the
-        // PoCRouter placeholder. Actually shipping a real order through it (MakerTraits/Order
-        // encoding, PortfolioManagerProgramBuilder) is BLEUDEV-286's scope, not this script's
-        // yet — this only proves the real router itself deploys against real Aqua state.
+        // table (weighted curve + protocol fee) — no longer the PoCRouter placeholder. Actually
+        // shipping a real order through it (MakerTraits/Order encoding,
+        // PortfolioManagerProgramBuilder) is separate scope, not this script's — this only
+        // proves the real router itself deploys against real Aqua state.
         PortfolioManagerRouter router = new PortfolioManagerRouter(aqua, weth, deployer, "AquaPortfolioManager", "1");
         console.log("PortfolioManagerRouter deployed at", address(router));
 
@@ -110,8 +111,8 @@ contract Deploy is Script {
         console.log("Guard installed on Safe");
 
         // Attest onboarding is clean. In a real onboarding flow this only happens after
-        // actually running an off-chain onboarding pre-existing-strategy check (BLEUDEV-321)
-        // against this Safe's real Shipped-event history and confirming no violation. Here it's
+        // actually running an off-chain onboarding pre-existing-strategy check against this
+        // Safe's real Shipped-event history and confirming no violation. Here it's
         // auto-attested: this is a fresh Safe on a fresh fork with no prior activity, so there
         // is nothing for that check to find — but the attestation call itself is real and
         // signed, exactly as it would be in production, so this still exercises the actual gate
@@ -135,34 +136,6 @@ contract Deploy is Script {
         );
         require(attested, "attestOnboardingClean failed");
         console.log("Onboarding attested");
-
-        // A second, separate dedicated maker wallet (ADR-0002) for the PM strategy E2E suite
-        // (BLEUDEV-340 and children) — deliberately *not* the Guard-protected Safe above: those
-        // tests exercise the real weighted-curve opcode and protocol fee, not BasketScopeGuard
-        // (already fully covered by BasketScopeGuardE2E.t.sol on the Safe above), so a plain,
-        // guard-less Safe keeps this deploy from having to coordinate a real PM strategy hash
-        // against the other Safe's placeholder Guard config.
-        Safe pmSafe = Safe(
-            payable(address(
-                    factory.createProxyWithNonce(
-                        address(singleton),
-                        setupData,
-                        1 // different salt nonce than the Guard-protected Safe above
-                    )
-                ))
-        );
-        console.log("PM Safe deployed at", address(pmSafe));
-
-        // Fresh universe tokens for the PM E2E suite — not real Base assets, matching the
-        // Guard's own SYNTHETIC_TOKEN_B convention above, but real functioning ERC20s (unlike
-        // that placeholder address) since these actually need to move balances and be priced by
-        // the curve. `mint` is owner-gated (TokenMock), owner = deployer, so E2E tests fund
-        // themselves via `vm.prank(deployer)` rather than this script pre-guessing amounts for
-        // scenarios it doesn't know about yet.
-        TokenMock pmTokenA = new TokenMock("PM Universe Token A", "PMA");
-        TokenMock pmTokenB = new TokenMock("PM Universe Token B", "PMB");
-        console.log("PM universe token A deployed at", address(pmTokenA));
-        console.log("PM universe token B deployed at", address(pmTokenB));
 
         vm.stopBroadcast();
 
@@ -189,17 +162,14 @@ contract Deploy is Script {
             '"basketTwoToken":"',
             vm.toString(SYNTHETIC_TOKEN_B),
             '",',
-            '"pmSafe":"',
-            vm.toString(address(pmSafe)),
-            '",',
-            '"pmTokenA":"',
-            vm.toString(address(pmTokenA)),
-            '",',
-            '"pmTokenB":"',
-            vm.toString(address(pmTokenB)),
-            '",',
             '"deployer":"',
             vm.toString(deployer),
+            '",',
+            '"safeSingleton":"',
+            vm.toString(address(singleton)),
+            '",',
+            '"safeFactory":"',
+            vm.toString(address(factory)),
             '"',
             "}"
         );

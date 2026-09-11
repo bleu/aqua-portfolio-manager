@@ -6,7 +6,7 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
-/// @notice BLEUDEV-290: trades that move the wallet's exposure toward its declared 50/50
+/// @notice Trades that move the wallet's exposure toward its declared 50/50
 /// target — confirm the curve's own price impact rewards this direction, matching PRICING.md's
 /// prediction, against the actually deployed router.
 contract PortfolioManagerSkewReducingE2ETest is PortfolioManagerE2EBase {
@@ -20,14 +20,13 @@ contract PortfolioManagerSkewReducingE2ETest is PortfolioManagerE2EBase {
     function test_SkewReducingTradeGetsRewardedRate() public {
         // feeBps = 0 isolates the curve's own price-impact reward from any fee distortion.
         // Full ledger on both sides -- this test isn't exercising the fee-skip ledger-starving
-        // scenario (that's BLEUDEV-342), and settlement pulls tokenA (tokenOut here) from it.
+        // scenario, and settlement pulls tokenA (tokenOut here) from it.
         ISwapVM.Order memory order = _buildOrder(0);
         _fundAndShip(order, INITIAL_BALANCE);
 
         // Wallet starts perfectly balanced (INITIAL_BALANCE each, per _fundAndShip); skew it by
         // donating extra tokenA so the wallet is now overweight tokenA relative to target.
-        vm.prank(deployer);
-        pmTokenA.mint(address(pmSafe), SKEW_AMOUNT);
+        deal(address(pmTokenA), address(pmSafe), INITIAL_BALANCE + SKEW_AMOUNT);
 
         // Skew-reducing: the wallet SHEDS the overweight token (tokenA is tokenOut here), i.e.
         // the taker brings in tokenB and receives tokenA -- moving the wallet back toward 50/50.

@@ -8,7 +8,7 @@ import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
-/// @notice BLEUDEV-286: ships a real PM strategy from a fresh dedicated maker wallet (ADR-0002)
+/// @notice Ships a real PM strategy from a fresh dedicated maker wallet (ADR-0002)
 /// against the actually deployed router and Aqua registry — see PortfolioManagerE2EBase for the
 /// shared setup and why this uses a separate, guard-less Safe from BasketScopeGuardE2ETest's.
 contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {

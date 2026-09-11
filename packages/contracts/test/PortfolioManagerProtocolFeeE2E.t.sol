@@ -7,7 +7,7 @@ import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
-/// @notice BLEUDEV-341: the 1IP-103 tiered protocol fee lands in the real 1inch DAO Treasury
+/// @notice The 1IP-103 tiered protocol fee lands in the real 1inch DAO Treasury
 /// address after a real swap against the actually deployed router.
 contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant TRADE_AMOUNT = 1_000e18;

@@ -9,7 +9,7 @@ import {Fee} from "swap-vm/instructions/Fee.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
-/// @notice BLEUDEV-342: best-effort protocol-fee collection against the actually deployed
+/// @notice Best-effort protocol-fee collection against the actually deployed
 /// router — a maker with insufficient Aqua-ledger balance for the DAO pull still completes the
 /// swap; only the fee is skipped, reported via `ProtocolFeeSkipped`, not silently absorbed or
 /// reverted. Mirrors `Fee.sol`'s documented rationale (OpenZeppelin M-09/Theori #10).
