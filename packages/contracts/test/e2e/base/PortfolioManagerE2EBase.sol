@@ -150,20 +150,13 @@ abstract contract PortfolioManagerE2EBase is Test {
     }
 
     /// @dev Just the execTransaction ship() call, no funding/approval -- split out of
-    ///      `_fundAndShip` so that caller can skip straight to shipping once a wallet is already
-    ///      funded/approved. Contains exactly one external call (`execTransaction`), so it's safe
-    ///      to call directly under `vm.expectRevert()` too.
+    ///      `_fundAndShip` so callers can skip straight to shipping. Contains exactly one
+    ///      external call, so it's safe to arm `vm.expectRevert()` against directly too.
     ///
-    ///      Routes through `MultiSendCallOnly` (PR review) rather than calling `Aqua.ship()`
-    ///      directly: batches `PortfolioManagerStrategyFactory.requireUniverseMatches` and
-    ///      `Aqua.ship` atomically, both legs still executed as plain calls originating from
-    ///      `pmSafe` (`MultiSendCallOnly` structurally rejects nested delegatecalls), so a bad
-    ///      strategy encoding never reaches Aqua's ledger at all -- while `Aqua.ship()`'s own
-    ///      `msg.sender` stays `pmSafe`, exactly like a direct call would.  A factory that called
-    ///      `Aqua.ship()` on the maker's behalf instead would key the ledger to the factory's own
-    ///      address, breaking every real trade against the strategy (`Aqua.safeBalances`/
-    ///      `SwapVM._transferIn` look the ledger up by `order.maker`, not by whoever shipped it)
-    ///      -- confirmed empirically before landing on this design.
+    ///      Batches `PortfolioManagerStrategyFactory.requireUniverseMatches` with the real
+    ///      `Aqua.ship` call via `MultiSendCallOnly`, both legs still originating from `pmSafe` --
+    ///      not routed through the factory itself, since `Aqua.ship()` keys its ledger by
+    ///      `msg.sender`, and every real trade looks that ledger up by `order.maker`.
     function _shipOnly(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
         internal
         returns (bool)
@@ -198,14 +191,10 @@ abstract contract PortfolioManagerE2EBase is Test {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
     }
 
-    /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash, with the approving
-    ///      owner's address packed into `r` (`s` unused) -- and when the transaction's executor
-    ///      (`execTransaction`'s `msg.sender`) IS that owner, the check passes immediately with
-    ///      no prior `approveHash()` call and no real ECDSA signature at all (`Safe.sol`'s
-    ///      `executor != currentOwner` short-circuit, checked before the `approvedHashes` fallback).
-    ///      `deployer` is `pmSafe`'s sole owner and every caller of this signature pranks as
-    ///      `deployer` first, so this replaces needing a hardcoded private key to produce a real
-    ///      signature -- Pedro's suggestion to "impersonate wallets directly" instead.
+    /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash (owner address
+    ///      packed into `r`) and passes immediately when the executor IS that owner -- no real
+    ///      ECDSA signature needed. `deployer` is `pmSafe`'s sole owner, and every caller pranks
+    ///      as `deployer` first, so this needs no hardcoded private key.
     function _selfApprovedSignature() internal view returns (bytes memory) {
         return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
     }

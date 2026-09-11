@@ -68,14 +68,9 @@ contract BasketScopeGuardE2ETest is Test {
         return abi.encodeCall(Aqua.ship, (address(0xAAAA), strategy, tokens, amounts));
     }
 
-    /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash, with the approving
-    ///      owner's address packed into `r` (`s` unused) -- and when the transaction's executor
-    ///      (`execTransaction`'s `msg.sender`) IS that owner, the check passes immediately with
-    ///      no prior `approveHash()` call and no real ECDSA signature at all (`Safe.sol`'s
-    ///      `executor != currentOwner` short-circuit, checked before the `approvedHashes`
-    ///      fallback). `deployer` is `safe`'s sole owner and every caller of this signature
-    ///      pranks as `deployer` first, so this replaces needing a hardcoded private key to
-    ///      produce a real signature -- matches PortfolioManagerE2EBase.sol's own fix (PR review).
+    /// @dev Safe's `v == 1` pre-approved-hash signature trick -- see
+    ///      PortfolioManagerE2EBase.sol's `_selfApprovedSignature` for the full mechanism.
+    ///      `deployer` is `safe`'s sole owner, and every caller pranks as `deployer` first.
     function _selfApprovedSignature() internal view returns (bytes memory) {
         return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
     }

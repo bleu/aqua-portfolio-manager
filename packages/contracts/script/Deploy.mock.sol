@@ -18,9 +18,9 @@ import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFa
 /// for a Deploy.s.sol reader to mistake for "what production deployment looks like," since this
 /// is a clearly separate, clearly-named script.
 ///
-/// DAI, not USDC: both WETH and DAI are 18-decimal. The production PM curve for a single-token
-/// group (BLEUDEV-281's current scope) reads raw `balanceOf` with no decimal normalization at
-/// all -- normalization only happens in `OracleAdapter`, for multi-token groups, which isn't
+/// DAI, not USDC: both WETH and DAI are 18-decimal. The current single-token-group PM curve
+/// reads raw `balanceOf` with no decimal normalization at all -- normalization only happens in
+/// `OracleAdapter`, for multi-token groups, which isn't
 /// wired into the single-token-group path. Pairing WETH with a 6-decimal token like USDC would
 /// make the curve treat 1 wei of WETH as equal-weight to 1 unit (1e-6) of USDC -- not a fixture
 /// bug, a real limitation of the current curve scope this fixture would otherwise silently paper
@@ -91,10 +91,8 @@ contract DeployMock is Script, StdCheats {
         console.log("PM Safe funded with real WETH/DAI via deal()");
 
         // Re-serializes every field, old and new -- vm.writeJson below overwrites the whole
-        // file, so any Deploy.s.sol field not explicitly parsed above and re-added here gets
-        // silently dropped from the manifest (confirmed empirically: adding pmStrategyFactory/
-        // multiSendCallOnly to Deploy.s.sol without also wiring them through here left them
-        // missing after this script ran).
+        // file, so any Deploy.s.sol field not explicitly parsed above and re-added here is
+        // silently dropped from the manifest.
         string memory objectKey = "deployment";
         vm.serializeAddress(objectKey, "aqua", aqua);
         vm.serializeAddress(objectKey, "router", router);

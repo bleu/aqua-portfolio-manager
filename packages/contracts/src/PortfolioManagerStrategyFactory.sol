@@ -21,9 +21,8 @@ import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.s
 /// by `msg.sender`, but every real trade (`SwapVM._transferIn`, `Aqua.safeBalances`) looks that
 /// same ledger up by `order.maker`. A wrapper that called `ship()` on the maker's behalf would
 /// key the ledger to its own address instead of the maker's, permanently breaking settlement for
-/// every strategy shipped through it -- confirmed empirically against a real trade before this
-/// contract's design was changed to validation-only. The maker must still call `Aqua.ship()`
-/// itself; this contract only validates. Callers batch a call here together with the real
+/// every strategy shipped through it. The maker must still call `Aqua.ship()` itself; this
+/// contract only validates. Callers batch a call here together with the real
 /// `ship()` call in the same atomic transaction, e.g. via Safe's own audited
 /// `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.sol::_shipOnly`.
 contract PortfolioManagerStrategyFactory {
