@@ -39,10 +39,6 @@ import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 abstract contract PortfolioManagerE2EBase is Test {
     string internal constant MANIFEST_PATH = "deployments/local.json";
 
-    /// @dev Matches script/Deploy.s.sol's DEFAULT_DEPLOYER_KEY — the deployer is also the PM
-    /// Safe's sole owner in this environment, test-only, never a real key.
-    uint256 internal constant DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
-
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant FEE_BPS_SCALE = 1e9;
 
@@ -116,10 +112,9 @@ abstract contract PortfolioManagerE2EBase is Test {
 
     /// @dev Funds the PM Safe with real universe-token balances (what `PortfolioManagerSwap`
     ///      actually reads via `balanceOf`, ADR-0002), then ships `order` through the Safe for
-    ///      real — a genuine `execTransaction`, signed by the deployer (the Safe's sole owner
-    ///      here), not a `vm.prank` shortcut, because "ship from the dedicated wallet" is the
-    ///      scenario under test here. Funding itself uses `deal()` since it's just setup
-    ///      plumbing, not the scenario under test.
+    ///      real — a genuine `execTransaction` from the deployer (the Safe's sole owner here),
+    ///      because "ship from the dedicated wallet" is the scenario under test here. Funding
+    ///      itself uses `deal()` since it's just setup plumbing, not the scenario under test.
     /// @param tokenInLedgerAmount Aqua-ledger amount shipped for tokenA specifically — kept
     ///        separate from the Safe's real wallet balance (always `INITIAL_BALANCE`, since
     ///        that's what the curve actually prices off) so a test can starve just the ledger
@@ -148,24 +143,16 @@ abstract contract PortfolioManagerE2EBase is Test {
         return strategyHash;
     }
 
-    /// @dev Just the sign-and-execTransaction ship() call, no funding/approval -- split out of
+    /// @dev Just the execTransaction ship() call, no funding/approval -- split out of
     ///      `_fundAndShip` so that caller can skip straight to shipping once a wallet is already
-    ///      funded/approved. NOT safe to call under `vm.expectRevert()`: it bundles the
-    ///      non-reverting `getTransactionHash` view call together with the reverting
-    ///      `execTransaction` call in one internal function, and `vm.expectRevert()` attaches to
-    ///      the next *external* call regardless of which internal function it's nested inside --
-    ///      a negative test needs to compute the signed calldata inline, entirely outside the
-    ///      armed window, the way `PortfolioManagerShipE2E.t.sol`'s
-    ///      `test_ShippedStrategyIsImmutableOnReattempt` does.
+    ///      funded/approved. Contains exactly one external call (`execTransaction`), so it's safe
+    ///      to call directly under `vm.expectRevert()` too.
     function _shipOnly(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
         internal
         returns (bool)
     {
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
-        bytes32 txHash = pmSafe.getTransactionHash(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), pmSafe.nonce()
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DEPLOYER_KEY, txHash);
+        vm.prank(deployer);
         return pmSafe.execTransaction(
             address(aqua),
             0,
@@ -176,8 +163,20 @@ abstract contract PortfolioManagerE2EBase is Test {
             0,
             address(0),
             payable(address(0)),
-            abi.encodePacked(r, s, v)
+            _selfApprovedSignature()
         );
+    }
+
+    /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash, with the approving
+    ///      owner's address packed into `r` (`s` unused) -- and when the transaction's executor
+    ///      (`execTransaction`'s `msg.sender`) IS that owner, the check passes immediately with
+    ///      no prior `approveHash()` call and no real ECDSA signature at all (`Safe.sol`'s
+    ///      `executor != currentOwner` short-circuit, checked before the `approvedHashes` fallback).
+    ///      `deployer` is `pmSafe`'s sole owner and every caller of this signature pranks as
+    ///      `deployer` first, so this replaces needing a hardcoded private key to produce a real
+    ///      signature -- Pedro's suggestion to "impersonate wallets directly" instead.
+    function _selfApprovedSignature() internal view returns (bytes memory) {
+        return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
     }
 
     function _swapExactIn(ISwapVM.Order memory order, address tokenIn, address tokenOut, uint256 amount)

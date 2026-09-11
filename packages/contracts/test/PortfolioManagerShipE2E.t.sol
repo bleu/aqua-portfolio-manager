@@ -3,8 +3,6 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
-import {Aqua} from "aqua/Aqua.sol";
-import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
@@ -71,34 +69,11 @@ contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {
         amounts[0] = INITIAL_BALANCE;
         amounts[1] = INITIAL_BALANCE;
 
-        // Deliberately NOT routed through _shipOnly: that helper bundles the (non-reverting)
-        // getTransactionHash view call together with the (reverting) execTransaction call in a
-        // single internal function, and vm.expectRevert() attaches to the next *external* call
-        // regardless of which internal function it's nested inside -- arming it immediately
-        // before calling _shipOnly would actually attach to getTransactionHash, not
-        // execTransaction. Computing the signed calldata inline, entirely outside the armed
-        // window, keeps vm.expectRevert() pointed at the one call that's actually expected to
-        // revert.
-        bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
-        bytes32 txHash = pmSafe.getTransactionHash(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), address(0), pmSafe.nonce()
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(DEPLOYER_KEY, txHash);
-
-        // execTransaction bubbles the inner revert rather than swallowing it into a `false`
-        // return on this Safe version -- confirmed empirically against the real deployed Safe.
+        // _shipOnly now contains exactly one external call (execTransaction), so arming
+        // vm.expectRevert() immediately before it attaches to the right call. execTransaction
+        // bubbles the inner revert rather than swallowing it into a `false` return on this Safe
+        // version -- confirmed empirically against the real deployed Safe.
         vm.expectRevert();
-        pmSafe.execTransaction(
-            address(aqua),
-            0,
-            shipData,
-            Enum.Operation.Call,
-            0,
-            0,
-            0,
-            address(0),
-            payable(address(0)),
-            abi.encodePacked(r, s, v)
-        );
+        _shipOnly(order, tokens, amounts);
     }
 }
