@@ -257,7 +257,9 @@ contract PortfolioManagerPricingTest is Test {
     function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
         PortfolioManagerPricing.Quote memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 1_000_000, 1_000_000)
+            abi.encodeWithSelector(
+                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 1_000_000, 1_000_000
+            )
         );
         this._exactIn(q, 1000);
     }
@@ -280,6 +282,8 @@ contract PortfolioManagerPricingTest is Test {
 
     function _assertMatchesReference(uint256 actual, uint256 expected) internal pure {
         uint256 diff = actual > expected ? actual - expected : expected - actual;
-        assertLe(diff * 1e12, expected, "exactIn must match an independent reference implementation within 1e-12 relative");
+        assertLe(
+            diff * 1e12, expected, "exactIn must match an independent reference implementation within 1e-12 relative"
+        );
     }
 }
