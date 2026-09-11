@@ -8,12 +8,14 @@ import {Aqua} from "aqua/Aqua.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
+import {MultiSendCallOnly} from "safe-smart-account/contracts/libraries/MultiSendCallOnly.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
 /// @notice Shared setup for the PM strategy E2E suite: connects to the actually deployed
@@ -52,6 +54,8 @@ abstract contract PortfolioManagerE2EBase is Test {
     IERC20 internal pmTokenB;
     address internal deployer;
     MockTaker internal taker;
+    PortfolioManagerStrategyFactory internal strategyFactory;
+    MultiSendCallOnly internal multiSendCallOnly;
 
     address[] internal universe;
     uint256[] internal weights;
@@ -72,6 +76,8 @@ abstract contract PortfolioManagerE2EBase is Test {
         pmTokenA = IERC20(vm.parseJsonAddress(json, ".pmTokenA"));
         pmTokenB = IERC20(vm.parseJsonAddress(json, ".pmTokenB"));
         deployer = vm.parseJsonAddress(json, ".deployer");
+        strategyFactory = PortfolioManagerStrategyFactory(vm.parseJsonAddress(json, ".pmStrategyFactory"));
+        multiSendCallOnly = MultiSendCallOnly(vm.parseJsonAddress(json, ".multiSendCallOnly"));
 
         taker = new MockTaker(aqua, router, address(this));
 
@@ -147,17 +153,36 @@ abstract contract PortfolioManagerE2EBase is Test {
     ///      `_fundAndShip` so that caller can skip straight to shipping once a wallet is already
     ///      funded/approved. Contains exactly one external call (`execTransaction`), so it's safe
     ///      to call directly under `vm.expectRevert()` too.
+    ///
+    ///      Routes through `MultiSendCallOnly` (PR review) rather than calling `Aqua.ship()`
+    ///      directly: batches `PortfolioManagerStrategyFactory.requireUniverseMatches` and
+    ///      `Aqua.ship` atomically, both legs still executed as plain calls originating from
+    ///      `pmSafe` (`MultiSendCallOnly` structurally rejects nested delegatecalls), so a bad
+    ///      strategy encoding never reaches Aqua's ledger at all -- while `Aqua.ship()`'s own
+    ///      `msg.sender` stays `pmSafe`, exactly like a direct call would.  A factory that called
+    ///      `Aqua.ship()` on the maker's behalf instead would key the ledger to the factory's own
+    ///      address, breaking every real trade against the strategy (`Aqua.safeBalances`/
+    ///      `SwapVM._transferIn` look the ledger up by `order.maker`, not by whoever shipped it)
+    ///      -- confirmed empirically before landing on this design.
     function _shipOnly(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
         internal
         returns (bool)
     {
+        bytes memory validateData =
+            abi.encodeCall(PortfolioManagerStrategyFactory.requireUniverseMatches, (order, tokens));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
+
+        bytes memory batch = abi.encodePacked(
+            _encodeMultiSendTx(address(strategyFactory), validateData), _encodeMultiSendTx(address(aqua), shipData)
+        );
+        bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
+
         vm.prank(deployer);
         return pmSafe.execTransaction(
-            address(aqua),
+            address(multiSendCallOnly),
             0,
-            shipData,
-            Enum.Operation.Call,
+            multiSendData,
+            Enum.Operation.DelegateCall,
             0,
             0,
             0,
@@ -165,6 +190,12 @@ abstract contract PortfolioManagerE2EBase is Test {
             payable(address(0)),
             _selfApprovedSignature()
         );
+    }
+
+    /// @dev `MultiSendCallOnly`'s own encoding: operation (always 0, call-only) + to (20 bytes) +
+    ///      value (32 bytes) + data length (32 bytes) + data, packed with no padding.
+    function _encodeMultiSendTx(address to, bytes memory data) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
     }
 
     /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash, with the approving

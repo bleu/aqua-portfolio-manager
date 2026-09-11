@@ -5,8 +5,10 @@ import {Script, console} from "forge-std/Script.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
+import {MultiSendCallOnly} from "safe-smart-account/contracts/libraries/MultiSendCallOnly.sol";
 import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
+import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
 
 /// @notice Deploys only this repo's real contracts against whichever RPC it's pointed at,
 /// installs the Guard on the Safe, and writes their addresses to deployments/local.json so E2E
@@ -65,6 +67,21 @@ contract Deploy is Script {
         // proves the real router itself deploys against real Aqua state.
         PortfolioManagerRouter router = new PortfolioManagerRouter(aqua, weth, deployer, "AquaPortfolioManager", "1");
         console.log("PortfolioManagerRouter deployed at", address(router));
+
+        // Ship-time strategy-encoding validation (PR review) -- a thin, stateless, pure-function
+        // check, deliberately never calling Aqua.ship() itself (see the contract's own doc
+        // comment for why). Callers batch it together with the real ship() call via
+        // MultiSendCallOnly below, not by having this factory forward the call.
+        PortfolioManagerStrategyFactory strategyFactory = new PortfolioManagerStrategyFactory();
+        console.log("PortfolioManagerStrategyFactory deployed at", address(strategyFactory));
+
+        // Safe's own audited batching utility (PR review) -- lets a maker's execTransaction
+        // atomically validate a strategy's encoding and ship it in one call, both legs still
+        // originating from the Safe's own msg.sender so Aqua's maker-keyed ledger stays correct.
+        // CallOnly variant on purpose: it structurally rejects nested delegatecalls, so this
+        // never becomes a way to run arbitrary code with the Safe's own storage access.
+        MultiSendCallOnly multiSendCallOnly = new MultiSendCallOnly();
+        console.log("MultiSendCallOnly deployed at", address(multiSendCallOnly));
 
         // A fresh Safe (ADR-0002/ADR-0011) — the dedicated maker wallet convention — owned
         // solely by the deployer for this environment.
@@ -170,6 +187,12 @@ contract Deploy is Script {
             '",',
             '"safeFactory":"',
             vm.toString(address(factory)),
+            '",',
+            '"pmStrategyFactory":"',
+            vm.toString(address(strategyFactory)),
+            '",',
+            '"multiSendCallOnly":"',
+            vm.toString(address(multiSendCallOnly)),
             '"',
             "}"
         );

@@ -51,6 +51,8 @@ contract DeployMock is Script, StdCheats {
         address deployer = vm.parseJsonAddress(existing, ".deployer");
         Safe singleton = Safe(payable(vm.parseJsonAddress(existing, ".safeSingleton")));
         SafeProxyFactory factory = SafeProxyFactory(vm.parseJsonAddress(existing, ".safeFactory"));
+        address pmStrategyFactory = vm.parseJsonAddress(existing, ".pmStrategyFactory");
+        address multiSendCallOnly = vm.parseJsonAddress(existing, ".multiSendCallOnly");
 
         uint256 deployerPk = vm.envOr("DEPLOYER_PRIVATE_KEY", DEFAULT_DEPLOYER_KEY);
 
@@ -88,6 +90,11 @@ contract DeployMock is Script, StdCheats {
         deal(DAI_BASE, address(pmSafe), PM_UNIVERSE_FUNDING);
         console.log("PM Safe funded with real WETH/DAI via deal()");
 
+        // Re-serializes every field, old and new -- vm.writeJson below overwrites the whole
+        // file, so any Deploy.s.sol field not explicitly parsed above and re-added here gets
+        // silently dropped from the manifest (confirmed empirically: adding pmStrategyFactory/
+        // multiSendCallOnly to Deploy.s.sol without also wiring them through here left them
+        // missing after this script ran).
         string memory objectKey = "deployment";
         vm.serializeAddress(objectKey, "aqua", aqua);
         vm.serializeAddress(objectKey, "router", router);
@@ -101,7 +108,9 @@ contract DeployMock is Script, StdCheats {
         vm.serializeAddress(objectKey, "safeFactory", address(factory));
         vm.serializeAddress(objectKey, "pmSafe", address(pmSafe));
         vm.serializeAddress(objectKey, "pmTokenA", WETH_BASE);
-        string memory updated = vm.serializeAddress(objectKey, "pmTokenB", DAI_BASE);
+        vm.serializeAddress(objectKey, "pmTokenB", DAI_BASE);
+        vm.serializeAddress(objectKey, "pmStrategyFactory", pmStrategyFactory);
+        string memory updated = vm.serializeAddress(objectKey, "multiSendCallOnly", multiSendCallOnly);
 
         vm.writeJson(updated, "deployments/local.json");
         console.log("deployments/local.json extended with PM E2E fixture addresses");
