@@ -98,12 +98,9 @@ contract PortfolioManagerSwap is Fee {
         }
     }
 
-    /// @dev A token not found here was never part of the declared universe — the sole guard for
-    ///      that now, since `balanceOf` above is a plain, ungated read. Reachable in practice:
-    ///      `ship()`'s own `tokens` array can include a token this contract's declared universe
-    ///      never gave a weight to (an encoding mismatch, not just a malicious taker) —
-    ///      `AQUA.safeBalances()` only checks the token is part of the shipped strategy, not that
-    ///      it matches this instruction's own args.
+    /// @dev Sole guard on the declared universe now (`balanceOf` above is ungated) — reachable
+    ///      via a `ship()`/args encoding mismatch, since `AQUA.safeBalances()` only checks the
+    ///      token is part of the shipped strategy, not that it matches this instruction's args.
     function _weightOf(address[] memory tokens, uint256[] memory weights, address token)
         private
         pure

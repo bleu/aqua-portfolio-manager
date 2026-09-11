@@ -80,13 +80,9 @@ contract BasketXYCSwapTest is BasketXYCSwapTestBase {
         assertEq(amountOut, expected, "zero basket balance must match plain xy=k");
     }
 
-    /// @notice Comparison against a real, independently-implemented strategy that has no notion
-    /// of a third token at all: swap-vm's own plain XYCSwap (opcode 1, wired in alongside our
-    /// basket-aware curve in PoCOpcodes.sol specifically for this comparison). Two makers,
-    /// identical A/B liquidity; the basket-aware maker also holds C. The same trade must price
-    /// better for the basket-aware maker -- its curve sees extra effective liquidity (B + C)
-    /// the plain-XYCSwap maker's curve structurally cannot see, since that instruction never
-    /// reads a third balance at all, not even a zero one.
+    /// @notice Comparison against swap-vm's own plain XYCSwap (opcode 1), which has no notion of
+    /// a third token at all -- the basket-aware maker (also holding C) must price better than an
+    /// identically-funded plain-XYCSwap maker on the same A/B trade.
     function test_PricesBetterThanPlainXYCSwapWhichCannotSeeTokenC() public {
         address basketMaker = address(0x5555);
         address plainMaker = address(0x6666);
