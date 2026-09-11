@@ -79,4 +79,31 @@ contract BasketXYCSwapTest is BasketXYCSwapTestBase {
         uint256 expected = (amountIn * 1_000e18) / (1_000e18 + amountIn);
         assertEq(amountOut, expected, "zero basket balance must match plain xy=k");
     }
+
+    /// @notice Comparison against a real, independently-implemented strategy that has no notion
+    /// of a third token at all: swap-vm's own plain XYCSwap (opcode 1, wired in alongside our
+    /// basket-aware curve in PoCOpcodes.sol specifically for this comparison). Two makers,
+    /// identical A/B liquidity; the basket-aware maker also holds C. The same trade must price
+    /// better for the basket-aware maker -- its curve sees extra effective liquidity (B + C)
+    /// the plain-XYCSwap maker's curve structurally cannot see, since that instruction never
+    /// reads a third balance at all, not even a zero one.
+    function test_PricesBetterThanPlainXYCSwapWhichCannotSeeTokenC() public {
+        address basketMaker = address(0x5555);
+        address plainMaker = address(0x6666);
+        ISwapVM.Order memory basketOrder = _shipMaker(basketMaker, 1_000e18, 1_000e18, 500e18);
+        ISwapVM.Order memory plainOrder = _shipPlainXYCMaker(plainMaker, 1_000e18, 1_000e18);
+
+        uint256 amountIn = 10e18;
+        uint256 basketOut = _swap(basketOrder, amountIn);
+        uint256 plainOut = _swap(plainOrder, amountIn);
+
+        assertGt(
+            basketOut,
+            plainOut,
+            "basket-aware pricing must beat a comparator strategy structurally blind to token C"
+        );
+
+        uint256 expectedPlainOut = (amountIn * 1_000e18) / (1_000e18 + amountIn);
+        assertEq(plainOut, expectedPlainOut, "plain XYCSwap comparator must match the unmodified xy=k formula");
+    }
 }
