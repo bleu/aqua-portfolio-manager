@@ -24,6 +24,7 @@ flowchart TD
     subgraph BleuScope["Built under this grant"]
         LPApp["<b>LP App</b><br/>Declare universe,<br/>set targets, monitor"]
         Dashboard["<b>Dashboard</b><br/>Protocol-wide<br/>monitoring"]
+        Indexer["<b>Indexer</b><br/>(BLEUDEV-339)<br/>Shipped/Pushed/Docked,<br/>every app, not just PM's"]
         Router["<b>Router</b><br/>(our deployment)<br/>quote()/swap() entrypoints,<br/>runs the maker's program,<br/>settles the trade"]
         SwapVMLib["<i>SwapVM</i><br/>(1inch's engine —<br/>inherited source,<br/>not a separate<br/>deployment, ADR-0010)"]
         Strategy["<b>Portfolio Manager<br/>Instruction</b><br/>= our opcode, one entry<br/>in the Router's opcode<br/>table, run by SwapVM's<br/>dispatch loop<br/>Pricing + exposure<br/>reading"]
@@ -68,7 +69,8 @@ flowchart TD
 
     Router -.->|"half the fee"| DAO
 
-    Dashboard -.->|"reads on-chain events"| Router
+    Aqua -.->|"Shipped/Pushed/Docked<br/>(every app, not just ours)"| Indexer
+    Dashboard -.->|"queries"| Indexer
 
     classDef actor fill:#f1f5f9,stroke:#64748b,color:#0f172a
     classDef bleu fill:#2563eb,stroke:#1e40af,color:#ffffff,font-weight:bold
@@ -79,7 +81,7 @@ flowchart TD
     classDef vendored fill:#eef2ff,stroke:#4338ca,color:#312e81,stroke-dasharray: 3 3
 
     class LP,Taker,OtherStrategy actor
-    class LPApp,Dashboard,Router,Strategy bleu
+    class LPApp,Dashboard,Indexer,Router,Strategy bleu
     class SwapVMLib vendored
     class Wallet wallet
     class Guard guard
@@ -91,13 +93,15 @@ flowchart TD
     style WalletScope fill:#fff7ed,stroke:#b45309,stroke-dasharray: 5 5
 ```
 
-**What this grant builds** (blue boxes): the pricing instruction, the router that hosts it (ADR-0010 — our own, not 1inch's shared `AquaSwapVMRouter`), the LP-facing web app, and the protocol-wide monitoring dashboard. Everything else — Aqua core, the SwapVM base contract our router inherits, Chainlink, 1inch's own routing — already exists; we only integrate against it.
+**What this grant builds** (blue boxes): the pricing instruction, the router that hosts it (ADR-0010 — our own, not 1inch's shared `AquaSwapVMRouter`), the LP-facing web app, the indexer that feeds visibility into wallet strategy state, and the protocol-wide monitoring dashboard. Everything else — Aqua core, the SwapVM base contract our router inherits, Chainlink, 1inch's own routing — already exists; we only integrate against it.
 
 **The Router vs. the Instruction — a distinction earlier revisions of this diagram collapsed.** The Router is the contract a taker calls (`quote()`/`swap()`); it's also the `app` address Aqua's ledger is keyed on at `ship()` time — "app" here is just Aqua's generic term for whoever ships a strategy, **not** the same thing as the named `AquaApp` base contract (see [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)'s clarification; our Router is an app to Aqua, but doesn't inherit `AquaApp.sol`). The Router reads `AQUA.safeBalances(maker, address(this), strategyHash, ...)` — scoped to itself as `app` — runs the maker's program, and settles by calling `AQUA.pull()` / `AQUA.push()`. Aqua does the actual `IERC20.transferFrom` on settlement, moving real tokens directly between the Safe and the taker (`pull`) or between the Router and the Safe (`push`) — this requires the Safe to have approved Aqua for every universe token, an onboarding step not yet written up anywhere (owed alongside the migration checklist [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) already flags). The Instruction is just the one opcode in the Router's table our pricing logic occupies, invoked mid-program. `AQUA.pull()` is keyed by `msg.sender`, i.e. by Router address — only the Router that shipped a given `strategyHash` can ever pull for it, which is exactly why [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) anchors trust to the strategy hash and not to the Router's address (a Router can be `msg.sender` for many different strategies, not just PM's).
 
 **The dedicated maker wallet** (orange) is the load-bearing design choice: a fresh **Safe** — not an EOA, see [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) — the LP creates and funds only with universe tokens. Every strategy shipped from it settles into it, so its real, on-chain, `balanceOf`-readable balance already *is* the true net exposure — no new accounting primitive needed, and zero protocol changes (see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for why this reads `balanceOf` directly and not `AQUA.safeBalances()`, which is a same-strategy-only ledger, not a wallet-wide reading).
 
 **The Basket Scope Guard** (red) is what makes that safe to share with other strategies at all. It's a Safe Transaction Guard, not part of the strategy contract itself — installed on the wallet, it inspects every `ship()` call before the Safe makes it. PM's own, exact strategy hash is always allowed (it's the trusted mechanism meant to price across groups); anything else must stay within a single declared group, and can't touch a token outside the universe at all. See [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) and [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md) for the mechanism and its real limits (module-transaction coverage, pre-existing strategies, guard removal).
+
+**The Indexer** (BLEUDEV-339) is what gives visibility into what the Guard can't prevent or see: it only governs `ship()` calls made *after* it's installed on a given wallet, and has no view into strategies shipped through other apps entirely. The Indexer reads `Shipped`/`Pushed`/`Docked` directly off Aqua Core — across **every app**, not scoped to our own Router — into one `Strategy` entity per `(maker, app, strategyHash)`, tracking which tokens a strategy declared at ship time and whether it's still active. A general-purpose registry, not a decision-making or alerting system: an earlier revision also auto-flagged wallets holding both an active PM strategy and an active non-PM one, verified working, then removed as premature complexity — the same underlying query (`Strategy` filtered by maker and active state) still answers "does this wallet already have something active" for any future consumer, including the onboarding pre-existing-strategy check this was originally scoped to unblock. See [`thoughts/indexer-architecture.md`](../thoughts/indexer-architecture.md) for the full design.
 
 ## Contract internals (L2)
 
