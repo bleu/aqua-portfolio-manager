@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
 /// @notice The 1IP-103 tiered protocol fee lands in the real 1inch DAO Treasury

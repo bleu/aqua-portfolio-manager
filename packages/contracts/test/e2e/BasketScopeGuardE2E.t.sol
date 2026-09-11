@@ -2,7 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
+import {BasketScopeGuard} from "../../src/BasketScopeGuard.sol";
 import {Aqua} from "aqua/Aqua.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";

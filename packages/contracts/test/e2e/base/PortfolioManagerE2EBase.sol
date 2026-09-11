@@ -13,10 +13,10 @@ import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
-import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
-import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
+import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
+import {PortfolioManagerProgramBuilder} from "../../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
+import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 
 /// @notice Shared setup for the PM strategy E2E suite: connects to the actually deployed
 /// contracts `script/Deploy.s.sol` + `script/Deploy.mock.sol` put on chain

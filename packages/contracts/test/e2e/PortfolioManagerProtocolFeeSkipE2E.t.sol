@@ -6,7 +6,7 @@ pragma solidity 0.8.30;
 import {Vm} from "forge-std/Vm.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {Fee} from "swap-vm/instructions/Fee.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
 
 /// @notice Best-effort protocol-fee collection against the actually deployed
