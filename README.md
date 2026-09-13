@@ -24,25 +24,39 @@ Aqua and swapVM ship under a custom Degensoft license, not MIT — and our strat
 
 ## Repo layout
 
+A pnpm workspace monorepo — `packages/*` are the workspace members.
+
 ```
-src/                    Strategy contract(s) — empty until Milestone 1 picks the on-chain form
-test/                   Forge tests
-script/                 Deployment scripts
-docs/ARCHITECTURE.md    System diagrams + component breakdown
-docs/LICENSING-RISK.md  The Aqua-Source-1.1 finding above, in full
-docs/adr/               Architecture decision records
-lib/aqua/               1inch Aqua core (submodule) — AquaApp base contract, IAqua interface
-lib/swap-vm/            1inch swapVM (submodule) — only relevant if M1 picks a swapVM instruction
-lib/balancer-v3-monorepo/  Reference-only (GPL-3.0) — study the weighted-math formula, never import
-lib/forge-std/          Foundry test utilities
+packages/contracts/         Foundry package — strategy/guard/router contracts, tests, deploy script
+packages/contracts/src/     Contract sources
+packages/contracts/test/    Forge tests
+packages/contracts/script/  Deploy.s.sol — deploys against whichever RPC it's pointed at
+packages/contracts/lib/     Vendored submodules: aqua, swap-vm, forge-std, safe-smart-account,
+                             openzeppelin-contracts, solidity-utils, balancer-v3-monorepo
+                             (balancer-v3-monorepo is reference-only, GPL-3.0 — never imported)
+packages/onboarding-check/  Pre-existing-strategy scan tool (BLEUDEV-321)
+docker-compose.yml           Forks Base via Anvil, deploys, and runs tests against real Aqua state
+docs/ARCHITECTURE.md         System diagrams + component breakdown
+docs/LICENSING-RISK.md       The Aqua-Source-1.1 finding above, in full
+docs/adr/                    Architecture decision records
+simulation/                  M1's economic simulation notebooks (Python, not a workspace member)
 ```
 
 ## Development
 
 ```shell
+pnpm install
+
+# Contracts
+cd packages/contracts
 forge build
 forge test
 forge fmt
+
+# Forked-Anvil environment: forks Base, deploys our contracts against the real Aqua registry,
+# then runs tests against that live fork state — see .env.example for BASE_RPC_URL.
+cp .env.example .env
+docker compose up
 ```
 
 ## Links

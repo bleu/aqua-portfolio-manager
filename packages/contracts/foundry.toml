@@ -1,21 +1,29 @@
 [profile.default]
 src = "src"
 test = "test"
+script = "script"
 out = "out"
 libs = ["lib"]
 solc_version = "0.8.30"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
-fs_permissions = [{ access = "read", path = "./" }]
+fs_permissions = [
+    { access = "read", path = "./" },
+    { access = "read-write", path = "./deployments" },
+]
 
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "aqua/=lib/aqua/src/",
+    "swap-vm/=lib/swap-vm/src/",
     "@1inch/aqua/=lib/aqua/",
     "@1inch/solidity-utils/=lib/solidity-utils/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "safe-smart-account/=lib/safe-smart-account/",
 ]
+
+# lib/balancer-v3-monorepo is reference-only (GPL-3.0) — see ../../THIRD_PARTY_NOTICES.md.
+# Never import from it. No remapping is defined for it on purpose.
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

@@ -11,46 +11,14 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  check:
-    name: Foundry project
+  check-contracts:
+    name: Contracts
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Show Forge version
-        run: forge --version
-
-      - name: Run Forge fmt
-        run: forge fmt --check
-
-      - name: Run Forge build
-        run: forge build --sizes
-
-      - name: Run Forge tests
-        run: forge test -vvv
-
-  check-pocs:
-    name: Proof of concept (${{ matrix.project }})
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - proofs-of-concept/basket-scope
-          - proofs-of-concept/swapvm-multi-token
     defaults:
       run:
-        working-directory: ${{ matrix.project }}
+        working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v5
         with:
@@ -71,3 +39,35 @@ jobs:
 
       - name: Run Forge tests
         run: forge test -vvv
+
+  check-onboarding-check:
+    name: Proof of concept (packages/onboarding-check)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter onboarding-check build
+
+      - name: Test
+        run: pnpm --filter onboarding-check test
