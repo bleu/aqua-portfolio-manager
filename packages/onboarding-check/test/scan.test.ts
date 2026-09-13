@@ -135,7 +135,13 @@ describe("onboarding pre-existing-strategy check", () => {
 
     // --- Unit-level checks on the building blocks, not just the end-to-end result ---
 
-    const shipped = await fetchShippedStrategies(publicClient, aquaAddress, maker, 0n, await publicClient.getBlockNumber());
+    const shipped = await fetchShippedStrategies(
+      publicClient,
+      aquaAddress,
+      maker,
+      0n,
+      await publicClient.getBlockNumber({ cacheTime: 0 }),
+    );
     expect(shipped).toHaveLength(4);
 
     const reconstructedCompliant = await reconstructDeclaredTokens(
@@ -176,7 +182,7 @@ describe("onboarding pre-existing-strategy check", () => {
       groupConfig,
       pmStrategyHash,
       0n,
-      await publicClient.getBlockNumber(),
+      await publicClient.getBlockNumber({ cacheTime: 0 }),
     );
 
     expect(result.strategiesFound).toBe(4);
@@ -215,7 +221,7 @@ describe("onboarding pre-existing-strategy check", () => {
       { [TOKEN_A.toLowerCase()]: "group-1" },
       someOtherTrustedHash,
       0n,
-      await publicClient.getBlockNumber(),
+      await publicClient.getBlockNumber({ cacheTime: 0 }),
     );
 
     expect(result.strategiesFound).toBe(1);
