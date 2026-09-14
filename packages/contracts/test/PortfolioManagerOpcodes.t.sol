@@ -19,6 +19,7 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
@@ -40,12 +41,13 @@ contract PortfolioManagerOpcodesTest is Test {
     PortfolioManagerRouter internal router;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
+    MockAggregatorV3 internal feedA;
+    MockAggregatorV3 internal feedB;
     MockTaker internal taker;
 
     address internal maker;
 
-    address[] internal universe;
-    uint256[] internal weights;
+    PortfolioManagerArgsBuilder.Group[] internal groups;
 
     function setUp() public {
         aqua = new Aqua();
@@ -53,23 +55,37 @@ contract PortfolioManagerOpcodesTest is Test {
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
+        // $1.00 per token (18-decimal feed) so a group's oracle-valued sum equals its raw
+        // balance exactly, matching every DAO-fee/tiering assertion below (all derived from
+        // INITIAL_BALANCE / SWAP_AMOUNT as if they were the group's value directly).
+        feedA = new MockAggregatorV3(18, 1e18, block.timestamp);
+        feedB = new MockAggregatorV3(18, 1e18, block.timestamp);
 
         maker = vm.addr(0x1234);
 
         taker = new MockTaker(aqua, router, address(this));
 
-        universe = new address[](2);
-        universe[0] = address(tokenA);
-        universe[1] = address(tokenB);
-        weights = new uint256[](2);
-        weights[0] = 0.5e18;
-        weights[1] = 0.5e18;
+        groups.push(_singleMemberGroup(0.5e18, address(tokenA), address(feedA)));
+        groups.push(_singleMemberGroup(0.5e18, address(tokenB), address(feedB)));
     }
 
     // ===== Helpers =====
 
+    function _singleMemberGroup(uint256 weight, address token, address feed)
+        internal
+        pure
+        returns (PortfolioManagerArgsBuilder.Group memory)
+    {
+        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+        // The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours) -- generous on
+        // purpose within that ceiling, since this suite's own vm.warp usage (if any) is about
+        // ledger/fee mechanics, not oracle freshness.
+        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: 18 hours});
+        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
+    }
+
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        return _orderForProgram(PortfolioManagerProgramBuilder.build(universe, weights, lpFeeBps));
+        return _orderForProgram(PortfolioManagerProgramBuilder.build(groups, lpFeeBps));
     }
 
     /// @dev Deliberately does NOT call PortfolioManagerProgramBuilder — hand-packs the wire
@@ -78,7 +94,7 @@ contract PortfolioManagerOpcodesTest is Test {
     ///      PortfolioManagerArgsBuilder encoding (public, documented, nothing secret about it).
     ///      Proves the protocol fee survives bypassing our own tooling entirely.
     function _buildOrderFromHandCraftedProgram(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory args = PortfolioManagerArgsBuilder.build(universe, weights, lpFeeBps);
+        bytes memory args = PortfolioManagerArgsBuilder.build(groups, lpFeeBps);
         bytes memory program = abi.encodePacked(uint8(0), uint8(args.length), args);
         return _orderForProgram(program);
     }
@@ -205,8 +221,8 @@ contract PortfolioManagerOpcodesTest is Test {
         PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
             balanceIn: INITIAL_BALANCE,
             balanceOut: INITIAL_BALANCE,
-            weightIn: weights[0],
-            weightOut: weights[1],
+            weightIn: groups[0].weight,
+            weightOut: groups[1].weight,
             feeWad: uint256(lpFeeBps) * (1e18 / FEE_BPS_SCALE)
         });
         uint256 cleanAmountIn = PortfolioManagerPricing.exactOut(quote, amountOut);
@@ -403,7 +419,7 @@ contract PortfolioManagerOpcodesTest is Test {
     /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
     /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
     /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
-    /// strategy -- so dispatch reaches this opcode, and `_weightOf` is what actually catches it.
+    /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 

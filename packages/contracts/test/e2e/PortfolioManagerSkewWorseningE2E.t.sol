@@ -5,6 +5,7 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
+import {PortfolioManagerArgsBuilder} from "../../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
@@ -16,9 +17,9 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant SKEW_AMOUNT = 20_000e18;
     uint256 internal constant TRADE_AMOUNT = 100e18;
 
-    /// @dev Declares the universe in reverse token order from `_buildOrder`'s (still 50/50, so
-    ///      functionally identical -- `_weightOf` matches by address, not position). Needed so
-    ///      this test's `feeBps = 0` order encodes to different bytes than
+    /// @dev Declares the universe in reverse group order from `_buildOrder`'s (still 50/50, so
+    ///      functionally identical -- `_groupIndexOf` matches by address, not position). Needed
+    ///      so this test's `feeBps = 0` order encodes to different bytes than
     ///      PortfolioManagerSkewReducingE2E's own `feeBps = 0` order: `strategyHash` is
     ///      `keccak256(abi.encode(order))` alone, and forge doesn't snapshot/revert state
     ///      between test *contracts* on a live `--rpc-url` run any more than it does between
@@ -27,13 +28,10 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     ///      byte-identical strategy through the same `pmSafe` would make whichever ships second
     ///      revert on Aqua's own immutability check.
     function _buildOrderWithReversedUniverse() internal view returns (ISwapVM.Order memory) {
-        address[] memory reversedUniverse = new address[](2);
-        reversedUniverse[0] = address(pmTokenB);
-        reversedUniverse[1] = address(pmTokenA);
-        uint256[] memory sameWeights = new uint256[](2);
-        sameWeights[0] = 0.5e18;
-        sameWeights[1] = 0.5e18;
-        bytes memory program = PortfolioManagerProgramBuilder.build(reversedUniverse, sameWeights, 0);
+        PortfolioManagerArgsBuilder.Group[] memory reversedGroups = new PortfolioManagerArgsBuilder.Group[](2);
+        reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), pmTokenBFeed);
+        reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), pmTokenAFeed);
+        bytes memory program = PortfolioManagerProgramBuilder.build(reversedGroups, 0);
 
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({

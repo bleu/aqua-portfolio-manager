@@ -18,14 +18,12 @@ import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFa
 /// for a Deploy.s.sol reader to mistake for "what production deployment looks like," since this
 /// is a clearly separate, clearly-named script.
 ///
-/// DAI, not USDC: both WETH and DAI are 18-decimal. The current single-token-group PM curve
-/// reads raw `balanceOf` with no decimal normalization at all -- normalization only happens in
-/// `OracleAdapter`, for multi-token groups, which isn't
-/// wired into the single-token-group path. Pairing WETH with a 6-decimal token like USDC would
-/// make the curve treat 1 wei of WETH as equal-weight to 1 unit (1e-6) of USDC -- not a fixture
-/// bug, a real limitation of the current curve scope this fixture would otherwise silently paper
-/// over by picking numbers that happen to "work." Same-decimal real tokens sidestep it and keep
-/// this suite testing what it's actually meant to.
+/// DAI, not USDC: kept as the original pairing for historical continuity with this fixture's
+/// existing tests. Every group -- including this one -- now goes through `OracleAdapter`
+/// uniformly (ADR-0003/BLEUDEV-347), so mixed-decimal pairings are safe by construction; the
+/// decimal-normalization limitation this comment used to describe no longer applies. See
+/// `PortfolioManagerMultiTokenBasketE2E.t.sol` for a real mixed-decimal multi-token-group fixture
+/// (WETH+WBTC / DAI+USDT+USDC).
 /// @dev Inherits `StdCheats` (not just `Script`'s own `StdCheatsSafe` subset) specifically for
 ///      `deal()` — safe here because this script only ever runs against a local/forked network,
 ///      never a real broadcast (`deal()` writes storage directly, which isn't meaningful on a
@@ -34,6 +32,15 @@ contract DeployMock is Script, StdCheats {
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
     /// @dev DAI on Base — https://basescan.org/token/0x50c5725949a6f0c72e6c4a641f24049a917db0cb
     address internal constant DAI_BASE = 0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb;
+    /// @dev Chainlink ETH/USD on Base — https://basescan.org/address/0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70
+    address internal constant ETH_USD_FEED_BASE = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
+    /// @dev Chainlink DAI/USD on Base — https://basescan.org/address/0x591e79239a7d679378ec8c847e5038150364c78f
+    address internal constant DAI_USD_FEED_BASE = 0x591e79239a7d679378eC8c847e5038150364C78F;
+    /// @dev Every group now goes through OracleAdapter uniformly (ADR-0003), even a single-token
+    ///      one -- generous on purpose (within the packed encoding's uint16 ceiling, ~18.2
+    ///      hours), since this fixture's own scenarios exercise curve/fee mechanics, not oracle
+    ///      freshness (that's PortfolioManagerMultiTokenBasketE2E's job).
+    uint256 internal constant DEFAULT_MAX_STALENESS = 12 hours;
 
     uint256 internal constant DEFAULT_DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
@@ -105,6 +112,9 @@ contract DeployMock is Script, StdCheats {
         vm.serializeAddress(objectKey, "pmSafe", address(pmSafe));
         vm.serializeAddress(objectKey, "pmTokenA", WETH_BASE);
         vm.serializeAddress(objectKey, "pmTokenB", DAI_BASE);
+        vm.serializeAddress(objectKey, "pmTokenAFeed", ETH_USD_FEED_BASE);
+        vm.serializeAddress(objectKey, "pmTokenBFeed", DAI_USD_FEED_BASE);
+        vm.serializeUint(objectKey, "pmMaxStaleness", DEFAULT_MAX_STALENESS);
         vm.serializeAddress(objectKey, "pmStrategyFactory", pmStrategyFactory);
         string memory updated = vm.serializeAddress(objectKey, "multiSendCallOnly", multiSendCallOnly);
 

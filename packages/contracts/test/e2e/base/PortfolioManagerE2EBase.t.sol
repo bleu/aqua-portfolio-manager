@@ -14,6 +14,7 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
+import {PortfolioManagerArgsBuilder} from "../../../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "../../../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
@@ -52,13 +53,15 @@ abstract contract PortfolioManagerE2EBase is Test {
     Safe internal pmSafe;
     IERC20 internal pmTokenA;
     IERC20 internal pmTokenB;
+    address internal pmTokenAFeed;
+    address internal pmTokenBFeed;
+    uint256 internal pmMaxStaleness;
     address internal deployer;
     MockTaker internal taker;
     PortfolioManagerStrategyFactory internal strategyFactory;
     MultiSendCallOnly internal multiSendCallOnly;
 
-    address[] internal universe;
-    uint256[] internal weights;
+    PortfolioManagerArgsBuilder.Group[] internal groups;
 
     function setUp() public virtual {
         if (!vm.exists(MANIFEST_PATH)) {
@@ -75,22 +78,31 @@ abstract contract PortfolioManagerE2EBase is Test {
         pmSafe = Safe(payable(vm.parseJsonAddress(json, ".pmSafe")));
         pmTokenA = IERC20(vm.parseJsonAddress(json, ".pmTokenA"));
         pmTokenB = IERC20(vm.parseJsonAddress(json, ".pmTokenB"));
+        pmTokenAFeed = vm.parseJsonAddress(json, ".pmTokenAFeed");
+        pmTokenBFeed = vm.parseJsonAddress(json, ".pmTokenBFeed");
+        pmMaxStaleness = vm.parseJsonUint(json, ".pmMaxStaleness");
         deployer = vm.parseJsonAddress(json, ".deployer");
         strategyFactory = PortfolioManagerStrategyFactory(vm.parseJsonAddress(json, ".pmStrategyFactory"));
         multiSendCallOnly = MultiSendCallOnly(vm.parseJsonAddress(json, ".multiSendCallOnly"));
 
         taker = new MockTaker(aqua, router, address(this));
 
-        universe = new address[](2);
-        universe[0] = address(pmTokenA);
-        universe[1] = address(pmTokenB);
-        weights = new uint256[](2);
-        weights[0] = 0.5e18;
-        weights[1] = 0.5e18;
+        groups.push(_singleMemberGroup(0.5e18, address(pmTokenA), pmTokenAFeed));
+        groups.push(_singleMemberGroup(0.5e18, address(pmTokenB), pmTokenBFeed));
+    }
+
+    function _singleMemberGroup(uint256 weight, address token, address feed)
+        internal
+        view
+        returns (PortfolioManagerArgsBuilder.Group memory)
+    {
+        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: pmMaxStaleness});
+        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
     }
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory program = PortfolioManagerProgramBuilder.build(universe, weights, lpFeeBps);
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps);
 
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({

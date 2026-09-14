@@ -4,21 +4,27 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
+import {OracleAdapter} from "./OracleAdapter.sol";
+import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 
 /// @title PortfolioManagerSwap — the real weighted-curve SwapVM instruction, per PRICING.md
-/// @notice Wires PortfolioManagerArgsBuilder's declared universe and PortfolioManagerPricing's
+/// @notice Wires PortfolioManagerArgsBuilder's declared groups and PortfolioManagerPricing's
 ///         curve math into an actual instruction: reads real wallet balances via plain
 ///         `balanceOf` (ADR-0002 — never AQUA's own ledger via ctx.swap.balanceIn/Out, which is
-///         a same-strategy-only accounting entry, not a wallet-wide reading), resolves
-///         tokenIn's/tokenOut's declared weight, and prices the trade.
-/// @dev Single-token-per-group scope only (matches PortfolioManagerArgsBuilder's current
-///      scope) — multi-token oracle-valued groups (ADR-0003) are a routing detail PRICING.md
-///      explicitly defers to a later milestone, not decided here.
+///         a same-strategy-only accounting entry, not a wallet-wide reading), resolves which
+///         declared group tokenIn/tokenOut each belong to, values that group's full member set
+///         through `OracleAdapter` (ADR-0003), and prices the trade against the two groups'
+///         weights.
+/// @dev Real multi-token oracle-valued groups (ADR-0003) — every group, including a
+///      single-member one, goes through `OracleAdapter` uniformly (no "skip the oracle"
+///      special case), so decimal normalization and price conversion always apply the same
+///      way regardless of group size.
 /// @dev The 1inch DAO protocol fee (1IP-103's tiered cut) is pulled directly from
 ///      inside this instruction's own execution, not composed as a separate chainable
 ///      instruction — `Aqua.ship()` is permissionless, so a program that only invokes this
@@ -34,6 +40,11 @@ contract PortfolioManagerSwap is Fee {
 
     error PortfolioManagerSwapTokenNotDeclared(address token);
     error PortfolioManagerSwapRecomputeDetected();
+    /// @dev The curve only prices cross-group pairs (ADR-0003: "intra-group drift is allowed
+    ///      by design," i.e. not priced by this formula at all) — a same-group swap would
+    ///      silently degenerate to a spot price of exactly 1 with zero skew-based curve
+    ///      behavior, so it's rejected outright instead of left as an undefined edge case.
+    error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
 
     uint256 private constant WAD = 1e18;
     /// @dev Converts PortfolioManagerArgsBuilder's `feeBps` (PM_BPS = 1e9 scale) into
@@ -48,15 +59,31 @@ contract PortfolioManagerSwap is Fee {
     ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
     ///      `BasketXYCSwap.sol`'s identical note).
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        (address[] memory tokens, uint256[] memory weights, uint32 feeBps) = PortfolioManagerArgsBuilder.parse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps) = PortfolioManagerArgsBuilder.parse(args);
+
+        (uint256 groupInIdx, uint256 memberInIdx) = _resolve(groups, ctx.query.tokenIn);
+        (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
+        require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
         PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
-            balanceIn: IERC20(ctx.query.tokenIn).balanceOf(ctx.query.maker),
-            balanceOut: IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker),
-            weightIn: _weightOf(tokens, weights, ctx.query.tokenIn),
-            weightOut: _weightOf(tokens, weights, ctx.query.tokenOut),
+            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker),
+            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker),
+            weightIn: groups[groupInIdx].weight,
+            weightOut: groups[groupOutIdx].weight,
             feeWad: uint256(feeBps) * FEE_WAD_PER_BPS
         });
+
+        // The curve's own balanceIn/balanceOut are oracle-VALUE-scaled (ADR-0003: `Σ balance_j
+        // × price_j` per group), not the traded token's native units — so the traded amount
+        // must be converted into that same value numeraire before the formula call, and the
+        // result converted back, using the specific traded token's own price/decimals. Skipping
+        // this (as an earlier version of this function did) silently prices a $2,500 WETH unit
+        // as if it were a $1 unit, since PortfolioManagerPricing itself is unit-agnostic and
+        // trusts amountIn/amountOut to already share balanceIn/balanceOut's unit system.
+        (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
+            _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn);
+        (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
+            _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut);
 
         uint32 daoBps = PortfolioManagerProgramBuilder.daoFeeBps(feeBps);
         uint256 daoAmount;
@@ -70,8 +97,11 @@ contract PortfolioManagerSwap is Fee {
             // here — nothing runs after this instruction).
             uint256 fullAmountIn = ctx.swap.amountIn;
             daoAmount = fullAmountIn * daoBps / FEE_BPS;
-            ctx.swap.amountIn = fullAmountIn - daoAmount;
-            ctx.swap.amountOut = PortfolioManagerPricing.exactIn(quote, ctx.swap.amountIn);
+            uint256 netAmountIn = fullAmountIn - daoAmount;
+
+            uint256 netAmountInValueWad = netAmountIn * tokenInPriceWad / 10 ** tokenInDecimals;
+            uint256 amountOutValueWad = PortfolioManagerPricing.exactIn(quote, netAmountInValueWad);
+            ctx.swap.amountOut = amountOutValueWad * 10 ** tokenOutDecimals / tokenOutPriceWad;
             ctx.swap.amountIn = fullAmountIn;
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
@@ -79,9 +109,11 @@ contract PortfolioManagerSwap is Fee {
             // curve fee (PortfolioManagerPricing.exactOut already grosses that up internally),
             // then the protocol fee is grossed up on top of that — mirrors Fee.sol's own
             // exact-out branch, which fees only once the swap amount is known.
-            ctx.swap.amountIn = PortfolioManagerPricing.exactOut(quote, ctx.swap.amountOut);
-            daoAmount = ctx.swap.amountIn * daoBps / (FEE_BPS - daoBps);
-            ctx.swap.amountIn += daoAmount;
+            uint256 amountOutValueWad = ctx.swap.amountOut * tokenOutPriceWad / 10 ** tokenOutDecimals;
+            uint256 amountInValueWad = PortfolioManagerPricing.exactOut(quote, amountOutValueWad);
+            uint256 cleanAmountIn = amountInValueWad * 10 ** tokenInDecimals / tokenInPriceWad;
+            daoAmount = cleanAmountIn * daoBps / (FEE_BPS - daoBps);
+            ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 
         // Best-effort, matching Fee.sol's own _tryPullFee rationale exactly: reverting on an
@@ -98,17 +130,55 @@ contract PortfolioManagerSwap is Fee {
         }
     }
 
-    /// @dev Sole guard on the declared universe now (`balanceOf` above is ungated) — reachable
+    /// @dev Sole guard on the declared universe now (balances below are ungated) — reachable
     ///      via a `ship()`/args encoding mismatch, since `AQUA.safeBalances()` only checks the
     ///      token is part of the shipped strategy, not that it matches this instruction's args.
-    function _weightOf(address[] memory tokens, uint256[] memory weights, address token)
+    function _resolve(PortfolioManagerArgsBuilder.Group[] memory groups, address token)
         private
         pure
-        returns (uint256)
+        returns (uint256 groupIdx, uint256 memberIdx)
     {
-        for (uint256 i = 0; i < tokens.length; i++) {
-            if (tokens[i] == token) return weights[i];
+        for (uint256 i = 0; i < groups.length; i++) {
+            PortfolioManagerArgsBuilder.Member[] memory members = groups[i].members;
+            for (uint256 j = 0; j < members.length; j++) {
+                if (members[j].token == token) return (i, j);
+            }
         }
         revert PortfolioManagerSwapTokenNotDeclared(token);
+    }
+
+    /// @dev The specific traded token's own price/decimals, separate from its group's
+    ///      aggregate `_groupValueWad` sum -- needed to convert the traded amount into and back
+    ///      out of the group-value numeraire (see the main function's own note on why).
+    function _priceAndDecimals(PortfolioManagerArgsBuilder.Member memory member, address token)
+        private
+        view
+        returns (uint256 priceWad, uint8 decimals)
+    {
+        priceWad = OracleAdapter.priceWad(
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness})
+        );
+        decimals = IERC20Metadata(token).decimals();
+    }
+
+    /// @dev `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) —
+    ///      always goes through `OracleAdapter`, even for a single-member group, so decimal
+    ///      normalization and price conversion are uniform regardless of group size.
+    function _groupValueWad(PortfolioManagerArgsBuilder.Group memory group, address maker)
+        private
+        view
+        returns (uint256)
+    {
+        uint256 n = group.members.length;
+        address[] memory tokens = new address[](n);
+        uint256[] memory balances = new uint256[](n);
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](n);
+        for (uint256 i = 0; i < n; i++) {
+            PortfolioManagerArgsBuilder.Member memory m = group.members[i];
+            tokens[i] = m.token;
+            balances[i] = IERC20(m.token).balanceOf(maker);
+            feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
+        }
+        return OracleAdapter.groupValueWad(tokens, balances, feeds);
     }
 }
