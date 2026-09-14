@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
+import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice The 1IP-103 tiered protocol fee lands in the real 1inch DAO Treasury
 /// address after a real swap against the actually deployed router.

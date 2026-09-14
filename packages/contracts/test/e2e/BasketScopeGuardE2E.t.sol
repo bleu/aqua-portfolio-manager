@@ -69,7 +69,7 @@ contract BasketScopeGuardE2ETest is Test {
     }
 
     /// @dev Safe's `v == 1` pre-approved-hash signature trick -- see
-    ///      PortfolioManagerE2EBase.sol's `_selfApprovedSignature` for the full mechanism.
+    ///      PortfolioManagerE2EBase.t.sol's `_selfApprovedSignature` for the full mechanism.
     ///      `deployer` is `safe`'s sole owner, and every caller pranks as `deployer` first.
     function _selfApprovedSignature() internal view returns (bytes memory) {
         return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));

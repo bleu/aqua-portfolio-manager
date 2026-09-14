@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
-import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
+import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
 
 /// @notice Ships a real PM strategy from a fresh dedicated maker wallet (ADR-0002)

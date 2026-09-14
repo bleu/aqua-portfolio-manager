@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
-import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
+import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice Trades that move the wallet's exposure toward its declared 50/50
 /// target — confirm the curve's own price impact rewards this direction, matching PRICING.md's

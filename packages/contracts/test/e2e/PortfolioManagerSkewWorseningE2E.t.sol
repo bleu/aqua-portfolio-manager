@@ -6,7 +6,7 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
+import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice Trades that move the wallet's exposure away from its declared 50/50
 /// target — confirm the curve's own price impact penalizes this direction, matching

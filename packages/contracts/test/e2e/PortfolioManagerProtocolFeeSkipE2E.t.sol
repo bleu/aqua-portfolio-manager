@@ -7,7 +7,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {Fee} from "swap-vm/instructions/Fee.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.sol";
+import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice Best-effort protocol-fee collection against the actually deployed
 /// router — a maker with insufficient Aqua-ledger balance for the DAO pull still completes the

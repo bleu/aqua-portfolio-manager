@@ -15,7 +15,7 @@ import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFa
 /// PortfolioManagerArgsBuilder's declared universe and IAqua.ship()'s own tokens array, in
 /// either direction, reverts. Deliberately a pure validation check only -- it never calls
 /// Aqua.ship() itself, so there's no ledger/settlement path to exercise here; see
-/// PortfolioManagerE2EBase.sol for the real Safe + MultiSendCallOnly flow this feeds into.
+/// PortfolioManagerE2EBase.t.sol for the real Safe + MultiSendCallOnly flow this feeds into.
 contract PortfolioManagerStrategyFactoryTest is Test {
     PortfolioManagerStrategyFactory internal factory;
     TokenMock internal tokenA;
