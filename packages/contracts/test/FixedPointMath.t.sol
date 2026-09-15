@@ -97,15 +97,22 @@ contract FixedPointMathTest is Test {
         this._callExp(131e18);
     }
 
-    function test_ExpRevertsBelowNegativeCap() public {
-        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathExpInputTooLarge.selector, int256(-131e18)));
+    /// @notice `EXP_MIN_INPUT` (~-20.72e18) is now the binding lower reject, tighter than the
+    /// symmetric `-EXP_MAX_INPUT` (-130e18) the overflow guard alone would imply -- an input
+    /// this far negative hits the *precision* floor (see `EXP_MIN_INPUT`'s own doc comment) long
+    /// before it would ever risk `exp`'s output underflowing to 0 and wrapping.
+    function test_ExpRevertsBelowPrecisionFloor() public {
+        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathExpInputTooSmall.selector, int256(-131e18)));
         this._callExp(-131e18);
     }
 
     // ---- round trips ----
 
     function testFuzz_ExpOfLnRoundTrips(uint256 x) public pure {
-        x = bound(x, 1e6, 1e30); // stay well inside exp()'s output cap after ln()
+        // Lower bound raised from 1e6 to 1e10: below that, ln(x) falls past EXP_MIN_INPUT (the
+        // new precision-floor guard), which is the correct behavior being guarded against, not
+        // a bug this round-trip property should be asserting through.
+        x = bound(x, 1e10, 1e30); // stay well inside exp()'s output cap after ln()
         int256 lnX = FixedPointMath.ln(x);
         uint256 result = FixedPointMath.exp(lnX);
         _assertApproxRelWad(result, x, REL_TOL);
@@ -171,7 +178,10 @@ contract FixedPointMathTest is Test {
     }
 
     function testFuzz_PowMonotonicInBaseBelowOne(uint256 baseLow, uint256 baseHigh, uint256 exponent) public pure {
-        baseLow = bound(baseLow, 1e13, WAD);
+        // Lower bound raised from 1e13 to 2e17: at the max fuzzed exponent (10.0), a base below
+        // ~1.26e17 pushes `exponent * ln(base)` past `EXP_MIN_INPUT`, the new precision-floor
+        // guard -- correctly rejected, not a monotonicity property this test should probe.
+        baseLow = bound(baseLow, 2e17, WAD);
         baseHigh = bound(baseHigh, baseLow, WAD);
         exponent = bound(exponent, 1e16, 10e18);
         vm.assume(baseHigh > baseLow);
@@ -202,7 +212,8 @@ contract FixedPointMathTest is Test {
     }
 
     function testFuzz_PowMonotonicInExponentBelowOneBase(uint256 base, uint256 expLow, uint256 expHigh) public pure {
-        base = bound(base, 1e13, WAD - 1);
+        // Same EXP_MIN_INPUT margin as testFuzz_PowMonotonicInBaseBelowOne above.
+        base = bound(base, 2e17, WAD - 1);
         expLow = bound(expLow, 1e16, 10e18);
         expHigh = bound(expHigh, expLow, 10e18);
         vm.assume(expHigh > expLow);

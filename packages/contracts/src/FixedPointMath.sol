@@ -45,8 +45,30 @@ library FixedPointMath {
     ///      every exponent this contract's own callers ever produce (see `pow`'s own domain).
     int256 private constant EXP_MAX_INPUT = 130e18;
 
+    /// @dev Symmetric lower reject to `EXP_MAX_INPUT`'s upper one -- below this, `e^x` is
+    ///      smaller than WAD's own 18-decimal precision can represent trustworthily: the true
+    ///      result would round to a handful of raw integer units (1, 2, 3...), where the
+    ///      library's own internal truncation noise (accumulated through `ln`'s series, this
+    ///      series, and the final integer division) is no longer negligible *relative to the
+    ///      result itself* the way it is in the normal operating range -- the caller gets a
+    ///      "nonzero but untrustworthy" number instead of a real answer, silently. This matters
+    ///      concretely for `PortfolioManagerPricing.exactIn`, which computes
+    ///      `balanceOut * (WAD - poweredRatio) / WAD`: at extreme weight skew combined with a
+    ///      large trade relative to `balanceIn`, `poweredRatio` (this function's own return
+    ///      value) can be pushed into this untrustworthy near-zero range, and because it's
+    ///      subtracted from WAD before multiplying by `balanceOut`, even a 1-unit rounding error
+    ///      here becomes a `balanceOut`-scaled absolute error in the trader's favor -- up to
+    ///      the pool's *entire* output balance for a near-free input, found and confirmed via a
+    ///      real counterexample (PR #27 review) rather than assumed. `-20.7232658...e18` is
+    ///      `-9*ln(10)*WAD`, i.e. the boundary where the true result would represent less than
+    ///      one billionth (`1e-9`) of `WAD` -- roughly 9 significant decimal digits of headroom
+    ///      above the absolute 1-wei floor, comfortably wider than this library's own
+    ///      series-truncation error in the well-conditioned range.
+    int256 private constant EXP_MIN_INPUT = -20723265836946411156;
+
     error FixedPointMathLnRequiresPositive(uint256 x);
     error FixedPointMathExpInputTooLarge(int256 x);
+    error FixedPointMathExpInputTooSmall(int256 x);
     error FixedPointMathExpSeriesNonPositive(int256 series);
 
     /// @notice Natural log of `x` (WAD-scaled, `x > 0`), WAD-scaled and signed (negative for
@@ -103,7 +125,8 @@ library FixedPointMath {
     ///      bound); `2^k` is an exact bit-shift (left for `k >= 0`, right for `k < 0`) — no
     ///      series error on that factor.
     function exp(int256 x) internal pure returns (uint256) {
-        if (x > EXP_MAX_INPUT || x < -EXP_MAX_INPUT) revert FixedPointMathExpInputTooLarge(x);
+        if (x > EXP_MAX_INPUT) revert FixedPointMathExpInputTooLarge(x);
+        if (x < EXP_MIN_INPUT) revert FixedPointMathExpInputTooSmall(x);
 
         // Round k to the nearest integer (not just floor) so the remainder r stays within
         // [-ln(2)/2, ln(2)/2] rather than [0, ln(2)) — halves the domain the Taylor series
