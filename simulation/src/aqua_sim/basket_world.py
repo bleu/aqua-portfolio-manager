@@ -161,12 +161,6 @@ class BasketWorld:
     reference_prices: dict[str, float] = field(default_factory=dict)
     blocked_trades: list[Trade] = field(default_factory=list)
     strategy_captured_value: dict[str, float] = field(default_factory=dict)
-    #: Cumulative BLEUDEV-327 protocol fee pulled from wallet balances across every
-    #: applied trade (any strategy's — 0 for one that never sets `Trade.protocol_fee_amount`).
-    #: Tracked in aggregate, not attributed per-recipient, since 100% goes to the 1inch DAO
-    #: Treasury at collection time (`strategies/portfolio_manager.py`) — there's no split to
-    #: attribute for this economic model to study cost/tracking-error.
-    protocol_fee_revenue: float = 0.0
 
     def view(self) -> BasketWorldView:
         return BasketWorldView(
@@ -205,12 +199,8 @@ class BasketWorld:
         pool_value_change = trade.amount_in * self.reference_prices[trade.token_in] - trade.amount_out * self.reference_prices[trade.token_out]
         self.strategy_captured_value[trade.strategy_id] = self.strategy_captured_value.get(trade.strategy_id, 0.0) - pool_value_change
 
-        # The wallet's real credit is amount_in net of the protocol fee pulled out on
-        # top of it (BLEUDEV-327) — 0 for any strategy that never sets
-        # `protocol_fee_amount`, so this is a no-op for everything but PM's own trades.
-        self.token_balances[trade.token_in] += trade.amount_in - trade.protocol_fee_amount
+        self.token_balances[trade.token_in] += trade.amount_in
         self.token_balances[trade.token_out] -= trade.amount_out
-        self.protocol_fee_revenue += trade.protocol_fee_amount
         return True
 
     def step(self, step_index: int) -> None:
