@@ -40,7 +40,7 @@ flowchart TD
 
     Chainlink["<b>Chainlink</b><br/>Price oracle<br/>(push feeds)"]
     Routing["<b>1inch Routing</b><br/>Picks the best<br/>venue per swap"]
-    DAO["<b>1inch DAO</b><br/>Receives a fee share"]
+    DAO["<b>1inch DAO Treasury</b><br/>Receives 1IP-103's tiered<br/>protocol fee (1/4 or 1/6<br/>of the LP's own fee)"]
 
     LP -->|"declares universe,<br/>targets, config"| LPApp
     LPApp -.->|"monitors Swapped<br/>events"| Router
@@ -66,7 +66,7 @@ flowchart TD
     Router -->|"push(tokenIn),<br/>pull(tokenOut)"| Aqua
     Aqua -->|"transferFrom — the actual<br/>ERC20 move, maker's<br/>approval required"| Wallet
 
-    Router -.->|"half the fee"| DAO
+    Router -.->|"tiered, best-effort<br/>Aqua pull (1IP-103)"| DAO
 
     Dashboard -.->|"reads on-chain events"| Router
 
@@ -121,15 +121,13 @@ flowchart TD
 
             OracleAdapter["<b>Oracle Adapter</b><br/>reads Chainlink,<br/>normalizes decimals,<br/>checks staleness"]
 
-            PricingEngine["<b>Pricing Engine</b><br/>constant-mean curve<br/>(Balancer-style, reimplemented)<br/>price impact via<br/>curve invariant"]
-
-            FeeAccounting["<b>Fee Accounting</b><br/>protocol fee inside the price,<br/>DAO/Bleu split"]
+            PricingEngine["<b>Pricing Engine</b><br/>constant-mean curve<br/>(Balancer-style, reimplemented)<br/>price impact via<br/>curve invariant<br/><i>+ 1IP-103's protocol-fee pull,<br/>baked into this same opcode —<br/>mandatory, not a separate,<br/>omittable instruction</i>"]
 
             Invariant["<b>Curve invariant</b><br/>(not a separate module -<br/>guaranteed by the<br/>Pricing Engine's math)<br/>every closed round-trip ends<br/>in the pool's favor -><br/>a donation becomes a gift,<br/>never a profit"]
         end
     end
 
-    DAO["1inch DAO"]
+    DAO["1inch DAO Treasury"]
 
     Taker -->|"calls"| Entrypoints
     Entrypoints -->|"dispatches this opcode<br/>(runLoop)"| PricingEngine
@@ -140,11 +138,10 @@ flowchart TD
     OracleAdapter --> Chainlink
     OracleAdapter -->|"price per token"| PricingEngine
     PricingEngine -->|"relies on"| Invariant
-    PricingEngine --> FeeAccounting
-    FeeAccounting -->|"returns computed<br/>amountIn/amountOut"| Entrypoints
+    PricingEngine -->|"returns computed<br/>amountIn/amountOut"| Entrypoints
     Entrypoints -->|"push(tokenIn),<br/>pull(tokenOut)"| Aqua
     Aqua -->|"transferFrom —<br/>the actual move"| Wallet
-    FeeAccounting -.->|"half the fee"| DAO
+    PricingEngine -.->|"tiered, best-effort<br/>Aqua pull (1IP-103)"| DAO
 
     classDef aqua fill:#16a34a,stroke:#15803d,color:#ffffff,font-weight:bold
     classDef wallet fill:#d97706,stroke:#b45309,color:#ffffff,font-weight:bold
@@ -158,7 +155,7 @@ flowchart TD
     class Wallet wallet
     class Chainlink,DAO,Taker external
     class Config config
-    class ExposureReader,Smoothing,OracleAdapter,PricingEngine,FeeAccounting logic
+    class ExposureReader,Smoothing,OracleAdapter,PricingEngine logic
     class Invariant invariant
     class Entrypoints router
 
@@ -174,7 +171,7 @@ flowchart TD
 - **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was considered and rejected specifically because the taker could choose which still-valid price to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)). Two jobs, both per-feed: check each read's `updatedAt` against a configured max-staleness threshold and **revert the whole trade** if any group member involved fails that check (no fallback price, no degraded execution — see ADR-0005's Decision); and, for a multi-token group, convert each member's balance through its own price and sum into the one value the Pricing Engine treats as `B_i` or `B_o` (ADR-0003). The reference PoC (`BasketXYCSwap.sol`) doesn't implement this conversion yet — it adds a basket token's raw balance with no price applied, correct only by coincidence when every group member is worth the same. The simulation model (`simulation/src/aqua_sim/basket.py`) has the corrected, price-converting version — currently on a separate open PR (#12), not yet merged as of this writing.
 - **Pricing Engine** — the constant-mean weighted curve, i.e. Balancer's weighted-pool formula (the 80/20 BAL/WETH pool is the best-known public example of this exact math with unequal weights), *reimplemented from scratch*. See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for why the formula is fine to reuse but Balancer's GPL-licensed Solidity is not. Full formula: [`PRICING.md`](PRICING.md).
 - **Curve invariant** — not its own contract or function, a *property* the Pricing Engine's math must satisfy: any closed round-trip trade ends slightly in the strategy's favor. That property is what turns a "donation attack" (transferring tokens into the wallet to skew the reading) into an irreversible gift rather than an extractable profit — proven, not just asserted (see [`DONATION-RESISTANCE-PROOF.md`](DONATION-RESISTANCE-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)). This proof covers PM's own trades and pure donations — it does **not**, by itself, cover a *different* strategy trading against the same wallet (that's a two-sided balance change, not a donation, and [`thoughts/cross-strategy-manipulation.md`](../thoughts/cross-strategy-manipulation.md) found a concrete exploit through exactly that gap). What makes the invariant's precondition hold for cross-strategy activity too is the Basket Scope Guard ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)), not this proof.
-- **Fee Accounting** — the 2 bps protocol fee must be computed *inside* the same cost model used to evaluate the mechanism against baselines (see [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md)) — comparing the strategy's all-in cost including this fee against a fee-free naive baseline would overstate how well the mechanism performs.
+- **Protocol Fee** — not a fixed rate: per [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979) (1inch's governance-approved Aqua protocol fee), the 1inch DAO Treasury takes **1/4 of the LP's own `feeBps` at or below an ≈0.1225% threshold, 1/6 above it** (the proposal itself hedges that boundary as "≈," the geometric midpoint of 0.05% and 0.30% — worth confirming against 1inch's actual deployed constant if the exact wei-level boundary ever matters) — a slice of whatever the LP configured, not an independent number, and not split with Bleu or any other operator (the proposal is explicit that 100% goes to the DAO, with operator compensation "deferred to a separate governance proposal"). **Mandatory, not a separate chainable instruction**: the best-effort `IAqua.pull()` to the DAO's disclosed treasury address (`0x7951c7ef839e26F63DA87a42C9a87986507f1c07`) is issued directly from inside the Pricing Engine opcode's own execution, not composed as a distinct program instruction the way `_aquaProtocolFeeAmountInXD` normally would be — `Aqua.ship()` is permissionless, so a separately-chained fee instruction would only be paid by strategies built through our own tooling; anyone could hand-craft program bytes that invoke only the curve opcode and skip a separate fee instruction entirely. Baking the pull into the curve opcode itself closes that gap: any program that actually invokes this opcode to produce a trade pays the fee, regardless of what built its bytes (verified directly by a forge test that hand-packs program bytes bypassing our own builder). Still reuses swap-vm's `Fee` contract's `_AQUA` reference, `BPS` constant, and `ProtocolFeeSkipped` event by inheritance — only the pull's *call site* moved, not its best-effort/no-revert behavior, which is the same one 1inch's own router relies on: a maker who can't cover the pull just doesn't pay it that trade, the swap still completes, and the shortfall is reported via `ProtocolFeeSkipped`. Computing the pull before finishing the curve's own pricing means the curve prices off `amountIn` net of the protocol cut, so `DONATION-RESISTANCE-PROOF.md`'s existing invariant proof needs no change to account for it. Bleu's own compensation is not part of this mechanism and is tracked as a separate, unresolved item, not implemented speculatively.
 - **Reentrancy** — handled by `SwapVM.sol` itself, not `AquaApp`'s `nonReentrantStrategy` modifier: a per-`orderHash` transient lock (`_reentrancyGuards[orderHash]`) taken before the instruction runs and released after. Since the strategy is a swapVM instruction on our own router (ADR-0010), this guard is inherited from the base framework, not something the instruction itself has to implement.
 
 ## Milestone 1
