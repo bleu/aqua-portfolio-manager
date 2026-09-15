@@ -6,6 +6,7 @@ pragma solidity 0.8.30;
 import {BaseGuard} from "safe-smart-account/contracts/examples/guards/BaseGuard.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {IAqua} from "aqua/interfaces/IAqua.sol";
+import {IBasketScopeGuard} from "./interfaces/IBasketScopeGuard.sol";
 
 /// @title BasketScopeGuard
 /// @notice A Safe Transaction Guard (ADR-0011) installed on the LP's dedicated maker wallet.
@@ -32,36 +33,21 @@ import {IAqua} from "aqua/interfaces/IAqua.sol";
 ///      come back clean. Until that attestation happens, PM's own strategy cannot
 ///      ship at all — closing the gap where shipping PM was previously unconditional regardless
 ///      of whether that check was ever run.
-contract BasketScopeGuard is BaseGuard {
-    /// @notice The Aqua core contract this guard watches `ship()` calls to.
+contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
+    /// @inheritdoc IBasketScopeGuard
     address public immutable AQUA;
 
-    /// @notice The Safe this guard is installed on — the only address allowed to call
-    ///         `attestOnboardingClean`.
+    /// @inheritdoc IBasketScopeGuard
     address public immutable SAFE;
 
-    /// @notice The exact `keccak256(strategy)` of this LP's already-parameterized PM strategy,
-    ///         computed off-chain before this guard is deployed.
+    /// @inheritdoc IBasketScopeGuard
     bytes32 public immutable TRUSTED_PM_STRATEGY_HASH;
 
-    /// @notice `basketOf[token] == 0` means the token is outside the declared universe.
+    /// @inheritdoc IBasketScopeGuard
     mapping(address token => uint256 basketId) public basketOf;
 
-    /// @notice Set once, via `attestOnboardingClean`, after the off-chain onboarding
-    ///         pre-existing-strategy check has come back clean for this Safe. PM's own
-    ///         strategy cannot ship until this is `true`.
+    /// @inheritdoc IBasketScopeGuard
     bool public onboardingAttested;
-
-    error TokenBasketLengthMismatch();
-    error BasketIdZeroReserved();
-    error EmptyTokenList();
-    error TokenNotInAnyBasket(address token);
-    error CrossBasketStrategyForbidden(address tokenA, address tokenB);
-    error OnboardingNotAttested();
-    error OnlySafeCanAttest();
-    error AlreadyAttested();
-
-    event OnboardingAttested();
 
     constructor(
         address aqua,
@@ -82,12 +68,11 @@ contract BasketScopeGuard is BaseGuard {
         }
     }
 
-    /// @notice Records that the off-chain onboarding pre-existing-strategy check (scanning
-    ///         `Shipped` events for this Safe) has been run and came back clean. Callable only
-    ///         by the Safe itself, via a normal signed Safe transaction — the same authority
-    ///         required for `setGuard`. Irreversible once set (no un-attest path) and required
-    ///         exactly once: PM's own strategy is immutable after `ship()`, so there is nothing
-    ///         further to attest to after this Guard's one PM strategy has shipped.
+    /// @inheritdoc IBasketScopeGuard
+    /// @dev Callable only by the Safe itself, via a normal signed Safe transaction — the same
+    ///      authority required for `setGuard`. Irreversible once set (no un-attest path) and
+    ///      required exactly once: PM's own strategy is immutable after `ship()`, so there is
+    ///      nothing further to attest to after this Guard's one PM strategy has shipped.
     function attestOnboardingClean() external {
         if (msg.sender != SAFE) revert OnlySafeCanAttest();
         if (onboardingAttested) revert AlreadyAttested();

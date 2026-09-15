@@ -19,6 +19,7 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 
 /// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
@@ -432,7 +433,7 @@ contract PortfolioManagerOpcodesTest is Test {
         bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), SWAP_AMOUNT * 2);
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
+            abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
         );
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }

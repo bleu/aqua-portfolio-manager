@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {BasketScopeGuard} from "../src/BasketScopeGuard.sol";
+import {IBasketScopeGuard} from "../src/interfaces/IBasketScopeGuard.sol";
 import {Aqua} from "aqua/Aqua.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
@@ -90,7 +91,7 @@ contract BasketScopeGuardTest is Test {
         tokens[0] = tokenA;
         tokens[1] = tokenB;
 
-        vm.expectRevert(BasketScopeGuard.OnboardingNotAttested.selector);
+        vm.expectRevert(IBasketScopeGuard.OnboardingNotAttested.selector);
         guard.checkTransaction(
             address(aqua),
             0,
@@ -108,14 +109,14 @@ contract BasketScopeGuardTest is Test {
 
     function test_RevertsOnAttestFromNonSafe() public {
         vm.prank(address(0xBEEF));
-        vm.expectRevert(BasketScopeGuard.OnlySafeCanAttest.selector);
+        vm.expectRevert(IBasketScopeGuard.OnlySafeCanAttest.selector);
         guard.attestOnboardingClean();
     }
 
     function test_RevertsOnDoubleAttestation() public {
         guard.attestOnboardingClean();
 
-        vm.expectRevert(BasketScopeGuard.AlreadyAttested.selector);
+        vm.expectRevert(IBasketScopeGuard.AlreadyAttested.selector);
         guard.attestOnboardingClean();
     }
 
@@ -144,7 +145,7 @@ contract BasketScopeGuardTest is Test {
         tokens[0] = tokenA; // basket 1
         tokens[1] = tokenC; // basket 2
 
-        vm.expectRevert(abi.encodeWithSelector(BasketScopeGuard.CrossBasketStrategyForbidden.selector, tokenA, tokenC));
+        vm.expectRevert(abi.encodeWithSelector(IBasketScopeGuard.CrossBasketStrategyForbidden.selector, tokenA, tokenC));
         guard.checkTransaction(
             address(aqua),
             0,
@@ -165,7 +166,7 @@ contract BasketScopeGuardTest is Test {
         tokens[0] = tokenA;
         tokens[1] = tokenF; // not in any basket
 
-        vm.expectRevert(abi.encodeWithSelector(BasketScopeGuard.TokenNotInAnyBasket.selector, tokenF));
+        vm.expectRevert(abi.encodeWithSelector(IBasketScopeGuard.TokenNotInAnyBasket.selector, tokenF));
         guard.checkTransaction(
             address(aqua),
             0,
@@ -184,7 +185,7 @@ contract BasketScopeGuardTest is Test {
     function test_RevertsOnEmptyTokenList() public {
         address[] memory tokens = new address[](0);
 
-        vm.expectRevert(BasketScopeGuard.EmptyTokenList.selector);
+        vm.expectRevert(IBasketScopeGuard.EmptyTokenList.selector);
         guard.checkTransaction(
             address(aqua),
             0,
@@ -367,7 +368,7 @@ contract BasketScopeGuardTest is Test {
         bytes memory shipData = _shipCalldata(pmStrategy, tokens);
         bytes memory signature = _signFor(safe, ownerPk, address(aqua), shipData);
 
-        vm.expectRevert(BasketScopeGuard.OnboardingNotAttested.selector);
+        vm.expectRevert(IBasketScopeGuard.OnboardingNotAttested.selector);
         safe.execTransaction(
             address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), signature
         );
