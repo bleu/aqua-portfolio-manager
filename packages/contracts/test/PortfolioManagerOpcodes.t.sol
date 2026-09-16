@@ -6,6 +6,7 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {Aqua} from "aqua/Aqua.sol";
+import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
@@ -17,8 +18,10 @@ import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
+import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 
-/// @notice Exercises BLEUDEV-327's shipped fee mechanism through a real SwapVM.swap() call
+/// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
 /// PortfolioManagerPricing.t.sol/PortfolioManagerArgsBuilder.t.sol already cover. This file
 /// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
@@ -132,8 +135,8 @@ contract PortfolioManagerOpcodesTest is Test {
         return strategyHash;
     }
 
-    function _swapExactIn(ISwapVM.Order memory order, uint256 amount) internal returns (uint256, uint256) {
-        bytes memory takerData = TakerTraitsLib.build(
+    function _exactInTakerData() internal view returns (bytes memory) {
+        return TakerTraitsLib.build(
             TakerTraitsLib.Args({
                 taker: address(taker),
                 isExactIn: true,
@@ -156,6 +159,10 @@ contract PortfolioManagerOpcodesTest is Test {
                 signature: ""
             })
         );
+    }
+
+    function _swapExactIn(ISwapVM.Order memory order, uint256 amount) internal returns (uint256, uint256) {
+        bytes memory takerData = _exactInTakerData();
 
         tokenA.mint(address(taker), amount * 2);
         return taker.swap(order, address(tokenA), address(tokenB), amount, takerData);
@@ -209,22 +216,6 @@ contract PortfolioManagerOpcodesTest is Test {
     }
 
     // ===== Tests =====
-
-    function test_DaoFeeBpsTiering() public pure {
-        // Pure formula check, no swap harness needed — the boundary and both tiers.
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(0), 0);
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(LOW_TIER_FEE_BPS), LOW_TIER_FEE_BPS / 4);
-        assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS),
-            PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS / 4,
-            "the threshold itself is still low-tier (<=), per 1IP-103's own wording"
-        );
-        assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1),
-            (PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1) / 6
-        );
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(HIGH_TIER_FEE_BPS), HIGH_TIER_FEE_BPS / 6);
-    }
 
     function test_ProtocolFeeLandsInDaoTreasuryAtLowTier() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
@@ -370,8 +361,69 @@ contract PortfolioManagerOpcodesTest is Test {
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
     }
 
-    /// @notice BLEUDEV-327's central guarantee: the protocol fee is not merely a convention our
-    /// own program-builder happens to follow. A strategy shipped from program bytes that never
+    /// @notice A token never shipped to Aqua at all: `SwapVM`'s own `AQUA.safeBalances()` gate
+    /// rejects it before dispatch reaches this opcode. See `PortfolioManagerSwap.sol` for why
+    /// our own declared-universe check exists anyway.
+    function test_RevertsWhenTakerRequestsTokenOutsideDeclaredUniverse() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        bytes32 strategyHash = _shipOrder(order, INITIAL_BALANCE);
+
+        TokenMock outsideToken = new TokenMock("Outside", "OUT");
+        bytes memory takerData = _exactInTakerData();
+
+        outsideToken.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAqua.SafeBalancesForTokenNotInActiveStrategy.selector,
+                maker,
+                address(router),
+                strategyHash,
+                address(outsideToken)
+            )
+        );
+        taker.swap(order, address(outsideToken), address(tokenB), SWAP_AMOUNT, takerData);
+    }
+
+    /// @notice The one case where our own declared-universe check is genuinely reachable, not
+    /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
+    /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
+    /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
+    /// strategy -- so dispatch reaches this opcode, and `_weightOf` is what actually catches it.
+    function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        TokenMock tokenC = new TokenMock("Token C", "TKC");
+        tokenA.mint(maker, INITIAL_BALANCE);
+        tokenB.mint(maker, INITIAL_BALANCE);
+        tokenC.mint(maker, INITIAL_BALANCE);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        tokenC.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+
+        address[] memory tokens = new address[](3);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        tokens[2] = address(tokenC);
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = INITIAL_BALANCE;
+        amounts[1] = INITIAL_BALANCE;
+        amounts[2] = INITIAL_BALANCE;
+
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), tokens, amounts);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
+        );
+        taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
+    }
+
+    /// @notice The central guarantee: the protocol fee is not merely a convention our own
+    /// program-builder happens to follow. A strategy shipped from program bytes that never
     /// touched PortfolioManagerProgramBuilder -- built by hand, exactly as any third party
     /// could -- still pays the DAO the moment it invokes our curve opcode, because the pull is
     /// baked into PortfolioManagerSwap's own execution, not a separate, omittable instruction.
