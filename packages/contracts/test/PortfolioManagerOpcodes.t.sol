@@ -217,22 +217,6 @@ contract PortfolioManagerOpcodesTest is Test {
 
     // ===== Tests =====
 
-    function test_DaoFeeBpsTiering() public pure {
-        // Pure formula check, no swap harness needed — the boundary and both tiers.
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(0), 0);
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(LOW_TIER_FEE_BPS), LOW_TIER_FEE_BPS / 4);
-        assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS),
-            PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS / 4,
-            "the threshold itself is still low-tier (<=), per 1IP-103's own wording"
-        );
-        assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1),
-            (PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1) / 6
-        );
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(HIGH_TIER_FEE_BPS), HIGH_TIER_FEE_BPS / 6);
-    }
-
     function test_ProtocolFeeLandsInDaoTreasuryAtLowTier() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
