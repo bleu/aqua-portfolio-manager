@@ -1,5 +1,5 @@
-"""Regression tests for BasketGroup, GroupBoundaryGuard, and BasketWorld.apply
-(BLEUDEV-334 R5/R6's actual enforcement logic)."""
+"""Regression tests for BasketGroup, GroupBoundaryGuard, and BasketWorld.apply --
+the actual group-boundary enforcement logic."""
 
 from __future__ import annotations
 

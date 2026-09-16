@@ -1,0 +1,15 @@
+# See thoughts/indexer-architecture.md ("Database schema") for the full design and the
+# equivalent Postgres DDL Envio's codegen produces from this file.
+
+type Strategy {
+  id: ID! # `${maker}-${app}-${strategyHash}`, lowercase -- matches Aqua's own balance-state key
+  maker: String! @index
+  app: String! @index
+  strategyHash: String!
+  tokens: [String!]! # declared at ship() time, via same-tx Pushed events (see EventHandlers.ts)
+  isActive: Boolean! @index # true from Shipped; flips false on the matching Docked
+  shippedAt: BigInt! # unix timestamp
+  shippedAtTxHash: String! # also used to tell ship-time Pushed events from later trade-time ones
+  dockedAt: BigInt
+  dockedAtTxHash: String
+}
