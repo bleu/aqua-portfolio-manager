@@ -96,6 +96,12 @@ contract PortfolioManagerPricingTest is Test {
         this._exactIn(q, 1_000e18);
     }
 
+    function test_ExactOutRevertsOnZeroBalance() public {
+        PortfolioManagerPricing.Quote memory q = _quote(0, 100_000e18, 0.5e18, 0.5e18, 0);
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerPricing.PortfolioManagerPricingZeroBalance.selector));
+        this._exactOut(q, 1_000e18);
+    }
+
     function test_ExactOutRevertsWhenDrainingTheFullOutputBalance() public {
         PortfolioManagerPricing.Quote memory q = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(
