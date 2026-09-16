@@ -29,8 +29,8 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     ///      revert on Aqua's own immutability check.
     function _buildOrderWithReversedUniverse() internal view returns (ISwapVM.Order memory) {
         PortfolioManagerArgsBuilder.Group[] memory reversedGroups = new PortfolioManagerArgsBuilder.Group[](2);
-        reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), pmTokenBFeed);
-        reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), pmTokenAFeed);
+        reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE);
+        reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE);
         bytes memory program = PortfolioManagerProgramBuilder.build(reversedGroups, 0);
 
         return MakerTraitsLib.build(
