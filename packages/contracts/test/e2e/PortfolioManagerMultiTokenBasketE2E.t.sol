@@ -3,7 +3,6 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
-import {Test} from "forge-std/Test.sol";
 import {Aqua} from "aqua/Aqua.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -14,6 +13,7 @@ import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
+import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsBuilder} from "../../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
@@ -23,37 +23,54 @@ import {OracleAdapter} from "../../src/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
-/// @notice Real multi-token oracle-valued groups (ADR-0003/BLEUDEV-347), end to end against the
-/// actually deployed router/Aqua/factory on a real Base fork -- a "majors" group {WETH, WBTC}
-/// and a "stables" group {DAI, USDT, USDC}, each member priced through its own real Chainlink
-/// feed. `PortfolioManagerE2EBase.t.sol`'s single-group suite already covers protocol-fee and
-/// basic curve mechanics end to end; this file's job is specifically proving the multi-member
-/// group-valuation path (`OracleAdapter.groupValueWad`) works correctly against real balances
-/// and real live prices, not a mock.
+/// @notice Real multi-token oracle-valued groups (ADR-0003/BLEUDEV-347), end to end against a
+/// real Base fork -- a "majors" group {WETH, WBTC} and a "stables" group {DAI, USDT, USDC}, each
+/// member priced through its own real Chainlink feed. `PortfolioManagerE2EBase.t.sol`'s
+/// single-group suite already covers protocol-fee and basic curve mechanics end to end; this
+/// file's job is specifically proving the multi-member group-valuation path
+/// (`OracleAdapter.groupValueWad`) works correctly against real balances and real live prices,
+/// not a mock.
 ///
-/// Deliberately self-contained (own Safe/MultiSendCallOnly plumbing, not
-/// `PortfolioManagerE2EBase`) -- that base's fields are hard-shaped around a 2-token,
-/// single-member-group universe; this fixture's 5-token, 2-group universe doesn't fit it.
-///
-/// Requires `deployments/local.json` with the fields `Deploy.mock.multitoken.sol` adds -- skips
-/// entirely if missing, same convention as `PortfolioManagerE2EBase.t.sol`.
-contract PortfolioManagerMultiTokenBasketE2ETest is Test {
-    string internal constant MANIFEST_PATH = "deployments/local.json";
+/// Deliberately self-contained beyond `AquaE2EBase`'s shared Aqua/Safe infra (own Router/
+/// StrategyFactory/MultiSendCallOnly, not `PortfolioManagerE2EBase`) -- that base's PM-specific
+/// fields are hard-shaped around a 2-token, single-member-group universe; this fixture's 5-token,
+/// 2-group universe doesn't fit it.
+contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     uint256 internal constant MAJORS_WEIGHT = 0.5e18;
     uint256 internal constant STABLES_WEIGHT = 0.5e18;
 
-    /// @dev Matches Deploy.mock.multitoken.sol's own funding amounts (kept in sync manually --
-    ///      that script's own deal() calls are inert against a live node, see `_shipOnly`).
+    address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
+    /// @dev WBTC on Base — https://basescan.org/token/0x1cea84203673764244e05693e42e6ace62be9ba5
+    address internal constant WBTC_BASE = 0x1ceA84203673764244E05693e42E6Ace62bE9BA5;
+    /// @dev DAI on Base — https://basescan.org/token/0x50c5725949a6f0c72e6c4a641f24049a917db0cb
+    address internal constant DAI_BASE = 0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb;
+    /// @dev USDT on Base — https://basescan.org/token/0xfde4c96c8593536e31f229ea8f37b2ada2699bb2
+    address internal constant USDT_BASE = 0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2;
+    /// @dev USDC on Base — https://basescan.org/token/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913
+    address internal constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+
+    /// @dev Chainlink ETH/USD on Base — https://basescan.org/address/0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70
+    address internal constant ETH_USD_FEED_BASE = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
+    /// @dev Chainlink BTC/USD on Base — https://basescan.org/address/0x64c911996d3c6ac71f9b455b1e8e7266bcbd848f
+    address internal constant BTC_USD_FEED_BASE = 0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F;
+    /// @dev Chainlink DAI/USD on Base — https://basescan.org/address/0x591e79239a7d679378ec8c847e5038150364c78f
+    address internal constant DAI_USD_FEED_BASE = 0x591e79239a7d679378eC8c847e5038150364C78F;
+    /// @dev Chainlink USDT/USD on Base — https://basescan.org/address/0xf19d560eb8d2adf07bd6d13ed03e1d11215721f9
+    address internal constant USDT_USD_FEED_BASE = 0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9;
+    /// @dev Chainlink USDC/USD on Base — https://basescan.org/address/0x7e860098f58bbfc8648a4311b374b1d669a2bc6b
+    address internal constant USDC_USD_FEED_BASE = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B;
+
+    /// @dev The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours).
+    uint256 internal constant MULTI_TOKEN_MAX_STALENESS = 12 hours;
+
     uint256 internal constant WETH_FUNDING = 20e18;
     uint256 internal constant WBTC_FUNDING = 1e8;
     uint256 internal constant DAI_FUNDING = 60_000e18;
     uint256 internal constant USDT_FUNDING = 30_000e6;
     uint256 internal constant USDC_FUNDING = 30_000e6;
 
-    Aqua internal aqua;
     PortfolioManagerRouter internal router;
     Safe internal multiTokenSafe;
-    address internal deployer;
     MockTaker internal taker;
     PortfolioManagerStrategyFactory internal strategyFactory;
     MultiSendCallOnly internal multiSendCallOnly;
@@ -73,34 +90,25 @@ contract PortfolioManagerMultiTokenBasketE2ETest is Test {
     /// @dev groups[0] = majors {WETH, WBTC}, groups[1] = stables {DAI, USDT, USDC}.
     PortfolioManagerArgsBuilder.Group[] internal groups;
 
-    function setUp() public {
-        if (!vm.exists(MANIFEST_PATH) || !vm.keyExistsJson(vm.readFile(MANIFEST_PATH), ".multiTokenSafe")) {
-            vm.skip(
-                true,
-                "deployments/local.json missing the multi-token fixture - run `forge script script/Deploy.s.sol --broadcast` then `forge script script/Deploy.mock.multitoken.sol --broadcast` first"
-            );
-            return;
-        }
+    function setUp() public override {
+        super.setUp();
 
-        string memory json = vm.readFile(MANIFEST_PATH);
-        aqua = Aqua(vm.parseJsonAddress(json, ".aqua"));
-        router = PortfolioManagerRouter(payable(vm.parseJsonAddress(json, ".router")));
-        multiTokenSafe = Safe(payable(vm.parseJsonAddress(json, ".multiTokenSafe")));
-        deployer = vm.parseJsonAddress(json, ".deployer");
-        strategyFactory = PortfolioManagerStrategyFactory(vm.parseJsonAddress(json, ".pmStrategyFactory"));
-        multiSendCallOnly = MultiSendCallOnly(vm.parseJsonAddress(json, ".multiSendCallOnly"));
+        router = new PortfolioManagerRouter(address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1");
+        strategyFactory = new PortfolioManagerStrategyFactory();
+        multiSendCallOnly = new MultiSendCallOnly();
+        multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
 
-        weth = IERC20(vm.parseJsonAddress(json, ".multiTokenWeth"));
-        wbtc = IERC20(vm.parseJsonAddress(json, ".multiTokenWbtc"));
-        dai = IERC20(vm.parseJsonAddress(json, ".multiTokenDai"));
-        usdt = IERC20(vm.parseJsonAddress(json, ".multiTokenUsdt"));
-        usdc = IERC20(vm.parseJsonAddress(json, ".multiTokenUsdc"));
-        wethFeed = vm.parseJsonAddress(json, ".multiTokenWethFeed");
-        wbtcFeed = vm.parseJsonAddress(json, ".multiTokenWbtcFeed");
-        daiFeed = vm.parseJsonAddress(json, ".multiTokenDaiFeed");
-        usdtFeed = vm.parseJsonAddress(json, ".multiTokenUsdtFeed");
-        usdcFeed = vm.parseJsonAddress(json, ".multiTokenUsdcFeed");
-        maxStaleness = vm.parseJsonUint(json, ".multiTokenMaxStaleness");
+        weth = IERC20(WETH_BASE);
+        wbtc = IERC20(WBTC_BASE);
+        dai = IERC20(DAI_BASE);
+        usdt = IERC20(USDT_BASE);
+        usdc = IERC20(USDC_BASE);
+        wethFeed = ETH_USD_FEED_BASE;
+        wbtcFeed = BTC_USD_FEED_BASE;
+        daiFeed = DAI_USD_FEED_BASE;
+        usdtFeed = USDT_USD_FEED_BASE;
+        usdcFeed = USDC_USD_FEED_BASE;
+        maxStaleness = MULTI_TOKEN_MAX_STALENESS;
 
         taker = new MockTaker(aqua, router, address(this));
 
@@ -214,13 +222,6 @@ contract PortfolioManagerMultiTokenBasketE2ETest is Test {
 
     function _encodeMultiSendTx(address to, bytes memory data) internal pure returns (bytes memory) {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
-    }
-
-    /// @dev See `PortfolioManagerE2EBase.t.sol`'s identical note: `deployer` is
-    ///      `multiTokenSafe`'s sole owner, so Safe's pre-approved-hash signature form needs no
-    ///      real ECDSA signature.
-    function _selfApprovedSignature() internal view returns (bytes memory) {
-        return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
     }
 
     function _exactInTakerData() internal view returns (bytes memory) {
