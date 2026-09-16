@@ -11,13 +11,14 @@ uint256 constant PM_BPS = 1e9;
 
 /// @title PortfolioManagerArgsBuilder — packed-bytes encoding of the Portfolio Manager's
 ///        declared token groups, per-group target weight, oracle feeds, and protocol fee
-/// @notice Real multi-token oracle-valued groups (ADR-0003): each group has 1+ members, and
+/// @notice Real multi-token oracle-valued groups (ADR-0003): each group has 1-5 members, and
 ///         every member is priced through its own Chainlink-style feed via `OracleAdapter` --
 ///         no single-token "skip the oracle" special case, so decimal normalization and price
 ///         conversion apply uniformly regardless of group size. Weights are per-group (shared
 ///         by every member), fully general (not required equal): `PRICING.md`'s formula
 ///         already reduces correctly at equal weights, so there is nothing to special-case
-///         here for the common case.
+///         here for the common case. The universe itself is 2-4 groups (see `MIN_GROUPS`/
+///         `MAX_GROUPS`) -- a single group has nothing to rebalance against.
 /// @dev Lives entirely in the swapVM instruction's `args` — part of the immutable `strategy`
 ///      payload hashed into `strategyHash` (see `IAqua.ship`), not contract storage.
 library PortfolioManagerArgsBuilder {
@@ -34,6 +35,17 @@ library PortfolioManagerArgsBuilder {
     ///      comfortably wider than any real Chainlink heartbeat.
     uint256 private constant MEMBER_ENTRY_SIZE = 42;
 
+    /// @dev Business-rule bounds on universe shape -- independent of (and much tighter than) the
+    ///      wire format's own 255-group/255-member uint8 capacity. A single-group universe has
+    ///      nothing to rebalance against, hence the floor; the ceilings keep every real strategy
+    ///      comfortably inside the 255-byte total `args` budget (see MEMBER_ENTRY_SIZE's own
+    ///      comment) and keep the curve's group/member count within what a taker can reason
+    ///      about at a glance. `internal` rather than `private` so callers (tests, other bound
+    ///      checks) can reference them instead of duplicating the numbers.
+    uint256 internal constant MIN_GROUPS = 2;
+    uint256 internal constant MAX_GROUPS = 4;
+    uint256 internal constant MAX_MEMBERS_PER_GROUP = 5;
+
     struct Member {
         address token;
         address feed;
@@ -46,6 +58,7 @@ library PortfolioManagerArgsBuilder {
     }
 
     error PortfolioManagerEmptyUniverse();
+    error PortfolioManagerTooFewGroups(uint256 count);
     error PortfolioManagerTooManyGroups(uint256 count);
     error PortfolioManagerTooManyMembers(uint256 count);
     error PortfolioManagerEmptyGroup(uint256 groupIndex);
@@ -60,12 +73,14 @@ library PortfolioManagerArgsBuilder {
     error PortfolioManagerMissingMemberEntry();
     error PortfolioManagerMissingFeeBps();
 
-    /// @param groups  Declared groups: each a target weight (WAD-scaled; must sum to WAD across
-    ///                all groups) plus 1+ members, each priced through its own feed.
+    /// @param groups  Declared groups (`MIN_GROUPS`-`MAX_GROUPS` of them): each a target weight
+    ///                (WAD-scaled; must sum to WAD across all groups) plus 1-`MAX_MEMBERS_PER_GROUP`
+    ///                members, each priced through its own feed.
     /// @param feeBps  Protocol fee, BPS-scaled per `PM_BPS` (2bps default per ADR-0008)
     function build(Group[] memory groups, uint32 feeBps) internal pure returns (bytes memory args) {
         require(groups.length > 0, PortfolioManagerEmptyUniverse());
-        require(groups.length <= type(uint8).max, PortfolioManagerTooManyGroups(groups.length));
+        require(groups.length >= MIN_GROUPS, PortfolioManagerTooFewGroups(groups.length));
+        require(groups.length <= MAX_GROUPS, PortfolioManagerTooManyGroups(groups.length));
         require(feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
 
         args = abi.encodePacked(uint8(groups.length));
@@ -75,7 +90,7 @@ library PortfolioManagerArgsBuilder {
             Group memory g = groups[i];
             require(g.weight > 0, PortfolioManagerZeroWeight(i));
             require(g.members.length > 0, PortfolioManagerEmptyGroup(i));
-            require(g.members.length <= type(uint8).max, PortfolioManagerTooManyMembers(g.members.length));
+            require(g.members.length <= MAX_MEMBERS_PER_GROUP, PortfolioManagerTooManyMembers(g.members.length));
             sum += g.weight;
 
             args = abi.encodePacked(args, uint128(g.weight), uint8(g.members.length));
@@ -92,13 +107,15 @@ library PortfolioManagerArgsBuilder {
         args = abi.encodePacked(args, feeBps);
     }
 
-    /// @dev Independently re-validates every invariant `build()` checks (weights sum to WAD,
-    ///      no zero weight, no empty group, no duplicate token, no zero feed) on every parse,
-    ///      not just at `build()` time — `args` is maker-supplied strategy calldata and can be
-    ///      hand-crafted to bypass `build()` entirely.
+    /// @dev Independently re-validates every invariant `build()` checks (group/member count
+    ///      bounds, weights sum to WAD, no zero weight, no empty group, no duplicate token, no
+    ///      zero feed) on every parse, not just at `build()` time — `args` is maker-supplied
+    ///      strategy calldata and can be hand-crafted to bypass `build()` entirely.
     function parse(bytes calldata args) internal pure returns (Group[] memory groups, uint32 feeBps) {
         uint8 groupCount = uint8(bytes1(args.slice(0, 1, PortfolioManagerMissingGroupCount.selector)));
         require(groupCount > 0, PortfolioManagerEmptyUniverse());
+        require(groupCount >= MIN_GROUPS, PortfolioManagerTooFewGroups(groupCount));
+        require(groupCount <= MAX_GROUPS, PortfolioManagerTooManyGroups(groupCount));
 
         groups = new Group[](groupCount);
         uint256 offset = 1;
@@ -110,6 +127,7 @@ library PortfolioManagerArgsBuilder {
             uint8 memberCount = uint8(bytes1(args.slice(offset + 16, offset + GROUP_HEADER_SIZE)));
             require(weight > 0, PortfolioManagerZeroWeight(i));
             require(memberCount > 0, PortfolioManagerEmptyGroup(i));
+            require(memberCount <= MAX_MEMBERS_PER_GROUP, PortfolioManagerTooManyMembers(memberCount));
             sum += weight;
             offset += GROUP_HEADER_SIZE;
 
