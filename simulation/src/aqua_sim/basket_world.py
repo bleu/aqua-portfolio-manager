@@ -1,12 +1,8 @@
 """The shared-wallet simulation environment: real token balances, ADR-0003's oracle-valued
 group ("virtual balance") accounting, ADR-0011's group-boundary enforcement, and the step
-loop that ties a `PriceProcess` and any number of `Strategy` implementations together.
-
-This is the piece that didn't exist before BLEUDEV-334 (see
-`thoughts/simulation-suite-v2-requirements.md`, Part 2) — `simulate.py`/`basket.py` each
-special-cased one specific two-token, one-or-two-strategy scenario; this module makes the
-number and kind of strategies, and the number of declared groups, run-time configuration
-instead of separate code paths.
+loop that ties a `PriceProcess` and any number of `Strategy` implementations together --
+the number and kind of strategies, and the number of declared groups, are run-time
+configuration, not separate code paths per scenario.
 """
 
 from __future__ import annotations
@@ -102,16 +98,16 @@ class BasketWorldView:
 
 @dataclass
 class MetricsRecorder:
-    """Records what a `BasketWorld` run needs for the R5 with-PM/without-PM comparison:
-    each declared pair's virtual-balance path and the tracking error against a declared
-    target weight, generalizing `metrics.py`'s `tracking_error` from raw two-token
-    balances to arbitrary oracle-valued groups (ADR-0003).
+    """Records what a `BasketWorld` run needs for a with-PM/without-PM comparison: each
+    declared pair's virtual-balance path and the tracking error against a declared target
+    weight, over arbitrary oracle-valued groups (ADR-0003), not just raw two-token
+    balances.
 
-    Deliberately does not (yet) generalize `metrics.py`'s `cost_of_rebalancing` — that
-    metric's frictionless-reference benchmark assumes only one side's *price* moves
-    between steps, which doesn't hold once other strategies can also move a group's real
-    balances (the whole point of R5). Extending "cost" to that case is its own design
-    question, not reimplemented here as a shortcut.
+    Deliberately does not (yet) track a "cost of rebalancing" metric benchmarked against a
+    frictionless reference — that kind of benchmark usually assumes only one side's
+    *price* moves between steps, which doesn't hold once other strategies can also move a
+    group's real balances. Extending "cost" to that case is its own design question, not
+    reimplemented here as a shortcut.
     """
 
     group_a_id: str
@@ -172,8 +168,8 @@ class BasketWorld:
     def apply(self, trade: Trade) -> bool:
         """Validates `trade` against the group-boundary rule and current liquidity, then
         mutates balances. Returns whether it was applied — `False` means the guard
-        blocked it (recorded in `blocked_trades`, this is what the R6 scenario checks)
-        or the pool didn't have enough of `token_out` to actually pay it out.
+        blocked it (recorded in `blocked_trades`) or the pool didn't have enough of
+        `token_out` to actually pay it out.
 
         No `Strategy` here owns the wallet it trades against -- every registered strategy
         is a *taker* quoting/settling against the shared pool (`token_balances`), same as

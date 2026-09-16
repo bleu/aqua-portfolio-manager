@@ -39,14 +39,34 @@ def build_world(
     group_stables = BasketGroup("stables", ("USDC", "USDT"))
 
     balances = {"WETH": initial_balance_weth, "USDC": initial_balance_usdc, "USDT": initial_balance_usdt}
-    strategies = [
-        XYCCompetitorStrategy(
-            id=f"competitor_{"USDC"}_{"WETH"}", token_a="USDC", token_b="WETH", fee=competitor_fee, gas_cost=competitor_gas_cost
-        ),
-        XYCCompetitorStrategy(
-            id=f"competitor_{"USDT"}_{"WETH"}", token_a="USDT", token_b="WETH", fee=competitor_fee, gas_cost=competitor_gas_cost
-        )        
-    ]
+    reference_prices = {"USDC": 1.0, "USDT": 1.0, "WETH": initial_price_weth}
+    # Each competitor gets its own private reserve pair, seeded to open its *own* pair at
+    # the real market price (equal dollar value on both sides -- an XYC pool's spot price
+    # is its balance ratio, so seeding straight from the wallet's raw balances would be
+    # wrong here: the wallet's split reflects the *group* target weight (50/50 between the
+    # WETH group and the stables group), not the pairwise price a fresh pool needs to open
+    # unbiased -- e.g. 10 WETH : 15,000 USDC implies 1,500 USDC/WETH, not the real 2,000,
+    # handing the competitor an arbitrage windfall on step 0). The nominal depth (how much
+    # value the pool opens with) is the pair's combined real-balance value, split evenly;
+    # only the *split*, not the depth, matters for getting the opening price right. Each
+    # competitor's reserves then evolve only from that instance's own trades from there on
+    # -- so a trade on one pair (e.g. WETH/USDC) never affects a different instance's own
+    # quote (e.g. WETH/USDT), the same way two unrelated Uniswap pools don't share reserves.
+    strategies = []
+    for token_a, token_b in combinations(balances.keys(), 2):
+        price_a, price_b = reference_prices[token_a], reference_prices[token_b]
+        depth_value = balances[token_a] * price_a + balances[token_b] * price_b
+        strategies.append(
+            XYCCompetitorStrategy(
+                id=f"competitor_{token_a}_{token_b}",
+                token_a=token_a,
+                token_b=token_b,
+                virtual_balance_a=(depth_value / 2) / price_a,
+                virtual_balance_b=(depth_value / 2) / price_b,
+                fee=competitor_fee,
+                gas_cost=competitor_gas_cost,
+            )
+        )
 
     world = BasketWorld(
         token_balances=dict(balances),
@@ -67,5 +87,5 @@ def build_world(
         ),
         metrics=MetricsRecorder(group_a_id="weth", group_b_id="stables", target_weight_a=target_weight_a),
     )
-    world.reference_prices = {"USDC": 1.0, "USDT": 1.0, "WETH": initial_price_weth}
+    world.reference_prices = reference_prices
     return world

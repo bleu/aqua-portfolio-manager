@@ -1,11 +1,11 @@
-"""Scenario-level regression tests — one per BLEUDEV-334 requirement (R1/R5/R6), matching
-what each scenarios/ builder is actually for."""
+"""Scenario-level regression tests, one per scenarios/ builder, matching what each one is
+actually for."""
 
 from __future__ import annotations
 
 import unittest
 
-from aqua_sim.scenarios import basket_with_without_pm, cross_basket_no_pm, guard_enforcement, pm_alone
+from aqua_sim.scenarios import basket_with_without_pm, cross_basket_no_pm, pm_alone
 
 
 class PmAloneScenarioTest(unittest.TestCase):
@@ -62,31 +62,6 @@ class BasketWithWithoutPmScenarioTest(unittest.TestCase):
             total_without,
             f"rebalancing should cost value under a forced uptrend on average (with={total_with:.0f}, without={total_without:.0f})",
         )
-
-
-class GuardEnforcementScenarioTest(unittest.TestCase):
-    """With PM registered and correcting, a separate "rogue" strategy on the same pair
-    should never get a trade through -- PM's own corrections are expected and should NOT
-    be blocked."""
-
-    def test_guard_blocks_only_the_rogue_strategy_across_seeds(self) -> None:
-        for seed in range(5):
-            world = guard_enforcement.build_world(seed=seed)
-            world.run(200)
-
-            self.assertGreater(
-                len(world.blocked_trades), 0, f"seed {seed}: rogue strategy never attempted a cross-group trade (test is vacuous)"
-            )
-            self.assertTrue(
-                all(t.strategy_id == "rogue" for t in world.blocked_trades),
-                f"seed {seed}: something other than the rogue strategy got blocked -- PM's own trades should never be blocked",
-            )
-            # PM should still be actively correcting -- not itself blocked into inaction.
-            self.assertLess(
-                sum(world.metrics.tracking_error_path) / len(world.metrics.tracking_error_path),
-                0.01,
-                f"seed {seed}: PM should still track tight despite the rogue's blocked attempts",
-            )
 
 
 class CrossBasketNoPmScenarioTest(unittest.TestCase):

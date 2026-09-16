@@ -1,16 +1,15 @@
-"""Synthetic-only price generation for the basket world — replaces `market.py`.
+"""Synthetic-only price generation for the basket world.
 
-No historical or live market data anywhere in this module (BLEUDEV-334 R2): every price
-path is a random process, parametrized by volatility/drift/jump rate directly, never fit
-to a specific real dataset. Also step-based, not calendar-based (BLEUDEV-334 R2/A5): every
-parameter here is "per step", not "per year" — a step's real-world meaning (e.g. "5
-minutes") is a label a caller can attach for reporting, never something this module's math
-depends on.
+No historical or live market data anywhere in this module: every price path is a random
+process, parametrized by volatility/drift/jump rate directly, never fit to a specific
+real dataset. Also step-based, not calendar-based: every parameter here is "per step", not
+"per year" — a step's real-world meaning (e.g. "5 minutes") is a label a caller can attach
+for reporting, never something this module's math depends on.
 
-Each `PriceProcess` is stateful and step-wise, not a pre-vectorized whole-path array like
-`market.py`'s functions were: `BasketWorld.step()` calls `next(step)` once per step, which
-matters here because strategies need to see each step's price before the next one exists —
-there's no "the rest of the path" to peek at.
+Each `PriceProcess` is stateful and step-wise, not a pre-vectorized whole-path array:
+`BasketWorld.step()` calls `next(step)` once per step, which matters here because
+strategies need to see each step's price before the next one exists — there's no "the
+rest of the path" to peek at.
 """
 
 from __future__ import annotations

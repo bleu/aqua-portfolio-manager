@@ -2,6 +2,10 @@
 StableSwap (`stableswap.py`) instead of the plain constant-product `xyc.py` used for
 unrelated-asset pairs. Not PM's own strategy: `GroupBoundaryGuard` never exempts it, same
 confinement as `XYCCompetitorStrategy`.
+
+Used by `scenarios/basket_with_without_pm.py`'s stables competitor (`COMPETITOR_ID`) — a
+plain constant-product pool is a poor fit for two tokens meant to trade near parity, real
+slippage even for small trades near the peg.
 """
 
 from __future__ import annotations
@@ -43,15 +47,22 @@ def _size_correction_trade(state: StableSwapState, target_rate: float, fee: floa
 
 @dataclass
 class StableSwapCompetitorStrategy:
-    """Quotes and trades one fixed near-pegged pair on its own StableSwap pool, sized
-    directly off the pair's own raw balances — no group augmentation, same rationale as
-    `XYCCompetitorStrategy`. `amplification=100` and `fee=0.0004` (4bps) match Curve's
-    typical parameters for a deep stablecoin pool.
+    """Quotes and trades one fixed near-pegged pair on its own StableSwap pool.
+
+    Prices and sizes off `virtual_balance_a`/`virtual_balance_b` — its own private reserve
+    pair, seeded at construction and updated only by this instance's own trades — never
+    the shared wallet's real balance, same rationale as `XYCCompetitorStrategy` (see its
+    docstring for the full reasoning: independent pools don't share reserves, PM is the
+    one strategy meant to run on the wallet's real balance, settlement is unchanged).
+    `amplification=100` and `fee=0.0004` (4bps) match Curve's typical parameters for a
+    deep stablecoin pool.
     """
 
     id: str
     token_a: str
     token_b: str
+    virtual_balance_a: float
+    virtual_balance_b: float
     amplification: float = 100.0
     fee: float = 0.0004
     gas_cost: float = 0.10
@@ -61,12 +72,12 @@ class StableSwapCompetitorStrategy:
         price_b = world.reference_prices[self.token_b]
 
         candidates = [
-            (self.token_a, self.token_b, price_a, price_b),
-            (self.token_b, self.token_a, price_b, price_a),
+            (self.token_a, self.token_b, price_a, price_b, True),
+            (self.token_b, self.token_a, price_b, price_a, False),
         ]
-        for token_in, token_out, price_in, price_out in candidates:
-            balance_in = world.token_balances[token_in]
-            balance_out = world.token_balances[token_out]
+        for token_in, token_out, price_in, price_out, in_is_a in candidates:
+            balance_in = self.virtual_balance_a if in_is_a else self.virtual_balance_b
+            balance_out = self.virtual_balance_b if in_is_a else self.virtual_balance_a
             state = StableSwapState(balance_in, balance_out, self.amplification)
 
             market_rate = price_out / price_in
@@ -82,6 +93,13 @@ class StableSwapCompetitorStrategy:
             profit_in_value = (amount_out * price_out) - (amount_in * price_in)
             if profit_in_value < self.gas_cost:
                 continue
+
+            if in_is_a:
+                self.virtual_balance_a += amount_in
+                self.virtual_balance_b -= amount_out
+            else:
+                self.virtual_balance_b += amount_in
+                self.virtual_balance_a -= amount_out
 
             return Trade(strategy_id=self.id, token_in=token_in, token_out=token_out, amount_in=amount_in, amount_out=amount_out)
 

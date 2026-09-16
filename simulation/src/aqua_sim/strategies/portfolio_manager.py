@@ -1,9 +1,7 @@
 """The Portfolio Manager itself, as a `Strategy` — the constant-mean weighted curve
 (`curve.py`, `PRICING.md`) plus ADR-0006's fee + gas-cost profitability gate, generalized
 from a raw two-token pair to two declared `BasketGroup`s (ADR-0003), so PM correctly reacts
-to another strategy moving a basket-mate's balance without PM itself having traded
-(BLEUDEV-334 R5) — the same augmentation `basket.py` already does for one side, generalized
-to both.
+to another strategy moving a basket-mate's balance without PM itself having traded.
 """
 
 from __future__ import annotations
