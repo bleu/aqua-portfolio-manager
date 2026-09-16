@@ -37,7 +37,8 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
 
         uint256 argsLength = uint8(program[1]);
         bytes calldata args = program[2:2 + argsLength];
-        (address[] memory declared,,) = PortfolioManagerArgsBuilder.parse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory groups,) = PortfolioManagerArgsBuilder.parse(args);
+        address[] memory declared = PortfolioManagerArgsBuilder.flattenTokens(groups);
 
         for (uint256 i = 0; i < declared.length; i++) {
             bool shipped = false;

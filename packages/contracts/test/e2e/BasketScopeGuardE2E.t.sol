@@ -1,78 +1,103 @@
 // SPDX-License-Identifier: LicenseRef-Degensoft-Aqua-Source-1.1
 pragma solidity 0.8.30;
 
-import {Test} from "forge-std/Test.sol";
-import {BasketScopeGuard} from "../../src/BasketScopeGuard.sol";
+/// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
+
 import {Aqua} from "aqua/Aqua.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
+import {BasketScopeGuard} from "../../src/BasketScopeGuard.sol";
+import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
 
-/// @notice Exercises the actual contracts `script/Deploy.s.sol` puts on chain — not fresh
-/// in-test instances — via real `execTransaction` calls through the real deployed Safe, with
-/// the real Guard already installed, against the real Aqua registry.
+/// @notice Exercises `BasketScopeGuard` for real: on top of `AquaE2EBase`'s forked Aqua/Safe
+/// infra, deploys a real Guard, installs it on a fresh Safe, attests onboarding, then ships
+/// through it via real `execTransaction` calls against the real Aqua registry — no external
+/// Anvil, no deploy script, no `deployments/local.json`.
 ///
-/// `BasketScopeGuard.t.sol` covers the Guard's rules in isolation and integration; this file
-/// answers a different question: does the *actually deployed* environment (docker-compose's
-/// anvil -> deploy -> test pipeline) enforce those same rules, end to end, against real
-/// protocol state?
+/// `BasketScopeGuard.t.sol` already covers the Guard's rules in isolation and integration
+/// against fresh-deployed contracts; this file's only remaining job is confirming the same rules
+/// hold against the *real* Aqua registry on a real fork, not a clean-room chain.
 ///
-/// Requires deployments/local.json (written by Deploy.s.sol) — skips entirely if it doesn't
-/// exist, so plain `forge test` without a prior `forge script script/Deploy.s.sol --broadcast`
-/// (or `docker compose up`) still passes instead of failing on a missing file.
-contract BasketScopeGuardE2ETest is Test {
-    string internal constant MANIFEST_PATH = "deployments/local.json";
+/// The Guard's example basket config (WETH in basket 1, a synthetic placeholder in basket 2) and
+/// the PM trusted-strategy hash are placeholders — no real Portfolio Manager strategy or second
+/// basket asset has been decided for a real deployment yet (M2/M3 scope); this fixture's job is
+/// proving the Guard mechanism works end to end against real Aqua state, not shipping final
+/// parameters.
+contract BasketScopeGuardE2ETest is AquaE2EBase {
+    /// @dev WETH predeploy address, standard across every OP-stack chain (Base included).
+    address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
+    /// @dev Not a real token — ship() never transfers tokens at ship time (confirmed against
+    ///      Aqua.sol directly), so a synthetic address is fine as a second basket for this
+    ///      placeholder config. Real group membership is M2/M3 scope.
+    address internal constant SYNTHETIC_TOKEN_B = 0x000000000000000000000000000000000000b0b0;
+    /// @dev Placeholder PM strategy hash — fixed (not derived from a real `strategy` payload) so
+    ///      this test can independently reproduce it to exercise the Guard's PM-exemption rule.
+    bytes32 internal constant PM_STRATEGY_HASH = keccak256("placeholder-pm-strategy");
 
-    Aqua internal aqua;
     BasketScopeGuard internal guard;
     Safe internal safe;
-    address internal basketOneToken;
-    address internal basketTwoToken;
-    bytes32 internal pmStrategyHash;
-    address internal deployer;
+    address internal basketOneToken = WETH_BASE;
+    address internal basketTwoToken = SYNTHETIC_TOKEN_B;
 
     address internal unknownToken = address(0xF00D);
 
-    /// @dev Matches GuardManager.sol's GUARD_STORAGE_SLOT exactly (keccak256("guard_manager.guard.address")
-    /// minus 1) — `getGuard()` is `internal` on Safe, so this is the only way to read it back
-    /// from outside the contract.
-    bytes32 internal constant GUARD_STORAGE_SLOT = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
+    function setUp() public override {
+        super.setUp();
 
-    function setUp() public {
-        if (!vm.exists(MANIFEST_PATH)) {
-            vm.skip(true, "deployments/local.json missing - run `forge script script/Deploy.s.sol --broadcast` first");
-            return;
-        }
+        safe = _newSafe(0); // distinct salt nonce from the PM fixtures' Safes
 
-        string memory json = vm.readFile(MANIFEST_PATH);
-        aqua = Aqua(vm.parseJsonAddress(json, ".aqua"));
-        guard = BasketScopeGuard(vm.parseJsonAddress(json, ".guard"));
-        safe = Safe(payable(vm.parseJsonAddress(json, ".safe")));
-        basketOneToken = vm.parseJsonAddress(json, ".basketOneToken");
-        basketTwoToken = vm.parseJsonAddress(json, ".basketTwoToken");
-        pmStrategyHash = vm.parseJsonBytes32(json, ".pmStrategyHash");
-        deployer = vm.parseJsonAddress(json, ".deployer");
+        address[] memory tokens = new address[](2);
+        tokens[0] = basketOneToken;
+        tokens[1] = basketTwoToken;
+        uint256[] memory basketIds = new uint256[](2);
+        basketIds[0] = 1;
+        basketIds[1] = 2;
+        guard = new BasketScopeGuard(address(aqua), address(safe), PM_STRATEGY_HASH, tokens, basketIds);
 
-        // The manifest only tells us addresses — confirm the Guard is *actually* wired up on
-        // the deployed Safe, not just sitting deployed-but-uninstalled somewhere.
-        address installedGuard = address(uint160(uint256(vm.load(address(safe), GUARD_STORAGE_SLOT))));
-        assertEq(installedGuard, address(guard), "deployed Safe must have the deployed Guard installed");
+        // Install the Guard on the Safe for real, so this test exercises the actual enforced
+        // state, not just a deployed-but-inert Guard contract.
+        bytes memory setGuardData = abi.encodeWithSignature("setGuard(address)", address(guard));
+        vm.prank(deployer);
+        bool guardInstalled = safe.execTransaction(
+            address(safe),
+            0,
+            setGuardData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            _selfApprovedSignature()
+        );
+        require(guardInstalled, "setGuard failed");
 
-        // Same for onboarding: confirm attestOnboardingClean() was actually called for real
-        // against this deployed Guard, not just that PM's strategy happens to ship for some
-        // other reason.
-        assertTrue(guard.onboardingAttested(), "deployed Guard must have onboarding attested");
+        // Attest onboarding is clean. In a real onboarding flow this only happens after actually
+        // running an off-chain onboarding pre-existing-strategy check against this Safe's real
+        // Shipped-event history and confirming no violation. Here it's auto-attested: this is a
+        // fresh Safe on a fresh fork with no prior activity, so there is nothing for that check
+        // to find — but the attestation call itself is real and signed, exactly as it would be
+        // in production, so this still exercises the actual gate PM's strategy ships through.
+        bytes memory attestData = abi.encodeWithSignature("attestOnboardingClean()");
+        vm.prank(deployer);
+        bool attested = safe.execTransaction(
+            address(guard),
+            0,
+            attestData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            _selfApprovedSignature()
+        );
+        require(attested, "attestOnboardingClean failed");
     }
 
     function _shipCalldata(bytes memory strategy, address[] memory tokens) internal pure returns (bytes memory) {
         uint256[] memory amounts = new uint256[](tokens.length);
         return abi.encodeCall(Aqua.ship, (address(0xAAAA), strategy, tokens, amounts));
-    }
-
-    /// @dev Safe's `v == 1` pre-approved-hash signature trick -- see
-    ///      PortfolioManagerE2EBase.t.sol's `_selfApprovedSignature` for the full mechanism.
-    ///      `deployer` is `safe`'s sole owner, and every caller pranks as `deployer` first.
-    function _selfApprovedSignature() internal view returns (bytes memory) {
-        return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
     }
 
     /// @dev Contains exactly one external call (`execTransaction`), so it's safe to call directly
@@ -107,13 +132,8 @@ contract BasketScopeGuardE2ETest is Test {
         tokens[0] = basketOneToken;
         tokens[1] = basketTwoToken;
 
-        // Must match Deploy.s.sol's PM_STRATEGY_HASH exactly, or this is just another
-        // untrusted strategy and the cross-basket ship below would (correctly) fail — this
-        // reproduces that fixed placeholder strategy payload, not the hash directly, so the
-        // test is actually exercising Aqua's own `keccak256(strategy)` computation matching
-        // the Guard's stored hash, not just asserting a hash equality in isolation.
         bytes memory pmStrategy = "placeholder-pm-strategy";
-        assertEq(keccak256(pmStrategy), pmStrategyHash, "test's PM strategy payload must match the deployed hash");
+        assertEq(keccak256(pmStrategy), PM_STRATEGY_HASH, "test's PM strategy payload must match the Guard's hash");
 
         bool ok = _shipThroughSafe(pmStrategy, tokens);
         assertTrue(ok, "PM's own strategy should be allowed to span baskets on the deployed Safe");
