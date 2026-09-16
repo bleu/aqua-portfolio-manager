@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
-import {BasketXYCSwapTestBase} from "./base/BasketXYCSwapTestBase.sol";
+import {BasketXYCSwapTestBase} from "./utils/BasketXYCSwapTestBase.sol";
 
 contract BasketXYCSwapTest is BasketXYCSwapTestBase {
     function _swap(ISwapVM.Order memory order, uint256 amountIn) internal returns (uint256 amountOut) {

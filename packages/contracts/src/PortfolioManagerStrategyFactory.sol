@@ -5,6 +5,7 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
+import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
 import {PortfolioManagerArgsBuilder} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
 
@@ -25,14 +26,8 @@ import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.s
 /// contract only validates. Callers batch a call here together with the real
 /// `ship()` call in the same atomic transaction, e.g. via Safe's own audited
 /// `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.sol::_shipOnly`.
-contract PortfolioManagerStrategyFactory {
-    error PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy();
-    error PortfolioManagerStrategyFactoryDeclaredTokenNotShipped(address token);
-    error PortfolioManagerStrategyFactoryShippedTokenNotDeclared(address token);
-
-    /// @notice Reverts unless `order`'s own encoded universe matches `tokens` exactly -- same
-    ///         members, both directions. Only accepts programs whose first (and, for a real PM
-    ///         strategy, only) instruction is `PortfolioManagerProgramBuilder.CURVE_OPCODE`.
+contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
+    /// @inheritdoc IPortfolioManagerStrategyFactory
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
         bytes calldata program = MakerTraitsLib.program(order.traits, order.data);
         require(
