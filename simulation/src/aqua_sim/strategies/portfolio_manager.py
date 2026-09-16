@@ -1,9 +1,7 @@
 """The Portfolio Manager itself, as a `Strategy` — the constant-mean weighted curve
 (`curve.py`, `PRICING.md`) plus ADR-0006's fee + gas-cost profitability gate, generalized
 from a raw two-token pair to two declared `BasketGroup`s (ADR-0003), so PM correctly reacts
-to another strategy moving a basket-mate's balance without PM itself having traded
-(BLEUDEV-334 R5) — the same augmentation `basket.py` already does for one side, generalized
-to both.
+to another strategy moving a basket-mate's balance without PM itself having traded.
 """
 
 from __future__ import annotations
@@ -13,28 +11,6 @@ from dataclasses import dataclass
 from aqua_sim.basket_world import BasketGroup, BasketWorldView
 from aqua_sim.curve import CurveState, apply_exact_in, spot_price
 from aqua_sim.strategy import Trade
-
-#: BLEUDEV-327's protocol fee, per 1IP-103 (1inch's governance-approved Aqua protocol fee
-#: activation) — *not* an independent rate: a fraction of whatever `fee` the LP itself
-#: configured, 100% to the 1inch DAO Treasury, no split with Bleu or any other operator
-#: (the proposal defers operator compensation to a separate governance process). Mirrors
-#: `PortfolioManagerProgramBuilder.daoFeeBps` exactly. Not a `PortfolioManagerStrategy`
-#: field: on-chain this is computed by Bleu's own strategy-building tooling from the LP's
-#: `feeBps`, never something an LP configures directly. Pulled directly from inside the
-#: curve opcode's own execution, not a separate chainable instruction (`Aqua.ship()` is
-#: permissionless, so a separate instruction could be omitted by a hand-crafted program) —
-#: so, as modeled here too, it comes out of the wallet's `amount_in` credit, not out of the
-#: curve's own pricing math; the taker pays/receives exactly what the curve quotes either way.
-PROTOCOL_FEE_TIER_THRESHOLD = 0.001225  # 0.1225%, 1IP-103's tier boundary
-PROTOCOL_FEE_LOW_TIER_SHARE = 1 / 4
-PROTOCOL_FEE_HIGH_TIER_SHARE = 1 / 6
-
-
-def protocol_fee_bps(lp_fee: float) -> float:
-    """1IP-103's tiered protocol fee, as a fraction of `amount_in`: 1/4 of `lp_fee` at or
-    below the tier threshold, 1/6 above it. `lp_fee = 0` correctly yields `0`."""
-    share = PROTOCOL_FEE_LOW_TIER_SHARE if lp_fee <= PROTOCOL_FEE_TIER_THRESHOLD else PROTOCOL_FEE_HIGH_TIER_SHARE
-    return lp_fee * share
 
 
 def _target_balance_in_for_price(invariant_value: float, weight_in: float, weight_out: float, target_price: float) -> float:
@@ -65,11 +41,6 @@ class PortfolioManagerStrategy:
     group_a: BasketGroup
     group_b: BasketGroup
     target_weight_a: float
-    #: The LP's own curve fee (PRICING.md's `f`) — widens the curve, 100% of it stays
-    #: with the wallet as pool value, exactly as `curve.py`'s `apply_exact_in` already
-    #: models, net of whatever `protocol_fee_bps(fee)` above pulls out separately;
-    #: BLEUDEV-327 keeps the two isolated rather than carving the protocol fee out of
-    #: this one.
     fee: float = 0.0002
     gas_cost: float = 0.10
 
@@ -106,18 +77,6 @@ class PortfolioManagerStrategy:
             if profit_in_value < self.gas_cost:
                 continue
 
-            # Taker-side economics (amount_in/amount_out, the profitability check above)
-            # are unaffected by the protocol fee — it's pulled from the wallet's own
-            # credit after the fact, not folded into the curve's price (BLEUDEV-327).
-            protocol_fee_amount = amount_in * protocol_fee_bps(self.fee)
-
-            return Trade(
-                strategy_id=self.id,
-                token_in=token_in,
-                token_out=token_out,
-                amount_in=amount_in,
-                amount_out=amount_out,
-                protocol_fee_amount=protocol_fee_amount,
-            )
+            return Trade(strategy_id=self.id, token_in=token_in, token_out=token_out, amount_in=amount_in, amount_out=amount_out)
 
         return None

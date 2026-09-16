@@ -1,7 +1,6 @@
-"""Organic background flow — Poisson-arrival, random direction, lognormal size, same
-shape as the old `flows.ExogenousFlowConfig`/`basket.CoBasketAgentConfig`, ported to the
-`Strategy` interface (BLEUDEV-334 A2: kept separate from the profit-seeking competitor
-strategies in `xyc_competitor.py`, not merged into them).
+"""Organic background flow — Poisson-arrival, random direction, lognormal size. Kept
+separate from the profit-seeking competitor strategies (`xyc_competitor.py`,
+`stableswap_competitor.py`), not merged into them.
 
 Deliberately does not price against any pool's own curve: this models flow that clears at
 close to the fair oracle rate (e.g. via an external venue or aggregator) before settling

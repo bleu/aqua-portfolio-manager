@@ -16,6 +16,7 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {OracleAdapter} from "../src/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
@@ -199,7 +200,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         // pairs (ADR-0003), so this must revert rather than silently degenerate to a spot price
         // of exactly 1.
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerSwap.PortfolioManagerSwapSameGroupSwap.selector, uint256(0))
+            abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapSameGroupSwap.selector, uint256(0))
         );
         taker.swap(order, address(tokenA), address(tokenB), 500e18, takerData);
     }

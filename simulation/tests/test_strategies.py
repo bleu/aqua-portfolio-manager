@@ -1,4 +1,4 @@
-"""Regression tests for the Strategy implementations (BLEUDEV-334 R1/R3/R4)."""
+"""Regression tests for the Strategy implementations."""
 
 from __future__ import annotations
 
@@ -6,28 +6,9 @@ import unittest
 
 from aqua_sim.basket_world import BasketGroup, BasketWorldView
 from aqua_sim.strategies.noise_trader import NoiseTraderStrategy
-from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy, protocol_fee_bps
+from aqua_sim.strategies.portfolio_manager import PortfolioManagerStrategy
 from aqua_sim.strategies.stableswap_competitor import StableSwapCompetitorStrategy
 from aqua_sim.strategies.xyc_competitor import XYCCompetitorStrategy
-
-
-class ProtocolFeeBpsTest(unittest.TestCase):
-    """1IP-103's tiered formula, mirrored from `PortfolioManagerProgramBuilder.daoFeeBps`."""
-
-    def test_low_tier_is_one_quarter(self) -> None:
-        self.assertAlmostEqual(protocol_fee_bps(0.0005), 0.0005 / 4)
-
-    def test_high_tier_is_one_sixth(self) -> None:
-        self.assertAlmostEqual(protocol_fee_bps(0.005), 0.005 / 6)
-
-    def test_threshold_itself_is_low_tier(self) -> None:
-        self.assertAlmostEqual(protocol_fee_bps(0.001225), 0.001225 / 4)
-
-    def test_just_above_threshold_is_high_tier(self) -> None:
-        self.assertAlmostEqual(protocol_fee_bps(0.0012251), 0.0012251 / 6)
-
-    def test_zero_fee_yields_zero(self) -> None:
-        self.assertEqual(protocol_fee_bps(0.0), 0.0)
 
 
 class PortfolioManagerStrategyTest(unittest.TestCase):
@@ -63,41 +44,9 @@ class PortfolioManagerStrategyTest(unittest.TestCase):
         self.assertGreater(trade.amount_in, 0)
         self.assertGreater(trade.amount_out, 0)
 
-    def test_protocol_fee_is_a_tiered_fraction_of_the_lp_curve_fee(self) -> None:
-        # BLEUDEV-327 / 1IP-103: the protocol fee is not fixed -- it's 1/4 or 1/6 of
-        # whatever `self.fee` (the LP's own curve fee) is, not an independent number.
-        view = BasketWorldView(
-            token_balances={"WETH": 15.0, "USDC": 20_000.0},
-            reference_prices={"WETH": 2000.0, "USDC": 1.0},
-            groups=[self.group_a, self.group_b],
-        )
-        pm_low_tier_fee = PortfolioManagerStrategy(
-            id="pm", token_a="WETH", token_b="USDC", group_a=self.group_a, group_b=self.group_b,
-            target_weight_a=0.5, fee=0.0002,  # 2bps, below the 0.1225% tier threshold
-        )
-        trade = pm_low_tier_fee.decide_trade(view)
-        self.assertIsNotNone(trade)
-        self.assertGreater(trade.protocol_fee_amount, 0)
-        self.assertAlmostEqual(trade.protocol_fee_amount, trade.amount_in * protocol_fee_bps(0.0002))
-        self.assertAlmostEqual(protocol_fee_bps(0.0002), 0.0002 / 4)
-
-    def test_zero_lp_fee_means_zero_protocol_fee(self) -> None:
-        view = BasketWorldView(
-            token_balances={"WETH": 15.0, "USDC": 20_000.0},
-            reference_prices={"WETH": 2000.0, "USDC": 1.0},
-            groups=[self.group_a, self.group_b],
-        )
-        pm_zero_fee = PortfolioManagerStrategy(
-            id="pm", token_a="WETH", token_b="USDC", group_a=self.group_a, group_b=self.group_b,
-            target_weight_a=0.5, fee=0.0,
-        )
-        trade = pm_zero_fee.decide_trade(view)
-        self.assertIsNotNone(trade)
-        self.assertEqual(trade.protocol_fee_amount, 0.0)
-
     def test_reacts_to_basket_mate_moving_without_pm_trading(self) -> None:
         # A basket-mate (USDT) in the same group as USDC grew -- PM's quote should move
-        # even though only WETH/USDC balances are directly PM's own (R5).
+        # even though only WETH/USDC balances are directly PM's own.
         group_stables = BasketGroup("B", ("USDC", "USDT"))
         pm = PortfolioManagerStrategy(
             id="pm", token_a="WETH", token_b="USDC", group_a=self.group_a, group_b=group_stables, target_weight_a=0.5
@@ -124,9 +73,11 @@ class XYCCompetitorStrategyTest(unittest.TestCase):
     def test_corrects_toward_market_rate_when_profitable(self) -> None:
         # Excess USDC relative to USDT -- the pool should shed USDC (token_out) and
         # receive USDT (token_in) to move back toward the 1:1 market rate.
-        competitor = XYCCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.001, gas_cost=0.01)
+        competitor = XYCCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=12_000.0, virtual_balance_b=8_000.0, fee=0.001, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 12_000.0, "USDT": 8_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
@@ -136,20 +87,41 @@ class XYCCompetitorStrategyTest(unittest.TestCase):
         self.assertEqual(trade.token_out, "USDC")
 
     def test_no_trade_when_balanced(self) -> None:
-        competitor = XYCCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.001, gas_cost=0.01)
+        competitor = XYCCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=10_000.0, virtual_balance_b=10_000.0, fee=0.001, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 10_000.0, "USDT": 10_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
         self.assertIsNone(competitor.decide_trade(view))
 
+    def test_does_not_affect_a_different_instances_own_reserves(self) -> None:
+        # Two competitor instances on the same pair, isolated: correcting one's own
+        # reserves must never touch the other's -- the whole point of running on virtual,
+        # isolated reserves instead of the shared real wallet balance.
+        competitor_1 = XYCCompetitorStrategy(
+            id="c1", token_a="USDC", token_b="USDT", virtual_balance_a=12_000.0, virtual_balance_b=8_000.0, fee=0.001, gas_cost=0.01
+        )
+        competitor_2 = XYCCompetitorStrategy(
+            id="c2", token_a="USDC", token_b="USDT", virtual_balance_a=10_000.0, virtual_balance_b=10_000.0, fee=0.001, gas_cost=0.01
+        )
+        view = BasketWorldView(
+            token_balances={}, reference_prices={"USDC": 1.0, "USDT": 1.0}, groups=[BasketGroup("stables", ("USDC", "USDT"))]
+        )
+        competitor_1.decide_trade(view)
+        self.assertEqual(competitor_2.virtual_balance_a, 10_000.0)
+        self.assertEqual(competitor_2.virtual_balance_b, 10_000.0)
+
 
 class StableSwapCompetitorStrategyTest(unittest.TestCase):
     def test_corrects_toward_market_rate_when_profitable(self) -> None:
-        competitor = StableSwapCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.01)
+        competitor = StableSwapCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=12_000.0, virtual_balance_b=8_000.0, fee=0.0004, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 12_000.0, "USDT": 8_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
@@ -159,9 +131,11 @@ class StableSwapCompetitorStrategyTest(unittest.TestCase):
         self.assertEqual(trade.token_out, "USDC")
 
     def test_no_trade_when_balanced(self) -> None:
-        competitor = StableSwapCompetitorStrategy(id="c", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.01)
+        competitor = StableSwapCompetitorStrategy(
+            id="c", token_a="USDC", token_b="USDT", virtual_balance_a=10_000.0, virtual_balance_b=10_000.0, fee=0.0004, gas_cost=0.01
+        )
         view = BasketWorldView(
-            token_balances={"USDC": 10_000.0, "USDT": 10_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
@@ -172,12 +146,16 @@ class StableSwapCompetitorStrategyTest(unittest.TestCase):
         # pool's own price much less than the same trade against a plain constant-product
         # pool -- the actual point of using it for a pegged pair.
         view = BasketWorldView(
-            token_balances={"USDC": 11_000.0, "USDT": 9_000.0},
+            token_balances={},
             reference_prices={"USDC": 1.0, "USDT": 1.0},
             groups=[BasketGroup("stables", ("USDC", "USDT"))],
         )
-        stable_trade = StableSwapCompetitorStrategy(id="s", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.0).decide_trade(view)
-        xyc_trade = XYCCompetitorStrategy(id="x", token_a="USDC", token_b="USDT", fee=0.0004, gas_cost=0.0).decide_trade(view)
+        stable_trade = StableSwapCompetitorStrategy(
+            id="s", token_a="USDC", token_b="USDT", virtual_balance_a=11_000.0, virtual_balance_b=9_000.0, fee=0.0004, gas_cost=0.0
+        ).decide_trade(view)
+        xyc_trade = XYCCompetitorStrategy(
+            id="x", token_a="USDC", token_b="USDT", virtual_balance_a=11_000.0, virtual_balance_b=9_000.0, fee=0.0004, gas_cost=0.0
+        ).decide_trade(view)
         self.assertIsNotNone(stable_trade)
         self.assertIsNotNone(xyc_trade)
         # StableSwap resists the price move harder, so it takes *more* volume to reach

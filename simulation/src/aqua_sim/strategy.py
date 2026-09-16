@@ -32,14 +32,6 @@ class Trade:
     nothing else may). `amount_out` is filled in by the strategy's own pricing math
     before the trade is offered to `BasketWorld.apply` — the world never re-derives it,
     only validates and moves balances.
-
-    `protocol_fee_amount` (default 0, most strategies never set it) is BLEUDEV-327's
-    protocol fee: value pulled from the wallet's `token_in` credit on top of
-    `amount_in` actually landing, pulled to the 1inch DAO Treasury outside this ledger, not
-    part of the trade's own pricing (`curve.py`'s `fee` argument, which stays whatever
-    the LP configured, is unaffected — see `strategies/portfolio_manager.py`). Real
-    only for the Portfolio Manager's own trades; a competing strategy has no such
-    mechanism and always leaves this at 0.
     """
 
     strategy_id: str
@@ -47,7 +39,6 @@ class Trade:
     token_out: str
     amount_in: float
     amount_out: float
-    protocol_fee_amount: float = 0.0
 
 
 class Strategy(Protocol):

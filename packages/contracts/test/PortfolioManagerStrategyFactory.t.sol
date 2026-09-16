@@ -11,6 +11,7 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
+import {IPortfolioManagerStrategyFactory} from "../src/interfaces/IPortfolioManagerStrategyFactory.sol";
 
 /// @notice Confirms the factory actually closes the gap it exists for: a mismatch between
 /// PortfolioManagerArgsBuilder's declared universe and IAqua.ship()'s own tokens array, in
@@ -115,7 +116,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                PortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryDeclaredTokenNotShipped.selector,
+                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryDeclaredTokenNotShipped.selector,
                 address(tokenC)
             )
         );
@@ -140,7 +141,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                PortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryShippedTokenNotDeclared.selector,
+                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryShippedTokenNotDeclared.selector,
                 address(tokenC)
             )
         );
@@ -178,7 +179,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         tokens[0] = address(tokenA);
 
         vm.expectRevert(
-            PortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy.selector
+            IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy.selector
         );
         factory.requireUniverseMatches(order, tokens);
     }

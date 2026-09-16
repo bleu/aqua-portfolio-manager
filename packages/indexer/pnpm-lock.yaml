@@ -6,15 +6,11 @@ settings:
 
 importers:
 
-  .: {}
-
-  packages/contracts: {}
-
-  packages/indexer:
+  .:
     dependencies:
       envio:
         specifier: ^3.9.0
-        version: 3.12.0(react-dom@19.3.0(react@19.2.5))(typescript@5.9.3)
+        version: 3.9.0(react-dom@19.2.8(react@19.2.5))(typescript@5.9.3)
     devDependencies:
       typescript:
         specifier: ^5.6.0
@@ -28,6 +24,14 @@ packages:
   '@alcalzone/ansi-tokenize@0.2.5':
     resolution: {integrity: sha512-3NX/MpTdroi0aKz134A6RC2Gb2iXVECN4QaAXnvCIxxIm3C3AVB1mkUe8NaaiyvOpDfsrqWhYtj+Q6a62RrTsw==}
     engines: {node: '>=18'}
+
+  '@clickhouse/client-common@1.17.0':
+    resolution: {integrity: sha512-MiwwgXViFAQA2YZkN4ymF1ynzG0K49KeSX9/iOcmJetWkxqSekDdpyp1GjwATWa9R215uQ+hGzJtJujeQVZZIw==}
+    deprecated: 'Deprecated: import from @clickhouse/client or @clickhouse/client-web instead.'
+
+  '@clickhouse/client@1.17.0':
+    resolution: {integrity: sha512-Y3DQoamKZ/Iyosoq7Lj7lqpDkQDK4R/5mI52yJs4ZLPIO+d6/CYDqTbFBIb4No3C/AlXUYE4TKhj/kXDpe6rOA==}
+    engines: {node: '>=16'}
 
   '@elastic/ecs-helpers@1.1.0':
     resolution: {integrity: sha512-MDLb2aFeGjg46O5mLpdCzT5yOUDnXToJSrco2ShqGIXxNJaM8uJjX+4nd+hRYV4Vex8YJyDtOFEVBldQct6ndg==}
@@ -259,8 +263,8 @@ packages:
   '@types/bn.js@5.2.0':
     resolution: {integrity: sha512-DLbJ1BPqxvQhIGbeu8VbUC1DiAiahHtAYvA0ZEAa4P31F7IaArc8z3C3BRQdWX4mtLQuABG4yzp76ZrS02Ui1Q==}
 
-  '@types/node@22.20.3':
-    resolution: {integrity: sha512-DZmzkmwHzXrLPAXPyKNDzlIwMMUZCVacoD25ywdy5YTKGbOx/2ld+Q38Im2zJ0vBuZP5Prd3VZutKZyXwkOS8A==}
+  '@types/node@26.5.0':
+    resolution: {integrity: sha512-dVSGpriSoCgz8WnDNTuSSuSv1PC/ALXihO4ulRZt7Md8k9mlbdin3lGOcDE8SnWOgf513ByWlXd7BK4azmyg/A==}
 
   abitype@1.2.3:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
@@ -461,33 +465,33 @@ packages:
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
 
-  envio-darwin-arm64@3.12.0:
-    resolution: {integrity: sha512-YweJ2OgLk+DGMobSGk05GpmucjdlwzwVXSS/kzS1OCvwhfSRz8TQKDhV3wJcWlEnDucffn/CJ3rPaxISWdPL+w==}
+  envio-darwin-arm64@3.9.0:
+    resolution: {integrity: sha512-vopMlVb8z2JzZiMSVzu7JqrbHys7KvUDVN573zYcMrC2Nfub7pHIuiRZb+VWBjImnyrs6mGMBVbw5uyG8/clBg==}
     cpu: [arm64]
     os: [darwin]
 
-  envio-darwin-x64@3.12.0:
-    resolution: {integrity: sha512-T+Bk7MRg7IH9ZA9ZiqibnjWU/pNbapWNvz0ISIPF39zMcfy+JDg81LRbza8HWVqPus6RaETzpv5U/tGEPMi9+w==}
+  envio-darwin-x64@3.9.0:
+    resolution: {integrity: sha512-Uc56UXe6xK8no891gwhHTHOvbQcAm/fzTsGYG8VacnyUsNN1Fr3iOwVIWCIa16wkd6XSwBo+c4L+XqjuGINGBQ==}
     cpu: [x64]
     os: [darwin]
 
-  envio-linux-arm64@3.12.0:
-    resolution: {integrity: sha512-sbc2PGlh3BTRkcegbxd2UXEzIdE9EtmvgJ+hTE2yRyk6vrMBMYJncIToFi4jKE5OROkUzk9hRu1hfEP1MGis4A==}
+  envio-linux-arm64@3.9.0:
+    resolution: {integrity: sha512-zz49tx1SLgKAqvRn0CPoZmS8dgzZekKAtBJ4Vc9CYvEg0yIsA1y9JL2FEhz2losdLdUp1Wj9up5xb3IjCP/p2A==}
     cpu: [arm64]
     os: [linux]
 
-  envio-linux-x64-musl@3.12.0:
-    resolution: {integrity: sha512-P+I9g+nhqh+a4KXEoHDNopdWYyo4zfoTf0n1LWFj7/BoxAfeM1IQxTrDsFvCKivW+rylFy4QIMINrNBa0zsryg==}
+  envio-linux-x64-musl@3.9.0:
+    resolution: {integrity: sha512-Y/xJWX3albrMmDFZuAuxMlIxTelef607Ks25KvumTTryavD8SRd7/JJt4pynA5cfGY1uS7JtPnkJbBmFJNevKQ==}
     cpu: [x64]
     os: [linux]
 
-  envio-linux-x64@3.12.0:
-    resolution: {integrity: sha512-SRjp5fRkX/AaNpoY6IFsbXM16qoMiy7kZyC50kTSJ3n4rxuz1ajcesdYAIg9GpAnRrsEs5yPkgxShllIrbhteQ==}
+  envio-linux-x64@3.9.0:
+    resolution: {integrity: sha512-QT/9OSWVXUmgpOZqWPStz81aB6iB8jZ4WX/T0hfWose/cGr4qNuhlBS/+Yop9UGpltJxtnO731TGqY8c0IqGJw==}
     cpu: [x64]
     os: [linux]
 
-  envio@3.12.0:
-    resolution: {integrity: sha512-OSyjzo3TUrYljTnsI5lxpli/LWrYzbmFbLUvv7ppWKNJZtJtNh9BGCciZppakBpJ40gbdPumzetEyhxleaUHtQ==}
+  envio@3.9.0:
+    resolution: {integrity: sha512-2ce6uYvmv8a+hGokyGWxY4KrbY9I0HklEvTSzSyYHLiLAtuEZ+STQNtRG4Jpx6OzAMBVymok3B7IPk258le1Iw==}
     engines: {node: '>=22.0.0'}
     hasBin: true
 
@@ -837,8 +841,8 @@ packages:
   prop-types@15.8.1:
     resolution: {integrity: sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==}
 
-  proxy-addr@2.0.8:
-    resolution: {integrity: sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==}
+  proxy-addr@2.0.7:
+    resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
 
   pump@3.0.4:
@@ -863,10 +867,10 @@ packages:
     resolution: {integrity: sha512-8zGqypfENjCIqGhgXToC8aB2r7YrBX+AQAfIPs/Mlk+BtPTztOvTS01NRW/3Eh60J+a48lt8qsCzirQ6loCVfA==}
     engines: {node: '>= 0.8'}
 
-  react-dom@19.3.0:
-    resolution: {integrity: sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q==}
+  react-dom@19.2.8:
+    resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
     peerDependencies:
-      react: ^19.3.0
+      react: ^19.2.8
 
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
@@ -922,9 +926,6 @@ packages:
 
   scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
-
-  scheduler@0.28.0:
-    resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
 
   secure-json-parse@4.1.0:
     resolution: {integrity: sha512-l4KnYfEyqYJxDwlNVyRfO2E4NTHfMKAWdUuA8J0yve2Dz/E/PdBepY03RvyJpssIpRFwJoCD55wA+mEDs6ByWA==}
@@ -1048,8 +1049,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
   unpipe@1.0.0:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
@@ -1141,6 +1142,12 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
+
+  '@clickhouse/client-common@1.17.0': {}
+
+  '@clickhouse/client@1.17.0':
+    dependencies:
+      '@clickhouse/client-common': 1.17.0
 
   '@elastic/ecs-helpers@1.1.0':
     dependencies:
@@ -1278,10 +1285,10 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@rescript/react@0.14.1(react-dom@19.3.0(react@19.2.5))(react@19.2.5)':
+  '@rescript/react@0.14.1(react-dom@19.2.8(react@19.2.5))(react@19.2.5)':
     dependencies:
       react: 19.2.5
-      react-dom: 19.3.0(react@19.2.5)
+      react-dom: 19.2.8(react@19.2.5)
 
   '@rescript/runtime@12.2.0': {}
 
@@ -1300,11 +1307,11 @@ snapshots:
 
   '@types/bn.js@5.2.0':
     dependencies:
-      '@types/node': 22.20.3
+      '@types/node': 26.5.0
 
-  '@types/node@22.20.3':
+  '@types/node@26.5.0':
     dependencies:
-      undici-types: 6.21.0
+      undici-types: 8.9.0
 
   abitype@1.2.3(typescript@5.9.3):
     optionalDependencies:
@@ -1474,30 +1481,31 @@ snapshots:
     dependencies:
       once: 1.4.0
 
-  envio-darwin-arm64@3.12.0:
+  envio-darwin-arm64@3.9.0:
     optional: true
 
-  envio-darwin-x64@3.12.0:
+  envio-darwin-x64@3.9.0:
     optional: true
 
-  envio-linux-arm64@3.12.0:
+  envio-linux-arm64@3.9.0:
     optional: true
 
-  envio-linux-x64-musl@3.12.0:
+  envio-linux-x64-musl@3.9.0:
     optional: true
 
-  envio-linux-x64@3.12.0:
+  envio-linux-x64@3.9.0:
     optional: true
 
-  envio@3.12.0(react-dom@19.3.0(react@19.2.5))(typescript@5.9.3):
+  envio@3.9.0(react-dom@19.2.8(react@19.2.5))(typescript@5.9.3):
     dependencies:
+      '@clickhouse/client': 1.17.0
       '@elastic/ecs-pino-format': 1.4.0
       '@fuel-ts/crypto': 0.96.1
       '@fuel-ts/errors': 0.96.1
       '@fuel-ts/hasher': 0.96.1
       '@fuel-ts/math': 0.96.1
       '@fuel-ts/utils': 0.96.1
-      '@rescript/react': 0.14.1(react-dom@19.3.0(react@19.2.5))(react@19.2.5)
+      '@rescript/react': 0.14.1(react-dom@19.2.8(react@19.2.5))(react@19.2.5)
       '@rescript/runtime': 12.2.0
       bignumber.js: 9.3.1
       date-fns: 3.3.1
@@ -1517,11 +1525,11 @@ snapshots:
       viem: 2.54.0(typescript@5.9.3)
       yargs: 17.7.2
     optionalDependencies:
-      envio-darwin-arm64: 3.12.0
-      envio-darwin-x64: 3.12.0
-      envio-linux-arm64: 3.12.0
-      envio-linux-x64: 3.12.0
-      envio-linux-x64-musl: 3.12.0
+      envio-darwin-arm64: 3.9.0
+      envio-darwin-x64: 3.9.0
+      envio-linux-arm64: 3.9.0
+      envio-linux-x64: 3.9.0
+      envio-linux-x64-musl: 3.9.0
     transitivePeerDependencies:
       - '@types/react'
       - bufferutil
@@ -1612,7 +1620,7 @@ snapshots:
       on-finished: 2.4.1
       parseurl: 1.3.3
       path-to-regexp: 0.1.7
-      proxy-addr: 2.0.8
+      proxy-addr: 2.0.7
       qs: 6.11.0
       range-parser: 1.2.1
       safe-buffer: 5.2.1
@@ -1923,7 +1931,7 @@ snapshots:
       object-assign: 4.1.1
       react-is: 16.13.1
 
-  proxy-addr@2.0.8:
+  proxy-addr@2.0.7:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
@@ -1950,10 +1958,10 @@ snapshots:
       iconv-lite: 0.4.24
       unpipe: 1.0.0
 
-  react-dom@19.3.0(react@19.2.5):
+  react-dom@19.2.8(react@19.2.5):
     dependencies:
       react: 19.2.5
-      scheduler: 0.28.0
+      scheduler: 0.27.0
 
   react-is@16.13.1: {}
 
@@ -1988,8 +1996,6 @@ snapshots:
   safer-buffer@2.1.2: {}
 
   scheduler@0.27.0: {}
-
-  scheduler@0.28.0: {}
 
   secure-json-parse@4.1.0: {}
 
@@ -2134,7 +2140,7 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  undici-types@6.21.0: {}
+  undici-types@8.9.0: {}
 
   unpipe@1.0.0: {}
 

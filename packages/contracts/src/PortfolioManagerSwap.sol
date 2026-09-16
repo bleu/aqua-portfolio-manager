@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
+import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
 import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
@@ -35,16 +36,8 @@ import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 ///      any of its instruction functions, which wrap "the rest of the program" in a way that
 ///      only composes correctly across separate chained instructions, not within one function
 ///      body that still has its own pricing left to do afterward.
-contract PortfolioManagerSwap is Fee {
+contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
-
-    error PortfolioManagerSwapTokenNotDeclared(address token);
-    error PortfolioManagerSwapRecomputeDetected();
-    /// @dev The curve only prices cross-group pairs (ADR-0003: "intra-group drift is allowed
-    ///      by design," i.e. not priced by this formula at all) — a same-group swap would
-    ///      silently degenerate to a spot price of exactly 1 with zero skew-based curve
-    ///      behavior, so it's rejected outright instead of left as an undefined edge case.
-    error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
 
     uint256 private constant WAD = 1e18;
     /// @dev Converts PortfolioManagerArgsBuilder's `feeBps` (PM_BPS = 1e9 scale) into

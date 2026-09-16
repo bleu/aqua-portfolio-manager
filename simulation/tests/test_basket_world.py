@@ -1,5 +1,5 @@
-"""Regression tests for BasketGroup, GroupBoundaryGuard, and BasketWorld.apply
-(BLEUDEV-334 R5/R6's actual enforcement logic)."""
+"""Regression tests for BasketGroup, GroupBoundaryGuard, and BasketWorld.apply --
+the actual group-boundary enforcement logic."""
 
 from __future__ import annotations
 
@@ -100,32 +100,6 @@ class BasketWorldApplyTest(unittest.TestCase):
         self.assertTrue(applied)
         self.assertEqual(self.world.token_balances["TOKEN_A"], 110.0)
         self.assertEqual(self.world.token_balances["TOKEN_B"], 95.0)
-
-    def test_protocol_fee_reduces_wallet_credit_and_accumulates_as_revenue(self) -> None:
-        # BLEUDEV-327: the wallet's real credit for token_in is amount_in net of the
-        # protocol fee, not the full amount_in -- and the skimmed amount is tracked as
-        # revenue, not just discarded.
-        group_c = BasketGroup("C", ("TOKEN_A", "TOKEN_B"))
-        self.world.groups = [group_c]
-        trade = Trade(
-            strategy_id=OTHER_ID, token_in="TOKEN_A", token_out="TOKEN_B",
-            amount_in=10.0, amount_out=5.0, protocol_fee_amount=0.002,
-        )
-        applied = self.world.apply(trade)
-        self.assertTrue(applied)
-        self.assertEqual(self.world.token_balances["TOKEN_A"], 100.0 + 10.0 - 0.002)
-        self.assertEqual(self.world.token_balances["TOKEN_B"], 95.0)
-        self.assertEqual(self.world.protocol_fee_revenue, 0.002)
-
-    def test_zero_protocol_fee_by_default_matches_prior_full_credit_behavior(self) -> None:
-        # Every non-PM strategy's Trade leaves protocol_fee_amount at its 0.0 default --
-        # confirms this change is a no-op for anything that doesn't opt in.
-        group_c = BasketGroup("C", ("TOKEN_A", "TOKEN_B"))
-        self.world.groups = [group_c]
-        trade = Trade(strategy_id=OTHER_ID, token_in="TOKEN_A", token_out="TOKEN_B", amount_in=10.0, amount_out=5.0)
-        self.world.apply(trade)
-        self.assertEqual(self.world.token_balances["TOKEN_A"], 110.0)
-        self.assertEqual(self.world.protocol_fee_revenue, 0.0)
 
     def test_blocked_trade_leaves_balances_untouched(self) -> None:
         trade = Trade(strategy_id=OTHER_ID, token_in="TOKEN_A", token_out="TOKEN_B", amount_in=10.0, amount_out=5.0)
