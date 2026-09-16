@@ -13,21 +13,23 @@ import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.so
 /// correctly), which would still pass even if the opcode or length byte were wrong as long as
 /// VM.sol's own parser happened to tolerate it.
 contract PortfolioManagerProgramBuilderTest is Test {
-    function _universe() internal pure returns (address[] memory tokens, uint256[] memory weights) {
-        tokens = new address[](2);
-        tokens[0] = address(0x1111111111111111111111111111111111111111);
-        tokens[1] = address(0x2222222222222222222222222222222222222222);
-        weights = new uint256[](2);
-        weights[0] = 0.5e18;
-        weights[1] = 0.5e18;
+    function _groups() internal pure returns (PortfolioManagerArgsBuilder.Group[] memory groups) {
+        address[2] memory tokens = [address(0x1111), address(0x2222)];
+        address[2] memory feeds = [address(0xFEED1), address(0xFEED2)];
+        groups = new PortfolioManagerArgsBuilder.Group[](2);
+        for (uint256 i = 0; i < 2; i++) {
+            PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+            members[0] = PortfolioManagerArgsBuilder.Member({token: tokens[i], feed: feeds[i], maxStaleness: 3600});
+            groups[i] = PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: members});
+        }
     }
 
     function test_BuildProducesCorrectWireFormat() public pure {
-        (address[] memory tokens, uint256[] memory weights) = _universe();
+        PortfolioManagerArgsBuilder.Group[] memory groups = _groups();
         uint32 feeBps = 200_000; // 2 bps at PM_BPS = 1e9 scale
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(tokens, weights, feeBps);
-        bytes memory expectedArgs = PortfolioManagerArgsBuilder.build(tokens, weights, feeBps);
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, feeBps);
+        bytes memory expectedArgs = PortfolioManagerArgsBuilder.build(groups, feeBps);
 
         assertEq(program.length, 2 + expectedArgs.length, "opcode byte + argsLength byte + args");
         assertEq(uint8(program[0]), PortfolioManagerProgramBuilder.CURVE_OPCODE, "opcode byte");

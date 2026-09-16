@@ -12,4 +12,9 @@ pragma solidity 0.8.30;
 interface IPortfolioManagerSwap {
     error PortfolioManagerSwapTokenNotDeclared(address token);
     error PortfolioManagerSwapRecomputeDetected();
+    /// @dev The curve only prices cross-group pairs (ADR-0003: "intra-group drift is allowed
+    ///      by design," i.e. not priced by this formula at all) — a same-group swap would
+    ///      silently degenerate to a spot price of exactly 1 with zero skew-based curve
+    ///      behavior, so it's rejected outright instead of left as an undefined edge case.
+    error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
 }

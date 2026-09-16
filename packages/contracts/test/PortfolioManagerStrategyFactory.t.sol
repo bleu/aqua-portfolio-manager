@@ -8,6 +8,7 @@ import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 
+import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerStrategyFactory} from "../src/interfaces/IPortfolioManagerStrategyFactory.sol";
@@ -35,12 +36,30 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         maker = vm.addr(0x1234);
     }
 
+    /// @dev The factory only cross-checks token membership, never prices anything, so a shared
+    ///      dummy feed address across every single-member group is fine here.
+    address internal constant DUMMY_FEED = address(0xFEED);
+
+    function _groups(address[] memory declaredTokens, uint256[] memory weights)
+        internal
+        pure
+        returns (PortfolioManagerArgsBuilder.Group[] memory groups)
+    {
+        groups = new PortfolioManagerArgsBuilder.Group[](declaredTokens.length);
+        for (uint256 i = 0; i < declaredTokens.length; i++) {
+            PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+            members[0] =
+                PortfolioManagerArgsBuilder.Member({token: declaredTokens[i], feed: DUMMY_FEED, maxStaleness: 1 hours});
+            groups[i] = PortfolioManagerArgsBuilder.Group({weight: weights[i], members: members});
+        }
+    }
+
     function _order(address[] memory declaredTokens, uint256[] memory weights)
         internal
         view
         returns (ISwapVM.Order memory)
     {
-        bytes memory program = PortfolioManagerProgramBuilder.build(declaredTokens, weights, 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declaredTokens, weights), 0);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,

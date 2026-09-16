@@ -33,13 +33,13 @@ library PortfolioManagerProgramBuilder {
     ///      geometric midpoint of 0.05% and 0.30%") at `PM_BPS = 1e9` scale.
     uint32 internal constant TIER_THRESHOLD_BPS = 1_225_000;
 
-    /// @param tokens, weights, feeBps  The LP's own declared universe and curve fee.
-    function build(address[] memory tokens, uint256[] memory weights, uint32 feeBps)
+    /// @param groups, feeBps  The LP's own declared groups and curve fee.
+    function build(PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps)
         internal
         pure
         returns (bytes memory program)
     {
-        bytes memory args = PortfolioManagerArgsBuilder.build(tokens, weights, feeBps);
+        bytes memory args = PortfolioManagerArgsBuilder.build(groups, feeBps);
         program = abi.encodePacked(CURVE_OPCODE, args.length.toUint8(), args);
     }
 
