@@ -59,8 +59,8 @@ library OracleAdapter {
     /// @notice `Σ (token_balance_j × oracle_price_j)` over a group's declared members
     ///         (ADR-0003), converted to one comparable WAD-scaled value — PRICING.md's `B_i`/
     ///         `B_o` for a multi-token group. `balances` are each token's own real, native-
-    ///         decimal balance (e.g. from `ExposureReader`), not yet normalized for either the
-    ///         token's own decimals or the feed's — both normalizations happen here.
+    ///         decimal balance (e.g. a plain wallet `balanceOf` read), not yet normalized for
+    ///         either the token's own decimals or the feed's — both normalizations happen here.
     function groupValueWad(address[] memory tokens, uint256[] memory balances, PriceFeed[] memory feeds)
         internal
         view
