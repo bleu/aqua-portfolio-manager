@@ -53,6 +53,22 @@ contract BasketScopeGuardTest is Test {
     }
 
     // ---------------------------------------------------------------------
+    // Constructor validation
+    // ---------------------------------------------------------------------
+
+    function test_RevertsOnTokenBasketLengthMismatch() public {
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+
+        uint256[] memory basketIds = new uint256[](1);
+        basketIds[0] = 1;
+
+        vm.expectRevert(IBasketScopeGuard.TokenBasketLengthMismatch.selector);
+        new BasketScopeGuard(address(aqua), address(this), pmStrategyHash, tokens, basketIds);
+    }
+
+    // ---------------------------------------------------------------------
     // Unit tests against the Guard's own check logic (checkTransaction)
     // ---------------------------------------------------------------------
 
