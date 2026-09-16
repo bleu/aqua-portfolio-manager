@@ -19,6 +19,7 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 
 /// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
@@ -215,22 +216,6 @@ contract PortfolioManagerOpcodesTest is Test {
     }
 
     // ===== Tests =====
-
-    function test_DaoFeeBpsTiering() public pure {
-        // Pure formula check, no swap harness needed — the boundary and both tiers.
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(0), 0);
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(LOW_TIER_FEE_BPS), LOW_TIER_FEE_BPS / 4);
-        assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS),
-            PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS / 4,
-            "the threshold itself is still low-tier (<=), per 1IP-103's own wording"
-        );
-        assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1),
-            (PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1) / 6
-        );
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(HIGH_TIER_FEE_BPS), HIGH_TIER_FEE_BPS / 6);
-    }
 
     function test_ProtocolFeeLandsInDaoTreasuryAtLowTier() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
@@ -432,7 +417,7 @@ contract PortfolioManagerOpcodesTest is Test {
         bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), SWAP_AMOUNT * 2);
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
+            abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
         );
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }

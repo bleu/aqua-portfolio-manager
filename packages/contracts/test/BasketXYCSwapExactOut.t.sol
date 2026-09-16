@@ -8,7 +8,7 @@ pragma solidity 0.8.30;
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
-import {BasketXYCSwapTestBase} from "./base/BasketXYCSwapTestBase.sol";
+import {BasketXYCSwapTestBase} from "./utils/BasketXYCSwapTestBase.sol";
 
 contract BasketXYCSwapExactOutTest is BasketXYCSwapTestBase {
     function _swapExactOut(ISwapVM.Order memory order, uint256 amountOut) internal returns (uint256 amountIn) {

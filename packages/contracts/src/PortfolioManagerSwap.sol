@@ -6,6 +6,7 @@ pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
+import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
 import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
@@ -29,11 +30,8 @@ import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.s
 ///      any of its instruction functions, which wrap "the rest of the program" in a way that
 ///      only composes correctly across separate chained instructions, not within one function
 ///      body that still has its own pricing left to do afterward.
-contract PortfolioManagerSwap is Fee {
+contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
-
-    error PortfolioManagerSwapTokenNotDeclared(address token);
-    error PortfolioManagerSwapRecomputeDetected();
 
     uint256 private constant WAD = 1e18;
     /// @dev Converts PortfolioManagerArgsBuilder's `feeBps` (PM_BPS = 1e9 scale) into
