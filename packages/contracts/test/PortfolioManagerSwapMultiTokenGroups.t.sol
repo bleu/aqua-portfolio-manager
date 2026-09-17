@@ -289,6 +289,65 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
     }
 
+    /// @notice Deterministic reproduction of PortfolioManagerSwapInsufficientMemberBalance,
+    /// rather than relying on the fuzz test below to land on it by chance: tokenA holds 1 wei
+    /// while tokenB (same group, same $1 price -- no depeg needed to trigger this) holds
+    /// 1,000,000 tokens, so group0's value is almost entirely tokenB's. A trade sized off that
+    /// value asks for far more raw tokenA than the 1 wei that actually exists.
+    function test_RevertsOnInsufficientMemberBalanceForASpecificDepeggedMember() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
+
+        bytes memory takerData = TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: true,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
+        tokenC.mint(address(taker), 1_000_000e18);
+
+        // Independently computed expected `requested`, the same way
+        // test_MultiMemberGroupPricesOffFullGroupValueNotJustTheTradedToken does: both tokens are
+        // still pegged at $1 here (this reproduction doesn't need a real depeg, just a raw
+        // balance far below a group's value share), so group0's value is exactly balA + balB and
+        // the value-to-tokenA-raw-units conversion is 1:1.
+        PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
+            balanceIn: 1_000_000e18,
+            balanceOut: 1 + 1_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
+                address(tokenA),
+                expectedRequested,
+                1
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+    }
+
     // ===== Fuzz: depeg divergence inside a multi-token group =====
 
     /// @notice group0's two members (tokenA, tokenB) are fuzzed to independently diverging
@@ -299,11 +358,13 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     /// pre-aggregated balance pair, must hold here too now that `balanceIn`/`balanceOut` are
     /// actually the oracle-summed value of a *divergently-priced* multi-token group (the real
     /// wiring this file exists to exercise), not a value handed to the formula directly.
-    /// @dev Either leg may legitimately revert with
-    /// `PortfolioManagerSwapInsufficientMemberBalance` -- a low-priced minority member's own raw
-    /// balance can be smaller than its share of the group's total value under wide enough
-    /// divergence, which is exactly what that guard exists to catch cleanly instead of an
-    /// `Aqua.pull()` underflow. Only asserted when both legs actually complete.
+    /// @dev Either leg may legitimately revert with `PortfolioManagerSwapInsufficientMemberBalance`
+    /// (a low-priced minority member's own raw balance smaller than its share of the group's
+    /// total value -- exactly what that guard exists to catch instead of an `Aqua.pull()`
+    /// underflow) or swap-vm's own `TakerTraitsAmountOutMustBeGreaterThanZero` (a legitimately
+    /// tiny second-leg trade rounding to zero output, unrelated to this PR). Both are asserted by
+    /// selector, not caught blindly, so any other revert still fails the test. The invariant
+    /// itself is only asserted when both legs actually complete.
     function testFuzz_DepegDivergenceWithinGroupNeverProfitsRoundTripTrader(
         uint256 balA,
         uint256 balB,
@@ -341,13 +402,11 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
                     amountIn,
                     "round-tripping through a depegged multi-token group must not profit the trader"
                 );
-            } catch {
-                // The return leg's own amountOut (in tokenC) exceeded some member's real raw
-                // balance -- an acceptable clean revert under extreme divergence, not a violation
-                // of the invariant this test checks.
+            } catch (bytes memory reason) {
+                _assertAcceptableRoundTripRevert(reason);
             }
-        } catch {
-            // Same acceptable-revert reasoning for the first leg.
+        } catch (bytes memory reason) {
+            _assertAcceptableRoundTripRevert(reason);
         }
     }
 
@@ -358,5 +417,16 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         returns (uint256, uint256)
     {
         return _swapExactIn(order, tokenIn, tokenOut, amount);
+    }
+
+    /// @dev The two legitimate ways a round-trip leg can revert without violating the invariant
+    ///      this fuzz test checks -- see the test's own doc comment for why each is acceptable.
+    function _assertAcceptableRoundTripRevert(bytes memory reason) private pure {
+        bytes4 selector = bytes4(reason);
+        assertTrue(
+            selector == IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector
+                || selector == TakerTraitsLib.TakerTraitsAmountOutMustBeGreaterThanZero.selector,
+            "unexpected revert reason during round trip"
+        );
     }
 }
