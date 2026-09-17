@@ -3,7 +3,6 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
@@ -52,19 +51,26 @@ contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
     ///      `BasketXYCSwap.sol`'s identical note).
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        (PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps) = PortfolioManagerArgsBuilder.parse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =
+            PortfolioManagerArgsBuilder.parse(args);
 
         (uint256 groupInIdx, uint256 memberInIdx) = _resolve(groups, ctx.query.tokenIn);
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
         require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
         PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
-            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker),
-            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker),
+            balanceIn: PortfolioManagerArgsBuilder.groupValueWad(groups[groupInIdx], ctx.query.maker),
+            balanceOut: PortfolioManagerArgsBuilder.groupValueWad(groups[groupOutIdx], ctx.query.maker),
             weightIn: groups[groupInIdx].weight,
             weightOut: groups[groupOutIdx].weight,
             feeWad: uint256(feeBps) * FEE_WAD_PER_BPS
         });
+
+        if (maxDeviationBps != 0) {
+            uint256 sp = PortfolioManagerPricing.spotPrice(quote);
+            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PM_BPS / WAD;
+            require(deviationBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(sp, maxDeviationBps));
+        }
 
         // The curve's own balanceIn/balanceOut are oracle-VALUE-scaled (ADR-0003: `Σ balance_j
         // × price_j` per group), not the traded token's native units — so the traded amount
@@ -141,7 +147,7 @@ contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     }
 
     /// @dev The specific traded token's own price/decimals, separate from its group's
-    ///      aggregate `_groupValueWad` sum -- needed to convert the traded amount into and back
+    ///      aggregate `groupValueWad` sum -- needed to convert the traded amount into and back
     ///      out of the group-value numeraire (see the main function's own note on why).
     function _priceAndDecimals(PortfolioManagerArgsBuilder.Member memory member, address token)
         private
@@ -152,26 +158,5 @@ contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness})
         );
         decimals = IERC20Metadata(token).decimals();
-    }
-
-    /// @dev `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) —
-    ///      always goes through `OracleAdapter`, even for a single-member group, so decimal
-    ///      normalization and price conversion are uniform regardless of group size.
-    function _groupValueWad(PortfolioManagerArgsBuilder.Group memory group, address maker)
-        private
-        view
-        returns (uint256)
-    {
-        uint256 n = group.members.length;
-        address[] memory tokens = new address[](n);
-        uint256[] memory balances = new uint256[](n);
-        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](n);
-        for (uint256 i = 0; i < n; i++) {
-            PortfolioManagerArgsBuilder.Member memory m = group.members[i];
-            tokens[i] = m.token;
-            balances[i] = IERC20(m.token).balanceOf(maker);
-            feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
-        }
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
     }
 }

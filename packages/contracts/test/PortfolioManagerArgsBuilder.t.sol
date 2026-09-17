@@ -29,7 +29,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
     function _callParse(bytes calldata args)
         external
         pure
-        returns (PortfolioManagerArgsBuilder.Group[] memory, uint32)
+        returns (PortfolioManagerArgsBuilder.Group[] memory, uint32, uint32)
     {
         return PortfolioManagerArgsBuilder.parse(args);
     }
@@ -53,7 +53,8 @@ contract PortfolioManagerArgsBuilderTest is Test {
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsBuilder.build(groups, 2e5); // 2bps, ADR-0008 default
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+            this._callParse(args);
 
         assertEq(parsed.length, 2);
         assertEq(parsed[0].weight, 0.5e18);
@@ -63,6 +64,18 @@ contract PortfolioManagerArgsBuilderTest is Test {
         assertEq(parsed[0].members[0].maxStaleness, STALENESS);
         assertEq(parsed[1].weight, 0.5e18);
         assertEq(parsedFeeBps, 2e5);
+        assertEq(parsedMaxDeviationBps, 0);
+    }
+
+    function test_BuildThenParseRoundTripsMaxDeviationBps() public view {
+        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+
+        bytes memory args = PortfolioManagerArgsBuilder.build(groups, 2e5, 5e7); // 5% circuit breaker
+        (,, uint32 parsedMaxDeviationBps) = this._callParse(args);
+
+        assertEq(parsedMaxDeviationBps, 5e7);
     }
 
     function test_BuildThenParseRoundTripsUnequalWeights() public view {
@@ -72,7 +85,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         groups[2] = _singleMemberGroup(0.2e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsBuilder.build(groups, 0);
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
 
         assertEq(parsed.length, 3);
         for (uint256 i = 0; i < 3; i++) {
@@ -92,7 +105,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsBuilder.build(groups, 1e5);
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
 
         assertEq(parsed.length, 2);
         assertEq(parsed[0].weight, 0.6e18);
@@ -120,7 +133,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         }
 
         bytes memory args = PortfolioManagerArgsBuilder.build(groups, feeBps);
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
 
         assertEq(parsed.length, n);
         for (uint256 i = 0; i < n; i++) {
@@ -208,7 +221,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
 
     /// @notice Two groups, each at exactly MAX_MEMBERS_PER_GROUP members (5) -- passes every
     /// per-axis check individually (group count and each group's own member count are both
-    /// within bounds) but the joint encoding is 459 bytes, over the wire format's 255-byte
+    /// within bounds) but the joint encoding is 463 bytes, over the wire format's 255-byte
     /// capacity. Without build()'s own explicit length check, this would sail through here and
     /// only fail one layer up in PortfolioManagerProgramBuilder with an opaque SafeCast overflow
     /// instead of this descriptive error.
@@ -229,7 +242,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         groups[0] = PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: members0});
         groups[1] = PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: members1});
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerArgsTooLarge.selector, 459));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerArgsTooLarge.selector, 463));
         this._callBuild(groups, 0);
     }
 
@@ -407,6 +420,27 @@ contract PortfolioManagerArgsBuilderTest is Test {
         );
 
         vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerMissingFeeBps.selector);
+        this._callParse(malformed);
+    }
+
+    function test_ParseRevertsOnMissingMaxDeviationBps() public {
+        // Valid 2-group universe plus feeBps, but no trailing maxDeviationBps bytes.
+        bytes memory malformed = abi.encodePacked(
+            uint8(2),
+            uint128(0.5e18),
+            uint8(1),
+            TOKEN_A,
+            FEED_A,
+            uint16(STALENESS),
+            uint128(0.5e18),
+            uint8(1),
+            TOKEN_B,
+            FEED_B,
+            uint16(STALENESS),
+            uint32(0)
+        );
+
+        vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerMissingMaxDeviationBps.selector);
         this._callParse(malformed);
     }
 }
