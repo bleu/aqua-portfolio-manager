@@ -20,7 +20,7 @@ import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol
 import {OracleAdapter} from "../src/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Real multi-token oracle-valued groups (ADR-0003/BLEUDEV-347), exercised through a
+/// @notice Real multi-token oracle-valued groups (ADR-0003), exercised through a
 /// real SwapVM.swap() call: behavior that's meaningless to test at a single-token-group scope --
 /// same-group rejection, a 2-member group's price reflecting its FULL oracle-valued sum (not
 /// just the token actually changing hands), and a stale feed on a non-traded group member still
