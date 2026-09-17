@@ -32,7 +32,7 @@ import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 ///
 /// Trades real WETH/DAI, funded via `deal()` — same-decimal (both 18) real tokens on purpose,
 /// kept for historical continuity with this fixture's existing tests (every group goes through
-/// `OracleAdapter` uniformly now, ADR-0003/BLEUDEV-347, so mixed-decimal pairings are safe by
+/// `OracleAdapter` uniformly now, ADR-0003, so mixed-decimal pairings are safe by
 /// construction — see `PortfolioManagerMultiTokenBasketE2E.t.sol` for one that exercises that).
 abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;

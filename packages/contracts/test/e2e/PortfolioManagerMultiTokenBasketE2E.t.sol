@@ -23,7 +23,7 @@ import {OracleAdapter} from "../../src/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
-/// @notice Real multi-token oracle-valued groups (ADR-0003/BLEUDEV-347), end to end against a
+/// @notice Real multi-token oracle-valued groups (ADR-0003), end to end against a
 /// real Base fork -- a "majors" group {WETH, WBTC} and a "stables" group {DAI, USDT, USDC}, each
 /// member priced through its own real Chainlink feed. `PortfolioManagerE2EBase.t.sol`'s
 /// single-group suite already covers protocol-fee and basic curve mechanics end to end; this
