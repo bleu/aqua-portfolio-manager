@@ -16,10 +16,15 @@ import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFa
 ///         whole fixture lives in the test run itself (Foundry Book: tests should be
 ///         self-contained and reproducible via `vm.createSelectFork`, not an external deployment
 ///         pipeline).
-/// @dev No fixed fork block: every concrete E2E fixture reads live feed/balance state and
-///      computes its own expectations dynamically, and this whole suite is meant to exercise
-///      *current* real protocol state, not a frozen snapshot. `BASE_RPC_URL` is the escape hatch
-///      for avoiding public-endpoint rate-limiting, not for pinning a block.
+/// @dev No fixed fork block *by default*: every concrete E2E fixture reads live feed/balance
+///      state and computes its own expectations dynamically, and this whole suite is meant to
+///      exercise *current* real protocol state, not a frozen snapshot. `BASE_RPC_URL` is the
+///      escape hatch for avoiding public-endpoint rate-limiting.
+///      `BASE_RPC_BLOCK` is a narrower escape hatch on top of that: CI resolves and caches a
+///      recent block number once per hour (see `.github/workflows/test.yml`) so repeated runs
+///      within that hour reuse Foundry's own on-disk RPC cache instead of re-fetching every
+///      storage slot from scratch -- still "current" to within an hour, not a permanent snapshot.
+///      Unset (0) locally, so a plain `forge test` still forks genuinely live state.
 abstract contract AquaE2EBase is Test {
     string private constant DEFAULT_BASE_RPC_URL = "https://mainnet.base.org";
 
@@ -39,7 +44,13 @@ abstract contract AquaE2EBase is Test {
     SafeProxyFactory internal safeFactory;
 
     function setUp() public virtual {
-        vm.createSelectFork(vm.envOr("BASE_RPC_URL", DEFAULT_BASE_RPC_URL));
+        string memory rpcUrl = vm.envOr("BASE_RPC_URL", DEFAULT_BASE_RPC_URL);
+        uint256 pinnedBlock = vm.envOr("BASE_RPC_BLOCK", uint256(0));
+        if (pinnedBlock == 0) {
+            vm.createSelectFork(rpcUrl);
+        } else {
+            vm.createSelectFork(rpcUrl, pinnedBlock);
+        }
 
         aqua = Aqua(AQUA_MAINNET);
         deployer = vm.addr(DEFAULT_DEPLOYER_KEY);
