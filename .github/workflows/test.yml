@@ -38,4 +38,9 @@ jobs:
         run: forge build --sizes
 
       - name: Run Forge tests
+        env:
+          # Falls back to the same public RPC already baked into AquaE2EBase.t.sol's own
+          # vm.envOr default if the BASE_RPC_URL secret isn't configured yet -- CI doesn't start
+          # hard-failing the moment this workflow merges, only once the secret is actually added.
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
         run: forge test -vvv
