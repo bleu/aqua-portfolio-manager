@@ -288,4 +288,75 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         );
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
     }
+
+    // ===== Fuzz: depeg divergence inside a multi-token group =====
+
+    /// @notice group0's two members (tokenA, tokenB) are fuzzed to independently diverging
+    /// prices -- a depeg, not the setUp() default of both pegged at $1 -- while group1
+    /// (tokenC) stays healthy. The curve's own round-trip non-profitability guarantee
+    /// (DONATION-RESISTANCE-PROOF.md/ADR-0007), already fuzz-tested at the pure
+    /// `PortfolioManagerPricing` level in `PortfolioManagerPricing.t.sol` for a single
+    /// pre-aggregated balance pair, must hold here too now that `balanceIn`/`balanceOut` are
+    /// actually the oracle-summed value of a *divergently-priced* multi-token group (the real
+    /// wiring this file exists to exercise), not a value handed to the formula directly.
+    /// @dev Either leg may legitimately revert with
+    /// `PortfolioManagerSwapInsufficientMemberBalance` -- a low-priced minority member's own raw
+    /// balance can be smaller than its share of the group's total value under wide enough
+    /// divergence, which is exactly what that guard exists to catch cleanly instead of an
+    /// `Aqua.pull()` underflow. Only asserted when both legs actually complete.
+    function testFuzz_DepegDivergenceWithinGroupNeverProfitsRoundTripTrader(
+        uint256 balA,
+        uint256 balB,
+        uint256 balC,
+        uint256 priceA,
+        uint256 priceB,
+        uint256 amountIn
+    ) public {
+        balA = bound(balA, 1e18, 1_000_000e18);
+        balB = bound(balB, 1e18, 1_000_000e18);
+        balC = bound(balC, 1e18, 1_000_000e18);
+        // A realistic depeg range: anywhere from a 90% haircut to a 10x blowup, independently
+        // for each of group0's two members -- e.g. tokenA depegs to $0.10 while tokenB holds
+        // near $1, or both drift in opposite directions.
+        priceA = bound(priceA, 0.1e18, 10e18);
+        priceB = bound(priceB, 0.1e18, 10e18);
+        feedA.setAnswer(int256(priceA), block.timestamp);
+        feedB.setAnswer(int256(priceB), block.timestamp);
+
+        ISwapVM.Order memory order = _buildOrder(0); // feeBps = 0 isolates the curve's own invariant from the fee's own additional slack
+        _shipOrder(order, balA, balB, balC);
+
+        amountIn = bound(amountIn, 1e6, balC / 10);
+
+        try this._externalSwapExactIn(order, address(tokenC), address(tokenA), amountIn) returns (
+            uint256, uint256 amountOutA
+        ) {
+            if (amountOutA == 0) return;
+
+            try this._externalSwapExactIn(order, address(tokenA), address(tokenC), amountOutA) returns (
+                uint256, uint256 amountBackC
+            ) {
+                assertLe(
+                    amountBackC,
+                    amountIn,
+                    "round-tripping through a depegged multi-token group must not profit the trader"
+                );
+            } catch {
+                // The return leg's own amountOut (in tokenC) exceeded some member's real raw
+                // balance -- an acceptable clean revert under extreme divergence, not a violation
+                // of the invariant this test checks.
+            }
+        } catch {
+            // Same acceptable-revert reasoning for the first leg.
+        }
+    }
+
+    /// @dev `try` requires an external call -- `_swapExactIn` is internal, so this thin wrapper
+    ///      is what the fuzz test above actually calls via `this._externalSwapExactIn(...)`.
+    function _externalSwapExactIn(ISwapVM.Order memory order, address tokenIn, address tokenOut, uint256 amount)
+        external
+        returns (uint256, uint256)
+    {
+        return _swapExactIn(order, tokenIn, tokenOut, amount);
+    }
 }

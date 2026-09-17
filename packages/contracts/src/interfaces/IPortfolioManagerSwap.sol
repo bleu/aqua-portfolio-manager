@@ -17,4 +17,9 @@ interface IPortfolioManagerSwap {
     ///      silently degenerate to a spot price of exactly 1 with zero skew-based curve
     ///      behavior, so it's rejected outright instead of left as an undefined edge case.
     error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
+    /// @dev A multi-member group's aggregate value can afford `amountOut`, but the specific
+    ///      traded member's own raw balance can't -- only reachable when a group's members hold
+    ///      sufficiently divergent oracle prices (a depeg) that one low-priced member's raw
+    ///      balance no longer tracks its share of the group's total value.
+    error PortfolioManagerSwapInsufficientMemberBalance(address token, uint256 requested, uint256 available);
 }

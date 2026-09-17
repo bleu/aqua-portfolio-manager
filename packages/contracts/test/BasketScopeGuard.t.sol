@@ -247,6 +247,98 @@ contract BasketScopeGuardTest is Test {
     }
 
     // ---------------------------------------------------------------------
+    // Fuzz: cross-strategy invariant under randomized same-wallet trade sequences
+    // ---------------------------------------------------------------------
+
+    /// @notice ADR-0011's structural guarantee, generalized: PM's own attested strategy may
+    /// freely cross basket boundaries; every other strategy sharing the same wallet must stay
+    /// confined to a single basket. Fuzzes randomized sequences of `ship()` attempts -- mixed
+    /// PM/non-PM, randomized token subsets and ordering -- rather than the hand-picked scenarios
+    /// `test_AllowsPmStrategyEvenAcrossBaskets`/`test_RevertsOnCrossBasketStrategy`/
+    /// `test_AllowsSingleBasketStrategy` above already cover individually.
+    function testFuzz_CrossStrategyInvariantHoldsUnderRandomizedTradeSequences(uint256 seed) public {
+        guard.attestOnboardingClean();
+
+        address[] memory universe = new address[](5);
+        universe[0] = tokenA; // basket 1
+        universe[1] = tokenB; // basket 1
+        universe[2] = tokenC; // basket 2
+        universe[3] = tokenD; // basket 2
+        universe[4] = tokenF; // outside every basket
+
+        uint256 numMoves = bound(uint256(keccak256(abi.encode(seed, "moves"))), 3, 10);
+        for (uint256 i = 0; i < numMoves; i++) {
+            seed = uint256(keccak256(abi.encode(seed, i)));
+            bool isPM = seed % 3 == 0;
+            address[] memory tokens = _randomTokenSubset(seed, universe);
+            bytes memory strategy = isPM ? pmStrategy : abi.encodePacked("random-strategy-", seed);
+            bytes memory data = _shipCalldata(strategy, tokens);
+
+            if (_predictedOutcome(isPM, tokens)) {
+                guard.checkTransaction(
+                    address(aqua),
+                    0,
+                    data,
+                    Enum.Operation.Call,
+                    0,
+                    0,
+                    0,
+                    address(0),
+                    payable(address(0)),
+                    "",
+                    address(0)
+                );
+            } else {
+                vm.expectRevert();
+                guard.checkTransaction(
+                    address(aqua),
+                    0,
+                    data,
+                    Enum.Operation.Call,
+                    0,
+                    0,
+                    0,
+                    address(0),
+                    payable(address(0)),
+                    "",
+                    address(0)
+                );
+            }
+        }
+    }
+
+    /// @dev Random length (0..universe.length, inclusive of the empty-list edge case) and random
+    ///      order, with replacement -- a real `tokens` array could in principle repeat an entry,
+    ///      and order determines which token becomes `CrossBasketStrategyForbidden`'s reference
+    ///      basket (not the pass/fail outcome itself, which `_predictedOutcome` mirrors exactly).
+    function _randomTokenSubset(uint256 seed, address[] memory universe)
+        private
+        pure
+        returns (address[] memory tokens)
+    {
+        uint256 len = bound(uint256(keccak256(abi.encode(seed, "len"))), 0, universe.length);
+        tokens = new address[](len);
+        for (uint256 i = 0; i < len; i++) {
+            uint256 idx = uint256(keccak256(abi.encode(seed, "pick", i))) % universe.length;
+            tokens[i] = universe[idx];
+        }
+    }
+
+    /// @dev Mirrors `BasketScopeGuard._check`'s own logic exactly (see that function): PM always
+    ///      passes once attested; otherwise every token must belong to the same nonzero basket.
+    function _predictedOutcome(bool isPM, address[] memory tokens) private view returns (bool) {
+        if (isPM) return true;
+        if (tokens.length == 0) return false;
+        uint256 refBasket = guard.basketOf(tokens[0]);
+        if (refBasket == 0) return false;
+        for (uint256 i = 1; i < tokens.length; i++) {
+            uint256 b = guard.basketOf(tokens[i]);
+            if (b == 0 || b != refBasket) return false;
+        }
+        return true;
+    }
+
+    // ---------------------------------------------------------------------
     // Integration: a real deployed Safe, both the execTransaction path and
     // the module path, both actually calling the real Aqua contract.
     // ---------------------------------------------------------------------
