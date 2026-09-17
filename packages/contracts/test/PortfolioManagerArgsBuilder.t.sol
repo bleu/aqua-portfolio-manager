@@ -206,6 +206,33 @@ contract PortfolioManagerArgsBuilderTest is Test {
         this._callBuild(groups, 0);
     }
 
+    /// @notice Two groups, each at exactly MAX_MEMBERS_PER_GROUP members (5) -- passes every
+    /// per-axis check individually (group count and each group's own member count are both
+    /// within bounds) but the joint encoding is 459 bytes, over the wire format's 255-byte
+    /// capacity. Without build()'s own explicit length check, this would sail through here and
+    /// only fail one layer up in PortfolioManagerProgramBuilder with an opaque SafeCast overflow
+    /// instead of this descriptive error.
+    function test_BuildRevertsOnArgsTooLargeEvenWhenEachAxisIsWithinBounds() public {
+        PortfolioManagerArgsBuilder.Member[] memory members0 =
+            new PortfolioManagerArgsBuilder.Member[](PortfolioManagerArgsBuilder.MAX_MEMBERS_PER_GROUP);
+        PortfolioManagerArgsBuilder.Member[] memory members1 =
+            new PortfolioManagerArgsBuilder.Member[](PortfolioManagerArgsBuilder.MAX_MEMBERS_PER_GROUP);
+        for (uint256 i = 0; i < PortfolioManagerArgsBuilder.MAX_MEMBERS_PER_GROUP; i++) {
+            members0[i] = PortfolioManagerArgsBuilder.Member({
+                token: address(uint160(0x1000 + i)), feed: address(uint160(0x2000 + i)), maxStaleness: STALENESS
+            });
+            members1[i] = PortfolioManagerArgsBuilder.Member({
+                token: address(uint160(0x3000 + i)), feed: address(uint160(0x4000 + i)), maxStaleness: STALENESS
+            });
+        }
+        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](2);
+        groups[0] = PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: members0});
+        groups[1] = PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: members1});
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerArgsTooLarge.selector, 459));
+        this._callBuild(groups, 0);
+    }
+
     function test_BuildRevertsOnZeroFeedAddress() public {
         // group[1] is never reached -- group[0]'s own zero-feed check reverts first -- it's here
         // only so the array itself satisfies MIN_GROUPS.

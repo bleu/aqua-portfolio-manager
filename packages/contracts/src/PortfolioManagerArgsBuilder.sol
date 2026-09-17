@@ -35,13 +35,16 @@ library PortfolioManagerArgsBuilder {
     ///      comfortably wider than any real Chainlink heartbeat.
     uint256 private constant MEMBER_ENTRY_SIZE = 42;
 
-    /// @dev Business-rule bounds on universe shape -- independent of (and much tighter than) the
-    ///      wire format's own 255-group/255-member uint8 capacity. A single-group universe has
-    ///      nothing to rebalance against, hence the floor; the ceilings keep every real strategy
-    ///      comfortably inside the 255-byte total `args` budget (see MEMBER_ENTRY_SIZE's own
-    ///      comment) and keep the curve's group/member count within what a taker can reason
-    ///      about at a glance. `internal` rather than `private` so callers (tests, other bound
-    ///      checks) can reference them instead of duplicating the numbers.
+    /// @dev Business-rule bounds on universe shape -- independent per-axis sanity ceilings, much
+    ///      tighter than the wire format's own 255-group/255-member uint8 capacity, keeping the
+    ///      curve's group/member count within what a taker can reason about at a glance. A
+    ///      single-group universe has nothing to rebalance against, hence the floor. These do
+    ///      NOT by themselves guarantee every combination fits the 255-byte total `args` budget
+    ///      (e.g. MAX_GROUPS groups all simultaneously at MAX_MEMBERS_PER_GROUP members each
+    ///      still overflows it) -- `build()`'s own explicit length check is what enforces that,
+    ///      with a descriptive error instead of an opaque cast-overflow one layer up in
+    ///      `PortfolioManagerProgramBuilder`. `internal` rather than `private` so callers (tests,
+    ///      other bound checks) can reference them instead of duplicating the numbers.
     uint256 internal constant MIN_GROUPS = 2;
     uint256 internal constant MAX_GROUPS = 4;
     uint256 internal constant MAX_MEMBERS_PER_GROUP = 5;
@@ -72,6 +75,10 @@ library PortfolioManagerArgsBuilder {
     error PortfolioManagerMissingGroupHeader();
     error PortfolioManagerMissingMemberEntry();
     error PortfolioManagerMissingFeeBps();
+    /// @dev The per-axis bounds (MIN/MAX_GROUPS, MAX_MEMBERS_PER_GROUP) don't by themselves
+    ///      guarantee the encoded `args` fits the wire format's 255-byte capacity -- this is the
+    ///      actual, descriptive enforcement of that hard cap (see MIN_GROUPS's own comment).
+    error PortfolioManagerArgsTooLarge(uint256 length);
 
     /// @param groups  Declared groups (`MIN_GROUPS`-`MAX_GROUPS` of them): each a target weight
     ///                (WAD-scaled; must sum to WAD across all groups) plus 1-`MAX_MEMBERS_PER_GROUP`
@@ -105,6 +112,7 @@ library PortfolioManagerArgsBuilder {
         _requireNoDuplicateTokens(groups);
 
         args = abi.encodePacked(args, feeBps);
+        require(args.length <= type(uint8).max, PortfolioManagerArgsTooLarge(args.length));
     }
 
     /// @dev Independently re-validates every invariant `build()` checks (group/member count
