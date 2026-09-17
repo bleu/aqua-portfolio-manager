@@ -6,7 +6,7 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerArgsBuilder} from "./PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
 
 /// @title PortfolioManagerStrategyFactory — validates a PM strategy's ship() encoding
@@ -27,17 +27,11 @@ import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.s
 /// `ship()` call in the same atomic transaction, e.g. via Safe's own audited
 /// `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.sol::_shipOnly`.
 contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
+    uint256 private constant WAD = 1e18;
+
     /// @inheritdoc IPortfolioManagerStrategyFactory
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
-        bytes calldata program = MakerTraitsLib.program(order.traits, order.data);
-        require(
-            program.length >= 2 && uint8(program[0]) == PortfolioManagerProgramBuilder.CURVE_OPCODE,
-            PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy()
-        );
-
-        uint256 argsLength = uint8(program[1]);
-        bytes calldata args = program[2:2 + argsLength];
-        (PortfolioManagerArgsBuilder.Group[] memory groups,) = PortfolioManagerArgsBuilder.parse(args);
+        (PortfolioManagerArgsBuilder.Group[] memory groups,,) = PortfolioManagerArgsBuilder.parse(_args(order));
         address[] memory declared = PortfolioManagerArgsBuilder.flattenTokens(groups);
 
         for (uint256 i = 0; i < declared.length; i++) {
@@ -61,5 +55,46 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
             }
             require(isDeclared, PortfolioManagerStrategyFactoryShippedTokenNotDeclared(tokens[i]));
         }
+    }
+
+    /// @inheritdoc IPortfolioManagerStrategyFactory
+    function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
+        (PortfolioManagerArgsBuilder.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsBuilder.parse(_args(order));
+        if (maxDeviationBps == 0) return;
+
+        uint256 n = groups.length;
+        uint256[] memory groupValuesWad = new uint256[](n);
+        uint256 totalValueWad;
+        for (uint256 i = 0; i < n; i++) {
+            groupValuesWad[i] = PortfolioManagerArgsBuilder.groupValueWad(groups[i], maker);
+            totalValueWad += groupValuesWad[i];
+        }
+
+        for (uint256 i = 0; i < n; i++) {
+            uint256 actualShareWad = groupValuesWad[i] * WAD / totalValueWad;
+            uint256 targetWeightWad = groups[i].weight;
+            uint256 diffWad =
+                actualShareWad > targetWeightWad ? actualShareWad - targetWeightWad : targetWeightWad - actualShareWad;
+            uint256 deviationBps = diffWad * PM_BPS / targetWeightWad;
+            require(
+                deviationBps <= maxDeviationBps,
+                PortfolioManagerStrategyFactoryExcessivePriceDeviation(i, actualShareWad, targetWeightWad)
+            );
+        }
+    }
+
+    /// @dev Shared by both validators: extracts the curve opcode's own encoded `args` out of
+    ///      `order`'s program bytes -- same opcode/length checks `requireUniverseMatches` always
+    ///      did, factored out so `requireBalancedWithinTolerance` doesn't repeat them.
+    function _args(ISwapVM.Order calldata order) private pure returns (bytes calldata args) {
+        bytes calldata program = MakerTraitsLib.program(order.traits, order.data);
+        require(
+            program.length >= 2 && uint8(program[0]) == PortfolioManagerProgramBuilder.CURVE_OPCODE,
+            PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy()
+        );
+
+        uint256 argsLength = uint8(program[1]);
+        args = program[2:2 + argsLength];
     }
 }

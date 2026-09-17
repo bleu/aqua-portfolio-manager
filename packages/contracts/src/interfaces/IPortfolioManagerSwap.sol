@@ -22,4 +22,12 @@ interface IPortfolioManagerSwap {
     ///      sufficiently divergent oracle prices (a depeg) that one low-priced member's raw
     ///      balance no longer tracks its share of the group's total value.
     error PortfolioManagerSwapInsufficientMemberBalance(address token, uint256 requested, uint256 available);
+    /// @dev Pre-trade circuit breaker: the traded pair's current spot price (`spotPrice`, exactly
+    ///      `WAD` at perfect target composition regardless of weight ratio) has drifted further
+    ///      from `WAD` than `maxDeviationBps` allows -- e.g. a direct Safe-owner withdrawal that
+    ///      bypasses `ship()`/`BasketScopeGuard` entirely. Checked against current state, not the
+    ///      post-trade state, so once a pair is skewed past this, no single trade can self-correct
+    ///      past the check in one step -- that pair stays untradeable until external action
+    ///      (a deposit, or a fresh strategy) restores it within tolerance.
+    error PortfolioManagerSwapExcessivePriceDeviation(uint256 spotPriceWad, uint256 maxDeviationBps);
 }

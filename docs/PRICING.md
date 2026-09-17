@@ -6,7 +6,7 @@ The constant-mean weighted curve this strategy prices with (ADR-0004, ADR-0007) 
 
 For a swap between token *i* (in) and token *o* (out), both belonging to declared groups in the strategy's config:
 
-- `B_i`, `B_o` — the group's **current, real** exposure reading, straight from `balanceOf` on the maker wallet (ADR-0002 — not `AQUA.safeBalances()`, which is a same-strategy-only ledger, not a wallet-wide reading), valued via the Oracle Adapter (ADR-0005) if the group holds more than one token (ADR-0003). No EMA/TWAP — ADR-0006 dropped the moving average (2026-08-18); the tolerance band, where it applies, is a stateless function of this same current reading, not a separate lagging variable.
+- `B_i`, `B_o` — the group's **current, real** exposure reading, straight from `balanceOf` on the maker wallet (ADR-0002 — not `AQUA.safeBalances()`, which is a same-strategy-only ledger, not a wallet-wide reading), valued via the Oracle Adapter (ADR-0005) if the group holds more than one token (ADR-0003). No EMA/TWAP — ADR-0006 dropped the moving average (2026-08-18) and rejected a tolerance band entirely; the deviation circuit breaker (ADR-0012, below) is a stateless function of this same current reading, not a separate lagging variable.
 - `w_i`, `w_o` — the group's target weight, normalized so all weights in the strategy sum to 1. Fixed at `ship()` time (part of the immutable `strategyHash`), never updated in place.
 - `f` — the protocol fee, in scope for Milestone 1 as the flat 2 bps referenced in ADR-0008; taken on the input side.
 
@@ -17,6 +17,10 @@ Because `B_i`/`B_o` is the same real balance Aqua actually moves on pull/push, t
     SP(i→o) = (B_i / w_i) / (B_o / w_o)
 
 Token *i* priced in terms of token *o*, before fees. Standard constant-mean result — see Martinelli & Mushegian (2019), cited above, for the full derivation.
+
+## Deviation circuit breaker (ADR-0012)
+
+`SP(i→o)` equals exactly `1` (WAD) when a group pair's real composition matches its declared target weights, regardless of the weight ratio, and diverges from `1` in proportion to how far off-target the pair has drifted. An optional, opt-in `maxDeviationBps` bounds that divergence: if `|SP(i→o) - 1|` (in bps) exceeds it, both the swap-time pairwise check (`PortfolioManagerSwap`, checked against current pre-trade state) and the ship-time whole-portfolio check (`PortfolioManagerStrategyFactory`, checked once at `ship()`) revert rather than price or ship against an already-extreme composition. `maxDeviationBps == 0` disables both checks — this is not part of the pricing formula itself, just a bound checked against its output.
 
 ## Exact-in swap
 

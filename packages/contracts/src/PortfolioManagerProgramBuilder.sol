@@ -39,7 +39,17 @@ library PortfolioManagerProgramBuilder {
         pure
         returns (bytes memory program)
     {
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, feeBps);
+        return build(groups, feeBps, 0);
+    }
+
+    /// @param groups, feeBps  The LP's own declared groups and curve fee.
+    /// @param maxDeviationBps  Price-deviation circuit breaker (ADR-0012) -- 0 disables it.
+    function build(PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps)
+        internal
+        pure
+        returns (bytes memory program)
+    {
+        bytes memory args = PortfolioManagerArgsBuilder.build(groups, feeBps, maxDeviationBps);
         program = abi.encodePacked(CURVE_OPCODE, args.length.toUint8(), args);
     }
 
