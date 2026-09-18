@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
-import {PortfolioManagerArgsBuilder} from "../../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
@@ -28,7 +28,7 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     ///      byte-identical strategy through the same `pmSafe` would make whichever ships second
     ///      revert on Aqua's own immutability check.
     function _buildOrderWithReversedUniverse() internal view returns (ISwapVM.Order memory) {
-        PortfolioManagerArgsBuilder.Group[] memory reversedGroups = new PortfolioManagerArgsBuilder.Group[](2);
+        PortfolioManagerArgsCodec.Group[] memory reversedGroups = new PortfolioManagerArgsCodec.Group[](2);
         reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE);
         reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE);
         bytes memory program = PortfolioManagerProgramBuilder.build(reversedGroups, 0);

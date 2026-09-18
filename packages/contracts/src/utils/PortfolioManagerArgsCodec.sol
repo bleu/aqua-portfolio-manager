@@ -10,7 +10,7 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 ///      same way as everywhere else in this codebase, not a project-specific scale.
 uint256 constant PM_BPS = 1e9;
 
-/// @title PortfolioManagerArgsBuilder — packed-bytes encoding of the Portfolio Manager's
+/// @title PortfolioManagerArgsCodec — packed-bytes encoding of the Portfolio Manager's
 ///        declared token groups, per-group target weight, oracle feeds, and protocol fee
 /// @notice Real multi-token oracle-valued groups (ADR-0003): each group has 1+ members, and
 ///         every member is priced through its own Chainlink-style feed via `OracleAdapter` --
@@ -21,7 +21,7 @@ uint256 constant PM_BPS = 1e9;
 ///         here for the common case.
 /// @dev Lives entirely in the swapVM instruction's `args` — part of the immutable `strategy`
 ///      payload hashed into `strategyHash` (see `IAqua.ship`), not contract storage.
-library PortfolioManagerArgsBuilder {
+library PortfolioManagerArgsCodec {
     using Calldata for bytes;
 
     uint256 private constant WAD = FixedPointMath.WAD;

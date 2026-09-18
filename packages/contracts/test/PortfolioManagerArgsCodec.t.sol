@@ -2,9 +2,9 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {PortfolioManagerArgsBuilder, PM_BPS} from "../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec, PM_BPS} from "../src/utils/PortfolioManagerArgsCodec.sol";
 
-contract PortfolioManagerArgsBuilderTest is Test {
+contract PortfolioManagerArgsCodecTest is Test {
     uint256 constant WAD = 1e18;
 
     address constant TOKEN_A = address(0xA11CE);
@@ -18,40 +18,36 @@ contract PortfolioManagerArgsBuilderTest is Test {
 
     // See FixedPointMath.t.sol for why internal pure library calls need an external wrapper
     // for `vm.expectRevert` to intercept the revert at the right call depth.
-    function _callBuild(PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps)
+    function _callBuild(PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps)
         external
         pure
         returns (bytes memory)
     {
-        return PortfolioManagerArgsBuilder.build(groups, feeBps);
+        return PortfolioManagerArgsCodec.build(groups, feeBps);
     }
 
-    function _callParse(bytes calldata args)
-        external
-        pure
-        returns (PortfolioManagerArgsBuilder.Group[] memory, uint32)
-    {
-        return PortfolioManagerArgsBuilder.parse(args);
+    function _callParse(bytes calldata args) external pure returns (PortfolioManagerArgsCodec.Group[] memory, uint32) {
+        return PortfolioManagerArgsCodec.parse(args);
     }
 
     function _singleMemberGroup(uint256 weight, address token, address feed)
         private
         pure
-        returns (PortfolioManagerArgsBuilder.Group memory)
+        returns (PortfolioManagerArgsCodec.Group memory)
     {
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
-        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: STALENESS});
-        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
+        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: STALENESS});
+        return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
     // ---- round trip ----
 
     function test_BuildThenParseRoundTripsSingleToken() public view {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](1);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](1);
         groups[0] = _singleMemberGroup(WAD, TOKEN_A, FEED_A);
 
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, 2e5); // 2bps, ADR-0008 default
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5); // 2bps, ADR-0008 default
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsed.length, 1);
         assertEq(parsed[0].weight, WAD);
@@ -63,13 +59,13 @@ contract PortfolioManagerArgsBuilderTest is Test {
     }
 
     function test_BuildThenParseRoundTripsUnequalWeights() public view {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](3);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](3);
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
         groups[1] = _singleMemberGroup(0.3e18, TOKEN_B, FEED_B);
         groups[2] = _singleMemberGroup(0.2e18, TOKEN_C, FEED_C);
 
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, 0);
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsed.length, 3);
         for (uint256 i = 0; i < 3; i++) {
@@ -80,16 +76,16 @@ contract PortfolioManagerArgsBuilderTest is Test {
     }
 
     function test_BuildThenParseRoundTripsMultiTokenGroup() public view {
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](2);
-        members[0] = PortfolioManagerArgsBuilder.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: STALENESS});
-        members[1] = PortfolioManagerArgsBuilder.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: STALENESS * 2});
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
+        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: STALENESS});
+        members[1] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: STALENESS * 2});
 
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](2);
-        groups[0] = PortfolioManagerArgsBuilder.Group({weight: 0.6e18, members: members});
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.6e18, members: members});
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, 1e5);
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsed.length, 2);
         assertEq(parsed[0].weight, 0.6e18);
@@ -107,7 +103,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         feeBps = uint32(bound(feeBps, 0, PM_BPS));
         uint256 n = bound(seed, 1, 10);
 
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](n);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
         uint256 remaining = WAD;
         for (uint256 i = 0; i < n; i++) {
             // Last weight soaks up the remainder so the set always sums to exactly WAD.
@@ -116,8 +112,8 @@ contract PortfolioManagerArgsBuilderTest is Test {
             groups[i] = _singleMemberGroup(weight, address(uint160(0x1000 + i)), address(uint160(0x2000 + i)));
         }
 
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, feeBps);
-        (PortfolioManagerArgsBuilder.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps) = this._callParse(args);
 
         assertEq(parsed.length, n);
         for (uint256 i = 0; i < n; i++) {
@@ -130,92 +126,91 @@ contract PortfolioManagerArgsBuilderTest is Test {
     // ---- build: validation ----
 
     function test_BuildRevertsOnEmptyUniverse() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](0);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](0);
 
-        vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerEmptyUniverse.selector);
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerEmptyUniverse.selector);
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnEmptyGroup() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](1);
-        groups[0] =
-            PortfolioManagerArgsBuilder.Group({weight: WAD, members: new PortfolioManagerArgsBuilder.Member[](0)});
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](1);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: WAD, members: new PortfolioManagerArgsCodec.Member[](0)});
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerEmptyGroup.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerEmptyGroup.selector, 0));
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsWhenWeightsDoNotSumToWad() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](2);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_B, FEED_B); // sums to 0.9e18, not WAD
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerWeightsMustSumToWad.selector, 0.9e18)
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerWeightsMustSumToWad.selector, 0.9e18)
         );
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnZeroWeight() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](2);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = _singleMemberGroup(0, TOKEN_A, FEED_A);
         groups[1] = _singleMemberGroup(WAD, TOKEN_B, FEED_B);
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerZeroWeight.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroWeight.selector, 0));
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnTooManyGroups() public {
         uint256 n = uint256(type(uint8).max) + 1; // 256, one past the packed uint8 group-count field
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](n);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
         // Values don't need to sum to WAD -- the length check reverts before the weights loop.
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerTooManyGroups.selector, n));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyGroups.selector, n));
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnTooManyMembers() public {
         uint256 n = uint256(type(uint8).max) + 1; // 256, one past the packed uint8 member-count field
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](n);
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](n);
         for (uint256 i = 0; i < n; i++) {
-            members[i] = PortfolioManagerArgsBuilder.Member({
+            members[i] = PortfolioManagerArgsCodec.Member({
                 token: address(uint160(0x1000 + i)), feed: address(uint160(0x2000 + i)), maxStaleness: STALENESS
             });
         }
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](1);
-        groups[0] = PortfolioManagerArgsBuilder.Group({weight: WAD, members: members});
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](1);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: WAD, members: members});
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerTooManyMembers.selector, n));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyMembers.selector, n));
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnZeroFeedAddress() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](1);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](1);
         groups[0] = _singleMemberGroup(WAD, TOKEN_A, address(0));
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
         );
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnDuplicateTokenAcrossGroups() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](2);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_B); // TOKEN_A declared twice
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerDuplicateToken.selector, TOKEN_A)
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerDuplicateToken.selector, TOKEN_A)
         );
         this._callBuild(groups, 0);
     }
 
     function test_BuildRevertsOnFeeBpsAboveHundredPercent() public {
-        PortfolioManagerArgsBuilder.Group[] memory groups = new PortfolioManagerArgsBuilder.Group[](1);
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](1);
         groups[0] = _singleMemberGroup(WAD, TOKEN_A, FEED_A);
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerFeeBpsOutOfRange.selector, PM_BPS + 1)
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, PM_BPS + 1)
         );
         this._callBuild(groups, uint32(PM_BPS + 1));
     }
@@ -228,7 +223,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
             abi.encodePacked(uint8(1), uint128(0.5e18), uint8(1), TOKEN_A, FEED_A, uint16(STALENESS), uint32(0));
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerWeightsMustSumToWad.selector, 0.5e18)
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerWeightsMustSumToWad.selector, 0.5e18)
         );
         this._callParse(malformed);
     }
@@ -252,14 +247,14 @@ contract PortfolioManagerArgsBuilderTest is Test {
             uint32(0)
         );
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerZeroWeight.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroWeight.selector, 0));
         this._callParse(malformed);
     }
 
     function test_ParseRevertsOnEmptyUniverse() public {
         bytes memory malformed = abi.encodePacked(uint8(0));
 
-        vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerEmptyUniverse.selector);
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerEmptyUniverse.selector);
         this._callParse(malformed);
     }
 
@@ -267,7 +262,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         // Declares 1 group but only supplies 10 of the required 17 header bytes.
         bytes memory malformed = abi.encodePacked(uint8(1), uint80(0));
 
-        vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerMissingGroupHeader.selector);
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingGroupHeader.selector);
         this._callParse(malformed);
     }
 
@@ -275,7 +270,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         // Valid group header (1 member) but only 10 of the required 44 bytes for it.
         bytes memory malformed = abi.encodePacked(uint8(1), uint128(WAD), uint8(1), uint80(0));
 
-        vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerMissingMemberEntry.selector);
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingMemberEntry.selector);
         this._callParse(malformed);
     }
 
@@ -284,7 +279,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
             abi.encodePacked(uint8(1), uint128(WAD), uint8(1), TOKEN_A, address(0), uint16(STALENESS));
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsBuilder.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
         );
         this._callParse(malformed);
     }
@@ -293,7 +288,7 @@ contract PortfolioManagerArgsBuilderTest is Test {
         // Valid single-token universe (sums to WAD) but no trailing feeBps bytes.
         bytes memory malformed = abi.encodePacked(uint8(1), uint128(WAD), uint8(1), TOKEN_A, FEED_A, uint16(STALENESS));
 
-        vm.expectRevert(PortfolioManagerArgsBuilder.PortfolioManagerMissingFeeBps.selector);
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingFeeBps.selector);
         this._callParse(malformed);
     }
 }

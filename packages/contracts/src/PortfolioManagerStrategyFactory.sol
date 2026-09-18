@@ -6,12 +6,12 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerArgsBuilder} from "./utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 
 /// @title PortfolioManagerStrategyFactory — validates a PM strategy's ship() encoding
 /// @notice A PM strategy's declared universe exists in two places `IAqua.ship()` never
-///         cross-checks: `PortfolioManagerArgsBuilder`'s encoded args (what the curve opcode
+///         cross-checks: `PortfolioManagerArgsCodec`'s encoded args (what the curve opcode
 ///         actually prices against) and the `tokens` array passed to `ship()` itself (what
 ///         Aqua's ledger actually tracks). `ship()` succeeds either way, even when they
 ///         disagree -- the mismatch only surfaces later, when some taker happens to trade the
@@ -37,8 +37,8 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
 
         uint256 argsLength = uint8(program[1]);
         bytes calldata args = program[2:2 + argsLength];
-        (PortfolioManagerArgsBuilder.Group[] memory groups,) = PortfolioManagerArgsBuilder.parse(args);
-        address[] memory declared = PortfolioManagerArgsBuilder.flattenTokens(groups);
+        (PortfolioManagerArgsCodec.Group[] memory groups,) = PortfolioManagerArgsCodec.parse(args);
+        address[] memory declared = PortfolioManagerArgsCodec.flattenTokens(groups);
 
         for (uint256 i = 0; i < declared.length; i++) {
             bool shipped = false;

@@ -23,7 +23,7 @@ library PortfolioManagerPricing {
     error PortfolioManagerPricingInsufficientOutputBalance(uint256 balanceOut, uint256 amountOut);
 
     /// @param weightIn/weightOut WAD-scaled; need not sum to WAD by themselves (only the full
-    ///        declared universe's weights do, per `PortfolioManagerArgsBuilder`) — only their
+    ///        declared universe's weights do, per `PortfolioManagerArgsCodec`) — only their
     ///        ratio matters to this formula.
     /// @param feeWad WAD-scaled fee fraction taken on the input side (ADR-0008: 2 bps = 2e14).
     struct Quote {

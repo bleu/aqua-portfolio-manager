@@ -13,7 +13,7 @@ import {MockTaker} from "../lib/swap-vm/test/mocks/MockTaker.sol";
 
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerArgsBuilder} from "../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
@@ -45,7 +45,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     /// @dev group0 = {tokenA, tokenB} (2 members), group1 = {tokenC} (1 member) -- deliberately
     ///      mixes a multi-member and a single-member group in the same universe, since both must
     ///      resolve through the same uniform oracle path.
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
         aqua = new Aqua();
@@ -65,17 +65,17 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         maker = vm.addr(0x1234);
         taker = new MockTaker(aqua, router, address(this));
 
-        PortfolioManagerArgsBuilder.Member[] memory group0Members = new PortfolioManagerArgsBuilder.Member[](2);
+        PortfolioManagerArgsCodec.Member[] memory group0Members = new PortfolioManagerArgsCodec.Member[](2);
         group0Members[0] =
-            PortfolioManagerArgsBuilder.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
+            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
         group0Members[1] =
-            PortfolioManagerArgsBuilder.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
-        groups.push(PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: group0Members}));
+            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        groups.push(PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: group0Members}));
 
-        PortfolioManagerArgsBuilder.Member[] memory group1Members = new PortfolioManagerArgsBuilder.Member[](1);
+        PortfolioManagerArgsCodec.Member[] memory group1Members = new PortfolioManagerArgsCodec.Member[](1);
         group1Members[0] =
-            PortfolioManagerArgsBuilder.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
-        groups.push(PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: group1Members}));
+            PortfolioManagerArgsCodec.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
+        groups.push(PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: group1Members}));
     }
 
     // ===== Helpers =====

@@ -8,7 +8,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
-import {PortfolioManagerArgsBuilder, PM_BPS} from "./utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec, PM_BPS} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
@@ -16,7 +16,7 @@ import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {FixedPointMath} from "./utils/FixedPointMath.sol";
 
 /// @title PortfolioManagerSwap — the real weighted-curve SwapVM instruction, per PRICING.md
-/// @notice Wires PortfolioManagerArgsBuilder's declared groups and PortfolioManagerPricing's
+/// @notice Wires PortfolioManagerArgsCodec's declared groups and PortfolioManagerPricing's
 ///         curve math into an actual instruction: reads real wallet balances via plain
 ///         `balanceOf` (ADR-0002 — never AQUA's own ledger via ctx.swap.balanceIn/Out, which is
 ///         a same-strategy-only accounting entry, not a wallet-wide reading), resolves which
@@ -42,19 +42,19 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
 
     uint256 private constant WAD = FixedPointMath.WAD;
-    /// @dev Converts PortfolioManagerArgsBuilder's `feeBps` (PM_BPS = 1e9 scale) into
+    /// @dev Converts PortfolioManagerArgsCodec's `feeBps` (PM_BPS = 1e9 scale) into
     ///      PortfolioManagerPricing's `feeWad` (WAD = 1e18 scale) — both scales represent
     ///      100% at their own constant, so this ratio is exact with no rounding.
     uint256 private constant FEE_WAD_PER_BPS = WAD / PM_BPS;
 
     constructor(address aqua) Fee(aqua) {}
 
-    /// @param args Encoded via PortfolioManagerArgsBuilder.build (tokens, weights, feeBps)
+    /// @param args Encoded via PortfolioManagerArgsCodec.build (tokens, weights, feeBps)
     /// @dev Not declared `view`: Solidity won't implicitly widen a view-typed function-pointer
     ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
     ///      `BasketXYCSwap.sol`'s identical note).
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        (PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps) = PortfolioManagerArgsBuilder.parse(args);
+        (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps) = PortfolioManagerArgsCodec.parse(args);
 
         (uint256 groupInIdx, uint256 memberInIdx) = _resolve(groups, ctx.query.tokenIn);
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
@@ -128,13 +128,13 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev Sole guard on the declared universe now (balances below are ungated) — reachable
     ///      via a `ship()`/args encoding mismatch, since `AQUA.safeBalances()` only checks the
     ///      token is part of the shipped strategy, not that it matches this instruction's args.
-    function _resolve(PortfolioManagerArgsBuilder.Group[] memory groups, address token)
+    function _resolve(PortfolioManagerArgsCodec.Group[] memory groups, address token)
         private
         pure
         returns (uint256 groupIdx, uint256 memberIdx)
     {
         for (uint256 i = 0; i < groups.length; i++) {
-            PortfolioManagerArgsBuilder.Member[] memory members = groups[i].members;
+            PortfolioManagerArgsCodec.Member[] memory members = groups[i].members;
             for (uint256 j = 0; j < members.length; j++) {
                 if (members[j].token == token) return (i, j);
             }
@@ -145,7 +145,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev The specific traded token's own price/decimals, separate from its group's
     ///      aggregate `_groupValueWad` sum -- needed to convert the traded amount into and back
     ///      out of the group-value numeraire (see the main function's own note on why).
-    function _priceAndDecimals(PortfolioManagerArgsBuilder.Member memory member, address token)
+    function _priceAndDecimals(PortfolioManagerArgsCodec.Member memory member, address token)
         private
         view
         returns (uint256 priceWad, uint8 decimals)
@@ -159,7 +159,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) —
     ///      always goes through `OracleAdapter`, even for a single-member group, so decimal
     ///      normalization and price conversion are uniform regardless of group size.
-    function _groupValueWad(PortfolioManagerArgsBuilder.Group memory group, address maker)
+    function _groupValueWad(PortfolioManagerArgsCodec.Group memory group, address maker)
         private
         view
         returns (uint256)
@@ -169,7 +169,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256[] memory balances = new uint256[](n);
         OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](n);
         for (uint256 i = 0; i < n; i++) {
-            PortfolioManagerArgsBuilder.Member memory m = group.members[i];
+            PortfolioManagerArgsCodec.Member memory m = group.members[i];
             tokens[i] = m.token;
             balances[i] = IERC20(m.token).balanceOf(maker);
             feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});

@@ -14,7 +14,7 @@ import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {AquaE2EBase} from "./AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerArgsBuilder} from "../../../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
@@ -62,7 +62,7 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     PortfolioManagerStrategyFactory internal strategyFactory;
     MultiSendCallOnly internal multiSendCallOnly;
 
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public virtual override {
         super.setUp();
@@ -83,11 +83,11 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     function _singleMemberGroup(uint256 weight, address token, address feed)
         internal
         pure
-        returns (PortfolioManagerArgsBuilder.Group memory)
+        returns (PortfolioManagerArgsCodec.Group memory)
     {
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
-        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: PM_MAX_STALENESS});
-        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
+        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: PM_MAX_STALENESS});
+        return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {

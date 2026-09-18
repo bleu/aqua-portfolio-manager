@@ -16,7 +16,7 @@ import {MockTaker} from "../lib/swap-vm/test/mocks/MockTaker.sol";
 
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerArgsBuilder} from "../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
@@ -24,7 +24,7 @@ import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
-/// PortfolioManagerPricing.t.sol/PortfolioManagerArgsBuilder.t.sol already cover. This file
+/// PortfolioManagerPricing.t.sol/PortfolioManagerArgsCodec.t.sol already cover. This file
 /// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
 /// per 1IP-103) actually behave as designed end to end, and is it actually mandatory — not just
 /// something PortfolioManagerProgramBuilder happens to include.
@@ -48,7 +48,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     address internal maker;
 
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
         aqua = new Aqua();
@@ -75,14 +75,14 @@ contract PortfolioManagerOpcodesTest is Test {
     function _singleMemberGroup(uint256 weight, address token, address feed)
         internal
         pure
-        returns (PortfolioManagerArgsBuilder.Group memory)
+        returns (PortfolioManagerArgsCodec.Group memory)
     {
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
         // The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours) -- generous on
         // purpose within that ceiling, since this suite's own vm.warp usage (if any) is about
         // ledger/fee mechanics, not oracle freshness.
-        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: 18 hours});
-        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
+        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: 18 hours});
+        return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
@@ -92,10 +92,10 @@ contract PortfolioManagerOpcodesTest is Test {
     /// @dev Deliberately does NOT call PortfolioManagerProgramBuilder — hand-packs the wire
     ///      format directly (opcode 0, the curve, per VM.sol's runLoop) the way any third party
     ///      who never heard of our builder still could, using only the LP-facing
-    ///      PortfolioManagerArgsBuilder encoding (public, documented, nothing secret about it).
+    ///      PortfolioManagerArgsCodec encoding (public, documented, nothing secret about it).
     ///      Proves the protocol fee survives bypassing our own tooling entirely.
     function _buildOrderFromHandCraftedProgram(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, lpFeeBps);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, lpFeeBps);
         bytes memory program = abi.encodePacked(uint8(0), uint8(args.length), args);
         return _orderForProgram(program);
     }
@@ -402,7 +402,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     /// @notice The one case where our own declared-universe check is genuinely reachable, not
     /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
-    /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
+    /// never gave a weight to (a ship()/PortfolioManagerArgsCodec encoding mismatch, not a
     /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
     /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {

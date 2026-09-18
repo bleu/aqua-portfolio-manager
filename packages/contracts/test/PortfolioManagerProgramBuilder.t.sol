@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerArgsBuilder} from "../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 
 /// @notice `build()`'s own wire-format output, asserted directly against VM.sol's runLoop
 /// format (`[opcode:1][argsLength:1][args]`) -- every other test exercises this only
@@ -13,23 +13,23 @@ import {PortfolioManagerArgsBuilder} from "../src/utils/PortfolioManagerArgsBuil
 /// correctly), which would still pass even if the opcode or length byte were wrong as long as
 /// VM.sol's own parser happened to tolerate it.
 contract PortfolioManagerProgramBuilderTest is Test {
-    function _groups() internal pure returns (PortfolioManagerArgsBuilder.Group[] memory groups) {
+    function _groups() internal pure returns (PortfolioManagerArgsCodec.Group[] memory groups) {
         address[2] memory tokens = [address(0x1111), address(0x2222)];
         address[2] memory feeds = [address(0xFEED1), address(0xFEED2)];
-        groups = new PortfolioManagerArgsBuilder.Group[](2);
+        groups = new PortfolioManagerArgsCodec.Group[](2);
         for (uint256 i = 0; i < 2; i++) {
-            PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
-            members[0] = PortfolioManagerArgsBuilder.Member({token: tokens[i], feed: feeds[i], maxStaleness: 3600});
-            groups[i] = PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: members});
+            PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
+            members[0] = PortfolioManagerArgsCodec.Member({token: tokens[i], feed: feeds[i], maxStaleness: 3600});
+            groups[i] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members});
         }
     }
 
     function test_BuildProducesCorrectWireFormat() public pure {
-        PortfolioManagerArgsBuilder.Group[] memory groups = _groups();
+        PortfolioManagerArgsCodec.Group[] memory groups = _groups();
         uint32 feeBps = 200_000; // 2 bps at PM_BPS = 1e9 scale
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, feeBps);
-        bytes memory expectedArgs = PortfolioManagerArgsBuilder.build(groups, feeBps);
+        bytes memory expectedArgs = PortfolioManagerArgsCodec.build(groups, feeBps);
 
         assertEq(program.length, 2 + expectedArgs.length, "opcode byte + argsLength byte + args");
         assertEq(uint8(program[0]), PortfolioManagerProgramBuilder.CURVE_OPCODE, "opcode byte");
@@ -39,7 +39,7 @@ contract PortfolioManagerProgramBuilderTest is Test {
         for (uint256 i = 0; i < expectedArgs.length; i++) {
             actualArgs[i] = program[2 + i];
         }
-        assertEq(actualArgs, expectedArgs, "args bytes must match PortfolioManagerArgsBuilder's own output exactly");
+        assertEq(actualArgs, expectedArgs, "args bytes must match PortfolioManagerArgsCodec's own output exactly");
     }
 
     function test_DaoFeeBpsTiering() public pure {
