@@ -7,6 +7,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
+import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
 import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
@@ -44,13 +45,30 @@ contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      100% at their own constant, so this ratio is exact with no rounding.
     uint256 private constant FEE_WAD_PER_BPS = WAD / PM_BPS;
 
-    constructor(address aqua) Fee(aqua) {}
+    /// @dev The multicall validation that's supposed to run alongside `Aqua.ship()` is
+    ///      convention, not enforced by `ship()` itself -- this is what lets the swap opcode
+    ///      independently check it actually happened, instead of trusting the caller.
+    IPortfolioManagerStrategyFactory private immutable STRATEGY_FACTORY;
+
+    constructor(address aqua, address strategyFactory) Fee(aqua) {
+        STRATEGY_FACTORY = IPortfolioManagerStrategyFactory(strategyFactory);
+    }
 
     /// @param args Encoded via PortfolioManagerArgsBuilder.build (tokens, weights, feeBps)
     /// @dev Not declared `view`: Solidity won't implicitly widen a view-typed function-pointer
     ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
     ///      `BasketXYCSwap.sol`'s identical note).
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
+        // Cheapest possible fail path -- `orderHash` needs no parsing, and checking it before
+        // touching `args` at all means an unattested strategy never even pays for parsing its
+        // own encoded groups. Every swap re-checks this (not just "the first" one): the flag is
+        // monotonic, so the observable behavior is identical either way, without needing to
+        // special-case "firstness."
+        require(
+            STRATEGY_FACTORY.buildParamsAttested(ctx.query.orderHash),
+            PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
+        );
+
         (PortfolioManagerArgsBuilder.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =
             PortfolioManagerArgsBuilder.parse(args);
 

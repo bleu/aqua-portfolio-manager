@@ -21,6 +21,10 @@ interface IPortfolioManagerStrategyFactory {
         uint256 groupIndex, uint256 actualShareWad, uint256 targetWeightWad
     );
 
+    /// @dev Emitted once per successful `attestBuildParameters` call -- not just on the first,
+    ///      since re-attesting an already-attested strategy is a harmless no-op, not an error.
+    event BuildParametersAttested(bytes32 indexed strategyHash);
+
     /// @notice Reverts unless `order`'s own encoded universe matches `tokens` exactly -- same
     ///         members, both directions. Only accepts programs whose first (and, for a real PM
     ///         strategy, only) instruction is `PortfolioManagerProgramBuilder.CURVE_OPCODE`.
@@ -31,4 +35,17 @@ interface IPortfolioManagerStrategyFactory {
     ///         ship()-time check, batched alongside `requireUniverseMatches` -- see
     ///         `PortfolioManagerE2EBase.sol::_shipOnly`.
     function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view;
+
+    /// @notice Runs both `requireUniverseMatches` (against `tokens`) and
+    ///         `requireBalancedWithinTolerance` (against `order.maker`), then records that this
+    ///         strategy's build parameters were validated -- `PortfolioManagerSwap` refuses to
+    ///         price any trade for a strategy that was never attested. Permissionless and
+    ///         idempotent: the result is a purely mechanical, independently-recomputable on-chain
+    ///         fact, not an authorization decision, so who calls it or how many times doesn't
+    ///         matter.
+    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external;
+
+    /// @notice Whether `attestBuildParameters` has ever succeeded for this `strategyHash`
+    ///         (`keccak256(abi.encode(order))` for Aqua-native orders).
+    function buildParamsAttested(bytes32 strategyHash) external view returns (bool);
 }

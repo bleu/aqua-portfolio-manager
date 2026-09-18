@@ -25,4 +25,11 @@ interface IPortfolioManagerSwap {
     ///      past the check in one step -- that pair stays untradeable until external action
     ///      (a deposit, or a fresh strategy) restores it within tolerance.
     error PortfolioManagerSwapExcessivePriceDeviation(uint256 spotPriceWad, uint256 maxDeviationBps);
+    /// @dev The multicall validation that's supposed to run alongside `Aqua.ship()`
+    ///      (`PortfolioManagerStrategyFactory.attestBuildParameters`) is convention, not
+    ///      enforced by `Aqua.ship()` itself -- anyone can call `ship()` directly and skip it
+    ///      entirely. Checked first, before anything else in this opcode: a strategy that was
+    ///      never attested can't be priced or traded at all, regardless of what its own encoded
+    ///      args claim.
+    error PortfolioManagerSwapBuildParametersNotAttested(bytes32 strategyHash);
 }

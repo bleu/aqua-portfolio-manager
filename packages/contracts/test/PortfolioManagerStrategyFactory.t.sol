@@ -280,4 +280,84 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         factory.requireBalancedWithinTolerance(order, maker);
     }
+
+    // ===== attestBuildParameters (BLEUDEV-381) =====
+
+    function test_AttestBuildParametersRecordsStateAndEmitsEvent() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9);
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        bytes32 strategyHash = keccak256(abi.encode(order));
+
+        assertFalse(factory.buildParamsAttested(strategyHash), "must be unattested before the call");
+
+        vm.expectEmit(true, false, false, false, address(factory));
+        emit IPortfolioManagerStrategyFactory.BuildParametersAttested(strategyHash);
+        factory.attestBuildParameters(order, tokens);
+
+        assertTrue(factory.buildParamsAttested(strategyHash), "must be attested after a successful call");
+    }
+
+    function test_AttestBuildParametersRevertsOnUniverseMismatchSameAsRequireUniverseMatches() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+        ISwapVM.Order memory order = _order(declared, weights);
+
+        address[] memory shipped = new address[](3);
+        shipped[0] = address(tokenA);
+        shipped[1] = address(tokenB);
+        shipped[2] = address(tokenC);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryShippedTokenNotDeclared.selector,
+                address(tokenC)
+            )
+        );
+        factory.attestBuildParameters(order, shipped);
+
+        assertFalse(
+            factory.buildParamsAttested(keccak256(abi.encode(order))), "a reverted attestation must not be recorded"
+        );
+    }
+
+    function test_AttestBuildParametersRevertsOnExcessiveDeviationSameAsRequireBalancedWithinTolerance() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
+        uint256 balA = 10_000e18;
+        uint256 balB = 100_000e18;
+        tokenA.mint(maker, balA);
+        tokenB.mint(maker, balB);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryExcessivePriceDeviation.selector
+        );
+        factory.attestBuildParameters(order, tokens);
+    }
+
+    function test_AttestBuildParametersIsIdempotent() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9);
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+
+        factory.attestBuildParameters(order, tokens);
+        factory.attestBuildParameters(order, tokens); // must not revert
+
+        assertTrue(factory.buildParamsAttested(keccak256(abi.encode(order))));
+    }
 }

@@ -10,10 +10,14 @@ import {SwapVM} from "swap-vm/SwapVM.sol";
 import {PortfolioManagerOpcodes} from "./PortfolioManagerOpcodes.sol";
 
 contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
-    constructor(address aqua, address weth, address owner, string memory name, string memory version)
-        SwapVM(aqua, weth, owner, name, version)
-        PortfolioManagerOpcodes(aqua)
-    {}
+    constructor(
+        address aqua,
+        address weth,
+        address owner,
+        string memory name,
+        string memory version,
+        address strategyFactory
+    ) SwapVM(aqua, weth, owner, name, version) PortfolioManagerOpcodes(aqua, strategyFactory) {}
 
     function _instructions()
         internal

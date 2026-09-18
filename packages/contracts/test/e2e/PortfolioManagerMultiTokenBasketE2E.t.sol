@@ -19,6 +19,7 @@ import {PortfolioManagerArgsBuilder} from "../../src/PortfolioManagerArgsBuilder
 import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerStrategyFactory} from "../../src/interfaces/IPortfolioManagerStrategyFactory.sol";
+import {IPortfolioManagerSwap} from "../../src/interfaces/IPortfolioManagerSwap.sol";
 import {PortfolioManagerPricing} from "../../src/PortfolioManagerPricing.sol";
 import {OracleAdapter} from "../../src/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
@@ -94,8 +95,10 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     function setUp() public override {
         super.setUp();
 
-        router = new PortfolioManagerRouter(address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1");
         strategyFactory = new PortfolioManagerStrategyFactory();
+        router = new PortfolioManagerRouter(
+            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyFactory)
+        );
         multiSendCallOnly = new MultiSendCallOnly();
         multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
 
@@ -241,17 +244,27 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         internal
         returns (bool)
     {
-        bytes memory validateData =
-            abi.encodeCall(PortfolioManagerStrategyFactory.requireUniverseMatches, (order, tokens));
-        bytes memory toleranceData =
-            abi.encodeCall(PortfolioManagerStrategyFactory.requireBalancedWithinTolerance, (order, order.maker));
+        return _execShipBatch(order, tokens, amounts, true);
+    }
+
+    /// @param attest Whether to include the `attestBuildParameters` leg -- `false` simulates a
+    ///        caller that skips the recommended multicall validation entirely and ships directly,
+    ///        the exact scenario the swap-time attestation gate exists to catch.
+    function _execShipBatch(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts, bool attest)
+        internal
+        returns (bool)
+    {
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
-        bytes memory batch = abi.encodePacked(
-            _encodeMultiSendTx(address(strategyFactory), validateData),
-            _encodeMultiSendTx(address(strategyFactory), toleranceData),
-            _encodeMultiSendTx(address(aqua), shipData)
-        );
+        bytes memory batch = attest
+            ? abi.encodePacked(
+                _encodeMultiSendTx(
+                    address(strategyFactory),
+                    abi.encodeCall(PortfolioManagerStrategyFactory.attestBuildParameters, (order, tokens))
+                ),
+                _encodeMultiSendTx(address(aqua), shipData)
+            )
+            : _encodeMultiSendTx(address(aqua), shipData);
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
 
         vm.prank(deployer);
@@ -552,5 +565,29 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryExcessivePriceDeviation.selector
         );
         _execShipBatch(order, tokens, amounts);
+    }
+
+    // ===== Build-parameter attestation gate (BLEUDEV-381) =====
+
+    function test_SwapRevertsWhenShippedWithoutAttestingBuildParameters() public {
+        ISwapVM.Order memory order = _buildOrder(7);
+
+        // Real Safe/MultiSendCallOnly path, but with only the ship() leg -- exactly what a
+        // caller that skips the recommended attest+ship batch would do.
+        (address[] memory tokens, uint256[] memory amounts) =
+            _fundAndApprove(WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING, USDT_FUNDING, USDC_FUNDING);
+        bool ok = _execShipBatch(order, tokens, amounts, false);
+        require(ok, "ship-only batch (no attest leg) must still succeed on its own");
+
+        uint256 amount = 300e6;
+        deal(address(usdc), address(taker), amount * 2);
+        bytes memory takerData = _exactInTakerData();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapBuildParametersNotAttested.selector, router.hash(order)
+            )
+        );
+        taker.swap(order, address(usdc), address(weth), amount, takerData);
     }
 }

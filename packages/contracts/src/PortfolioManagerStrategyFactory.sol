@@ -30,8 +30,37 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
     uint256 private constant WAD = 1e18;
 
     /// @inheritdoc IPortfolioManagerStrategyFactory
+    mapping(bytes32 => bool) public buildParamsAttested;
+
+    /// @inheritdoc IPortfolioManagerStrategyFactory
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
         (PortfolioManagerArgsBuilder.Group[] memory groups,,) = PortfolioManagerArgsBuilder.parse(_args(order));
+        _requireUniverseMatches(groups, tokens);
+    }
+
+    /// @inheritdoc IPortfolioManagerStrategyFactory
+    function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
+        (PortfolioManagerArgsBuilder.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsBuilder.parse(_args(order));
+        _requireBalancedWithinTolerance(groups, maxDeviationBps, maker);
+    }
+
+    /// @inheritdoc IPortfolioManagerStrategyFactory
+    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external {
+        (PortfolioManagerArgsBuilder.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsBuilder.parse(_args(order));
+        _requireUniverseMatches(groups, tokens);
+        _requireBalancedWithinTolerance(groups, maxDeviationBps, order.maker);
+
+        bytes32 strategyHash = keccak256(abi.encode(order));
+        buildParamsAttested[strategyHash] = true;
+        emit BuildParametersAttested(strategyHash);
+    }
+
+    function _requireUniverseMatches(PortfolioManagerArgsBuilder.Group[] memory groups, address[] calldata tokens)
+        private
+        pure
+    {
         address[] memory declared = PortfolioManagerArgsBuilder.flattenTokens(groups);
 
         for (uint256 i = 0; i < declared.length; i++) {
@@ -57,10 +86,11 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
         }
     }
 
-    /// @inheritdoc IPortfolioManagerStrategyFactory
-    function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
-        (PortfolioManagerArgsBuilder.Group[] memory groups,, uint32 maxDeviationBps) =
-            PortfolioManagerArgsBuilder.parse(_args(order));
+    function _requireBalancedWithinTolerance(
+        PortfolioManagerArgsBuilder.Group[] memory groups,
+        uint32 maxDeviationBps,
+        address maker
+    ) private view {
         if (maxDeviationBps == 0) return;
 
         uint256 n = groups.length;

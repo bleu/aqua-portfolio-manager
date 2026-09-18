@@ -19,6 +19,7 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
@@ -40,6 +41,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
+    PortfolioManagerStrategyFactory internal strategyFactory;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     MockAggregatorV3 internal feedA;
@@ -52,7 +54,9 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        router = new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1");
+        strategyFactory = new PortfolioManagerStrategyFactory();
+        router =
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyFactory));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -144,6 +148,8 @@ contract PortfolioManagerOpcodesTest is Test {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = tokenInLedgerAmount;
         amounts[1] = INITIAL_BALANCE;
+
+        strategyFactory.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         bytes32 strategyHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -405,6 +411,12 @@ contract PortfolioManagerOpcodesTest is Test {
     /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
     /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
     /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
+    /// @dev Attests with the *declared* 2-token set (matches, so attestation succeeds) but then
+    ///      ships a *different*, 3-token set directly -- `attestBuildParameters`'s own `tokens`
+    ///      argument isn't cryptographically bound to whatever a later, separate `ship()` call
+    ///      actually uses, so this is still a real, reachable scenario even with attestation
+    ///      required, as long as the two calls aren't the same atomic batch (the recommended flow
+    ///      always batches them together with the identical `tokens` array).
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -417,6 +429,11 @@ contract PortfolioManagerOpcodesTest is Test {
         tokenB.approve(address(aqua), type(uint256).max);
         tokenC.approve(address(aqua), type(uint256).max);
         vm.stopPrank();
+
+        address[] memory declaredTokens = new address[](2);
+        declaredTokens[0] = address(tokenA);
+        declaredTokens[1] = address(tokenB);
+        strategyFactory.attestBuildParameters(order, declaredTokens);
 
         address[] memory tokens = new address[](3);
         tokens[0] = address(tokenA);
@@ -436,6 +453,42 @@ contract PortfolioManagerOpcodesTest is Test {
             abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
         );
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
+    }
+
+    /// @notice The multicall validation that's supposed to run alongside `ship()`
+    /// (`PortfolioManagerStrategyFactory.attestBuildParameters`) is convention, not enforced by
+    /// `Aqua.ship()` itself -- this proves the swap opcode blocks trading on its own when that
+    /// convention was skipped, rather than trusting the caller.
+    function test_RevertsWhenStrategyWasNeverAttested() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        tokenA.mint(maker, INITIAL_BALANCE);
+        tokenB.mint(maker, INITIAL_BALANCE);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = INITIAL_BALANCE;
+        amounts[1] = INITIAL_BALANCE;
+
+        // Ships directly, skipping strategyFactory.attestBuildParameters entirely -- exactly what
+        // a caller that never went through the recommended multicall batch would do.
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), tokens, amounts);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenA.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapBuildParametersNotAttested.selector, router.hash(order)
+            )
+        );
+        taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
     /// @notice The central guarantee: the protocol fee is not merely a convention our own

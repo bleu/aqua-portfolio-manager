@@ -16,6 +16,7 @@ import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuil
 import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
 import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {OracleAdapter} from "../src/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
@@ -32,6 +33,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
+    PortfolioManagerStrategyFactory internal strategyFactory;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -49,7 +51,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        router = new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1");
+        strategyFactory = new PortfolioManagerStrategyFactory();
+        router =
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyFactory));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -132,6 +136,8 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         amounts[0] = balA;
         amounts[1] = balB;
         amounts[2] = balC;
+
+        strategyFactory.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), tokens, amounts);

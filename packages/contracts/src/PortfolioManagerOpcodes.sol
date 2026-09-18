@@ -10,7 +10,7 @@ import {Context} from "swap-vm/libs/VM.sol";
 import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 
 contract PortfolioManagerOpcodes is PortfolioManagerSwap {
-    constructor(address aqua) PortfolioManagerSwap(aqua) {}
+    constructor(address aqua, address strategyFactory) PortfolioManagerSwap(aqua, strategyFactory) {}
 
     function _notInstruction(
         Context memory,
