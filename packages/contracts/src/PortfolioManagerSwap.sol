@@ -71,8 +71,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
         );
 
+        // decodeTrusted, not parse: STRATEGY_VALIDATOR.buildParamsAttested above already proves
+        // attestBuildParameters ran parse() successfully against these exact bytes once --
+        // re-deriving group/member bounds, weight sum, duplicate tokens, and fee range on every
+        // swap would just repeat work whose answer can't have changed since attestation.
         (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =
-            PortfolioManagerArgsCodec.parse(args);
+            PortfolioManagerArgsCodec.decodeTrusted(args);
 
         (uint256 groupInIdx, uint256 memberInIdx) = _resolve(groups, ctx.query.tokenIn);
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
