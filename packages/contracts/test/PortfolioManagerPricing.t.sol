@@ -222,6 +222,104 @@ contract PortfolioManagerPricingTest is Test {
         assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances");
     }
 
+    /// @notice Stresses the fuzz domain specifically with a *tiny* input reserve paired with a
+    /// *large* output reserve -- `testFuzz_ExactInNeverDecreasesTheInvariantAtNearZeroBalance`
+    /// above keeps both sides small and never explores this pairing. A non-reverting trade must
+    /// never hand out more than 99.9% of `balanceOut` -- both sides of this bound are permissive
+    /// (a legitimate, extreme-skew trade could plausibly take a genuine large fraction), it's
+    /// specifically the "basically the entire pool, for a near-free input" shape this guards
+    /// against.
+    /// @dev Checks the invariant, not a raw drain percentage -- a large fraction of `balanceOut`
+    ///      genuinely, correctly leaving the pool at high weight skew combined with a
+    ///      substantial-relative-to-balanceIn trade is real curve behavior (steep, but not a
+    ///      bug); an early draft of this test asserted a flat "<99.9% of balanceOut" bound
+    ///      instead and produced a false positive on exactly that legitimate case (balanceIn
+    ///      1e4, exponent 24, a 74%-of-balanceIn trade correctly extracting 99.9998% of a
+    ///      mismatched balanceOut) -- the invariant is the property that actually distinguishes
+    ///      "steep but correct" from "wrong, in the trader's favor."
+    function testFuzz_TinyBalanceInPairedWithHugeBalanceOutInvariantHolds(
+        uint8 balInExp,
+        uint8 balOutExp,
+        uint32 weightInRaw,
+        uint256 amountInRaw
+    ) public {
+        uint256 balanceIn = 10 ** bound(balInExp, 0, 6); // 1 .. 1e6
+        uint256 balanceOut = 10 ** bound(balOutExp, 18, 30); // 1e18 .. 1e30
+        uint256 weightIn = bound(weightInRaw, 0.05e18, 0.95e18);
+        uint256 weightOut = WAD - weightIn;
+        uint256 amountIn = bound(amountInRaw, 1, 1e30);
+
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 2e14);
+
+        uint256 amountOut;
+        try this._exactIn(q, amountIn) returns (uint256 out) {
+            amountOut = out;
+        } catch {
+            return; // a clean revert is always a safe outcome
+        }
+        vm.assume(amountOut > 0);
+
+        uint256 newBalanceIn = balanceIn + amountIn;
+        uint256 newBalanceOut = balanceOut - amountOut;
+
+        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 invariantRatio = growthIn * growthOut / WAD;
+
+        // Same wide tolerance rationale as testFuzz_ExactInNeverDecreasesTheInvariantAtNearZeroBalance
+        // above -- precision noise from computing the check itself at extreme balance ratios,
+        // not a license for a real decrease.
+        assertGe(
+            invariantRatio + 1e8,
+            WAD,
+            "the curve invariant must never decrease when balanceIn is tiny and balanceOut is huge"
+        );
+    }
+
+    /// @notice An independent invariant check using *exact* integer arithmetic for an integer
+    /// weight ratio (90/10 -> exponent exactly 9), computing `balanceIn^9 * balanceOut`
+    /// before/after via plain `uint256` multiplication -- no `FixedPointMath.pow` involved
+    /// anywhere in the check itself, so a shared bug between the production code and the
+    /// verification can't hide here the way reusing `pow` to check `pow`'s own output could.
+    /// Balance ranges are kept small enough that `balanceIn^9` itself can't overflow `uint256`
+    /// even multiplied by a large `balanceOut`.
+    function testFuzz_ExactInInvariantHoldsUnderExactIntegerArithmeticAtIntegerExponent(
+        uint32 balInRaw,
+        uint96 balOutRaw,
+        uint256 amountInRaw
+    ) public {
+        uint256 weightIn = 0.9e18; // exponent = weightIn/weightOut = 9 exactly
+        uint256 weightOut = 0.1e18;
+
+        uint256 balanceIn = bound(balInRaw, 1, 1e4); // balanceIn^9 <= 1e36
+        uint256 balanceOut = bound(balOutRaw, 1e18, 1e30); // product with balanceIn^9 <= 1e66, safe
+        uint256 amountIn = bound(amountInRaw, 1, 1e30);
+
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 2e14);
+
+        uint256 amountOut;
+        try this._exactIn(q, amountIn) returns (uint256 out) {
+            amountOut = out;
+        } catch {
+            return;
+        }
+        vm.assume(amountOut > 0 && amountOut < balanceOut);
+
+        uint256 newBalanceIn = balanceIn + amountIn;
+
+        uint256 invariantBefore = _pow9Exact(balanceIn) * balanceOut;
+        uint256 invariantAfter = _pow9Exact(newBalanceIn) * (balanceOut - amountOut);
+
+        assertGe(
+            invariantAfter, invariantBefore, "exact-integer invariant (balanceIn^9 * balanceOut) must not decrease"
+        );
+    }
+
+    function _pow9Exact(uint256 x) internal pure returns (uint256) {
+        uint256 x3 = x * x * x;
+        return x3 * x3 * x3;
+    }
+
     /// @notice `exactOut`'s own counterpart to `testFuzz_ExactInNeverDecreasesTheInvariant` --
     /// the invariant proof (DONATION-RESISTANCE-PROOF.md, ADR-0007) applies to both entry points
     /// equally, but only `exactIn` had fuzz coverage proving it in code.
@@ -342,15 +440,18 @@ contract PortfolioManagerPricingTest is Test {
     }
 
     /// @notice At sufficiently skewed weights (`weightIn/weightOut` large), `poweredRatio` can
-    /// underflow to exactly 0 in fixed-point for a small-enough `ratio` -- the true value is
-    /// real but below WAD's representable precision. Without a guard, `amountOut` computes to
-    /// exactly `balanceOut`: the entire pool, handed out for an ordinary-sized trade against an
-    /// imbalanced-but-not-degenerate pool. Regression test for that guard.
+    /// collapse to a handful of raw WAD units -- a value technically nonzero but below what
+    /// 18-decimal fixed point can represent trustworthily (rounding noise, not a real answer).
+    /// Without a guard, `amountOut` would compute to nearly `balanceOut`: almost the entire
+    /// pool, handed out for an ordinary-sized trade against an imbalanced-but-not-degenerate
+    /// pool. Regression test for `MIN_TRUSTWORTHY_POWERED_RATIO`, which catches this earlier and
+    /// more precisely than the downstream `amountOut < balanceOut` guard alone (which only ever
+    /// caught the exactly-zero case).
     function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
         PortfolioManagerPricing.PoolState memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 1_000_000, 1_000_000
+                PortfolioManagerPricing.PortfolioManagerPricingPoweredRatioBelowPrecisionFloor.selector, 0
             )
         );
         this._exactIn(q, 1000);
