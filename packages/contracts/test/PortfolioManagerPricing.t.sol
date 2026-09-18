@@ -459,13 +459,14 @@ contract PortfolioManagerPricingTest is Test {
     /// noise, not a real answer). Without a guard, `amountOut` would compute to nearly
     /// `balanceOut`: almost the entire pool, handed out for an ordinary-sized trade against an
     /// imbalanced-but-not-degenerate pool -- a real counterexample found in review, not a
-    /// hypothetical. Regression test for the existing `amountOut < balanceOut` guard, which
-    /// catches this cleanly.
+    /// hypothetical. Regression test for `MIN_TRUSTWORTHY_POWERED_RATIO`, which catches this
+    /// earlier and more precisely than the downstream `amountOut < balanceOut` guard alone
+    /// (which only ever caught the exactly-zero case).
     function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
         PortfolioManagerPricing.PoolState memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 1_000_000, 1_000_000
+                PortfolioManagerPricing.PortfolioManagerPricingPoweredRatioBelowPrecisionFloor.selector, 0
             )
         );
         this._exactIn(q, 1000);
