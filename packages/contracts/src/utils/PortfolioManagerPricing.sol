@@ -17,16 +17,16 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 ///      produced them and never itself reads a balance or a price — PRICING.md's own scope
 ///      note is explicit that resolving `B_i`/`B_o` is a prior step, not this formula's job.
 library PortfolioManagerPricing {
-    uint256 internal constant WAD = 1e18;
+    uint256 internal constant WAD = FixedPointMath.WAD;
 
     error PortfolioManagerPricingZeroBalance();
     error PortfolioManagerPricingInsufficientOutputBalance(uint256 balanceOut, uint256 amountOut);
 
     /// @param weightIn/weightOut WAD-scaled; need not sum to WAD by themselves (only the full
-    ///        declared universe's weights do, per `PortfolioManagerArgsBuilder`) — only their
+    ///        declared universe's weights do, per `PortfolioManagerArgsCodec`) — only their
     ///        ratio matters to this formula.
     /// @param feeWad WAD-scaled fee fraction taken on the input side (ADR-0008: 2 bps = 2e14).
-    struct Quote {
+    struct PoolState {
         uint256 balanceIn;
         uint256 balanceOut;
         uint256 weightIn;
@@ -36,7 +36,7 @@ library PortfolioManagerPricing {
 
     /// @notice `SP(i→o) = (B_i / w_i) / (B_o / w_o)`, WAD-scaled, before fees — token `i`
     ///         priced in terms of token `o`.
-    function spotPrice(Quote memory q) internal pure returns (uint256) {
+    function spotPrice(PoolState memory q) internal pure returns (uint256) {
         _requireNonZeroBalances(q);
         return (q.balanceIn * WAD / q.balanceOut) * q.weightOut / q.weightIn;
     }
@@ -59,7 +59,7 @@ library PortfolioManagerPricing {
     ///      below WAD's precision floor), which would otherwise silently return the pool's
     ///      entire `balanceOut`. Guarded below the same way `exactOut` already guards its own
     ///      output side.
-    function exactIn(Quote memory q, uint256 amountIn) internal pure returns (uint256 amountOut) {
+    function exactIn(PoolState memory q, uint256 amountIn) internal pure returns (uint256 amountOut) {
         _requireNonZeroBalances(q);
 
         uint256 amountInEff = amountIn * (WAD - q.feeWad) / WAD;
@@ -77,12 +77,18 @@ library PortfolioManagerPricing {
     ///      fee-grossed-up result, per PRICING.md, so every rounding choice favors the pool,
     ///      never the trader. `amountOut < balanceOut` is a required precondition (checked,
     ///      not assumed) — the curve is undefined once the output side would be fully drained.
-    function exactOut(Quote memory q, uint256 amountOut) internal pure returns (uint256 amountIn) {
+    /// @dev `exponent` here is `w_o/w_i` — the inverse of `exactIn`'s own `w_i/w_o` — because
+    ///      solving the same invariant `(B_i+A_i)^w_i * (B_o-A_o)^w_o = B_i^w_i * B_o^w_o` for
+    ///      `A_i` given `A_o` isolates `(B_i+A_i)/B_i` raised to `1/w_i`, not `1/w_o`; the two
+    ///      directions aren't the same formula with variables swapped. Only invisible to test at
+    ///      `w_i == w_o`, where both ratios equal 1 — see `testFuzz_ExactOutNeverDecreasesTheInvariant`
+    ///      for coverage at unequal weights.
+    function exactOut(PoolState memory q, uint256 amountOut) internal pure returns (uint256 amountIn) {
         _requireNonZeroBalances(q);
         require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
 
-        uint256 ratio = q.balanceOut * WAD / (q.balanceOut - amountOut);
-        uint256 exponent = q.weightIn * WAD / q.weightOut;
+        uint256 ratio = _ceilDiv(q.balanceOut * WAD, q.balanceOut - amountOut);
+        uint256 exponent = q.weightOut * WAD / q.weightIn;
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
 
         uint256 amountInEff = _ceilDiv(q.balanceIn * (poweredRatio - WAD), WAD);
@@ -91,7 +97,7 @@ library PortfolioManagerPricing {
 
     /// @dev `B_i == 0` or `B_o == 0`: a weighted pool's price is undefined at a zero balance
     ///      on either side — same requirement `BasketXYCSwap.sol`'s PoC already enforces.
-    function _requireNonZeroBalances(Quote memory q) private pure {
+    function _requireNonZeroBalances(PoolState memory q) private pure {
         require(q.balanceIn > 0 && q.balanceOut > 0, PortfolioManagerPricingZeroBalance());
     }
 

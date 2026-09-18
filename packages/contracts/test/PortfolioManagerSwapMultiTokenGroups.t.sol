@@ -12,12 +12,12 @@ import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 import {MockTaker} from "../lib/swap-vm/test/mocks/MockTaker.sol";
 
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
+import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
-import {OracleAdapter} from "../src/OracleAdapter.sol";
+import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Real multi-token oracle-valued groups (ADR-0003), exercised through a
@@ -45,7 +45,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     /// @dev group0 = {tokenA, tokenB} (2 members), group1 = {tokenC} (1 member) -- deliberately
     ///      mixes a multi-member and a single-member group in the same universe, since both must
     ///      resolve through the same uniform oracle path.
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
         aqua = new Aqua();
@@ -65,17 +65,17 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         maker = vm.addr(0x1234);
         taker = new MockTaker(aqua, router, address(this));
 
-        PortfolioManagerArgsBuilder.Member[] memory group0Members = new PortfolioManagerArgsBuilder.Member[](2);
+        PortfolioManagerArgsCodec.Member[] memory group0Members = new PortfolioManagerArgsCodec.Member[](2);
         group0Members[0] =
-            PortfolioManagerArgsBuilder.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
+            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
         group0Members[1] =
-            PortfolioManagerArgsBuilder.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
-        groups.push(PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: group0Members}));
+            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        groups.push(PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: group0Members}));
 
-        PortfolioManagerArgsBuilder.Member[] memory group1Members = new PortfolioManagerArgsBuilder.Member[](1);
+        PortfolioManagerArgsCodec.Member[] memory group1Members = new PortfolioManagerArgsCodec.Member[](1);
         group1Members[0] =
-            PortfolioManagerArgsBuilder.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
-        groups.push(PortfolioManagerArgsBuilder.Group({weight: 0.5e18, members: group1Members}));
+            PortfolioManagerArgsCodec.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
+        groups.push(PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: group1Members}));
     }
 
     // ===== Helpers =====
@@ -206,20 +206,20 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
         // Correct expectation: balanceOut is group0's FULL oracle-valued sum (balA + balB).
-        PortfolioManagerPricing.Quote memory correctQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory correctPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: balC, balanceOut: balA + balB, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(correctQuote, amountIn);
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(correctPoolState, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "must price off group0's full 2-member sum");
 
         // Wrong expectation (what a regression to single-token-only pricing would compute):
         // balanceOut = tokenA's own raw balance alone, ignoring tokenB entirely. With balA this
         // small relative to amountIn, that pool looks far more skewed/thin, so it would yield a
         // strictly worse (smaller) output than the correct group-valued quote above.
-        PortfolioManagerPricing.Quote memory wrongQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory wrongPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: balC, balanceOut: balA, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
         });
-        uint256 wrongAmountOut = PortfolioManagerPricing.exactIn(wrongQuote, amountIn);
+        uint256 wrongAmountOut = PortfolioManagerPricing.exactIn(wrongPoolState, amountIn);
         assertGt(
             actualAmountOut, wrongAmountOut, "must clearly differ from a single-token-only (tokenA-balance-only) quote"
         );
@@ -270,7 +270,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         // still pegged at $1 here (this reproduction doesn't need a real depeg, just a raw
         // balance far below a group's value share), so group0's value is exactly balA + balB and
         // the value-to-tokenA-raw-units conversion is 1:1.
-        PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: 1_000_000e18,
             balanceOut: 1 + 1_000_000e18,
             weightIn: groups[1].weight,
@@ -325,7 +325,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint256 amountIn = 500e18;
         (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
-        PortfolioManagerPricing.Quote memory expectedQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
             balanceIn: 100_000e18,
             balanceOut: 105_000e18,
             weightIn: groups[1].weight,
@@ -347,7 +347,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint256 amountIn = 500e18;
         (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
-        PortfolioManagerPricing.Quote memory expectedQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
             balanceIn: 100_000e18,
             balanceOut: 1_000_000e18,
             weightIn: groups[1].weight,
