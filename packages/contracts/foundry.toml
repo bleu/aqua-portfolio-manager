@@ -20,6 +20,7 @@ remappings = [
     "@1inch/solidity-utils/=lib/solidity-utils/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "safe-smart-account/=lib/safe-smart-account/",
+    "prb-math/=lib/prb-math/src/",
 ]
 
 # lib/balancer-v3-monorepo is reference-only (GPL-3.0) — see ../../THIRD_PARTY_NOTICES.md.

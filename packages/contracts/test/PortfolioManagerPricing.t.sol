@@ -133,6 +133,12 @@ contract PortfolioManagerPricingTest is Test {
     // forward and reverse legs of a round trip is an apples-to-oranges comparison once weights
     // aren't 50/50, not a free-profit exploit. The actual proven property is that the curve's
     // own invariant never decreases (DONATION-RESISTANCE-PROOF.md, ADR-0007) -- checked below.
+    /// @dev Run at a much higher fuzz count than this suite's default (256): with `pow` now
+    ///      backed by PRBMath instead of a hand-rolled series (see FixedPointMath.sol's own doc
+    ///      comment), this test is the empirical stand-in for a rounding-direction guarantee
+    ///      PRBMath doesn't itself document -- worth hunting harder for a violation here than
+    ///      the default run count would.
+    /// forge-config: default.fuzz.runs = 50000
     function testFuzz_ExactInNeverDecreasesTheInvariant(
         uint256 balanceIn,
         uint256 balanceOut,
@@ -162,7 +168,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
-        // Small tolerance for FixedPointMath's own series-truncation precision (compounded
+        // Small tolerance for FixedPointMath.pow's own precision limits (compounded
         // across two pow() calls plus the WAD-scaled ratio divisions above), not a license for
         // the invariant to actually decrease -- 1e-14 relative is still far tighter than
         // anything this milestone's PoC-grade math claims to guarantee bit-exactly.
@@ -175,6 +181,7 @@ contract PortfolioManagerPricingTest is Test {
     // `exactOut` already reverted on it being requested directly. Neither is a minimum-balance
     // threshold; both are output-side bounds checks. This fuzzes the invariant property the test
     // above proves for normal balances, extended down to balances as small as 1 wei.
+    /// forge-config: default.fuzz.runs = 50000
     function testFuzz_ExactInNeverDecreasesTheInvariantAtNearZeroBalance(
         uint256 balanceIn,
         uint256 balanceOut,
@@ -189,8 +196,8 @@ contract PortfolioManagerPricingTest is Test {
 
         PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
-        // Two independent revert paths can legitimately fire here: FixedPointMath.exp's own
-        // exponent cap at extreme weight skew, and exactIn's own would-drain-the-pool guard. Both
+        // Two independent revert paths can legitimately fire here: FixedPointMath.pow's own
+        // domain cap at extreme weight skew, and exactIn's own would-drain-the-pool guard. Both
         // are correct, safe outcomes -- only a non-reverting result needs the invariant checked.
         uint256 amountOut;
         try this._exactIn(q, amountIn) returns (uint256 out) {
@@ -208,9 +215,9 @@ contract PortfolioManagerPricingTest is Test {
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
         // A wider tolerance than the normal-balance fuzz test above: dividing by a `balanceIn`/
-        // `balanceOut` as small as 1 wei amplifies FixedPointMath's own series-truncation error
+        // `balanceOut` as small as 1 wei amplifies FixedPointMath.pow's own precision error
         // far more than the normal WAD-scale case does -- this is precision noise from computing
-        // the check itself (consistent with `pow`'s own documented series precision), not
+        // the check itself (consistent with `pow`'s own documented precision), not
         // evidence of a real invariant violation or a directional bias toward the trader.
         assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances");
     }
@@ -224,10 +231,11 @@ contract PortfolioManagerPricingTest is Test {
     ///      the exact corner that stresses `FixedPointMath.pow` the most (huge balances, unequal
     ///      weights). `exactOut` has no equivalent protection: the trader names a small but
     ///      *fixed, non-zero* `amountOut`, forcing a real `amountIn` computation regardless of how
-    ///      large the balances are, so `pow`'s own series-truncation error (already documented as
+    ///      large the balances are, so `pow`'s own precision error (already documented as
     ///      "PoC-grade precision, not a closed rounding proof" in `exactIn`'s own doc comment
     ///      above) shows up proportionally larger here. `1e8` matches the tolerance the near-zero
     ///      variant below already needed for the same underlying reason.
+    /// forge-config: default.fuzz.runs = 50000
     function testFuzz_ExactOutNeverDecreasesTheInvariant(
         uint256 balanceIn,
         uint256 balanceOut,
@@ -261,6 +269,7 @@ contract PortfolioManagerPricingTest is Test {
     ///      cases section calls out as undefined once the output side would be fully drained) than
     ///      "does precision hold when balances are tiny" that this test exists to check -- the two
     ///      shouldn't be conflated into one assertion.
+    /// forge-config: default.fuzz.runs = 50000
     function testFuzz_ExactOutNeverDecreasesTheInvariantAtNearZeroBalance(
         uint256 balanceIn,
         uint256 balanceOut,
@@ -275,7 +284,7 @@ contract PortfolioManagerPricingTest is Test {
 
         PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
-        // Same two legitimate revert paths as the exactIn near-zero variant -- FixedPointMath.exp's
+        // Same two legitimate revert paths as the exactIn near-zero variant -- FixedPointMath.pow's
         // exponent cap at extreme weight skew, and exactOut's own preconditions. Only a
         // non-reverting result needs the invariant checked.
         uint256 amountIn;
@@ -326,7 +335,7 @@ contract PortfolioManagerPricingTest is Test {
             assertGt(amountOut, 0, "a non-reverting trade must return a nonzero amount");
             assertLt(amountOut, 1e18, "a non-reverting trade must never return more than the pool holds");
         } catch {
-            // A clean revert (e.g. FixedPointMath.exp's EXP_MAX_INPUT cap, or the would-drain
+            // A clean revert (e.g. FixedPointMath.pow's own domain cap, or the would-drain
             // guard below) is an acceptable outcome at this extreme -- the failure mode this
             // test guards against is a silent wrong number, not a revert.
         }
@@ -348,10 +357,10 @@ contract PortfolioManagerPricingTest is Test {
     }
 
     /// @notice Cross-checks `exactIn` against a reference implementation of PRICING.md's exact
-    /// real-number formula, independent of `FixedPointMath`'s own series-based `ln`/`exp` --
+    /// real-number formula, independent of `FixedPointMath.pow`'s own PRBMath-backed implementation --
     /// catches a systematic formula error that reusing `FixedPointMath` to verify itself would
     /// miss. Tolerance is relative (1e-12) -- far tighter than a real formula error would
-    /// produce, but wide enough for the two implementations' own series-truncation/rounding
+    /// produce, but wide enough for the two implementations' own truncation/rounding
     /// differences, which can fall on either side and aren't a directional bias worth chasing.
     function test_ExactInMatchesIndependentReferenceImplementation() public pure {
         // Reference values computed independently via Decimal arithmetic at 60 significant
