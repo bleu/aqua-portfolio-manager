@@ -13,6 +13,7 @@ import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
 import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
 import {OracleAdapter} from "./OracleAdapter.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title PortfolioManagerSwap — the real weighted-curve SwapVM instruction, per PRICING.md
 /// @notice Wires PortfolioManagerArgsBuilder's declared groups and PortfolioManagerPricing's
@@ -36,10 +37,11 @@ import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 ///      any of its instruction functions, which wrap "the rest of the program" in a way that
 ///      only composes correctly across separate chained instructions, not within one function
 ///      body that still has its own pricing left to do afterward.
-contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
+/// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerOpcodes`.
+abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
 
-    uint256 private constant WAD = 1e18;
+    uint256 private constant WAD = FixedPointMath.WAD;
     /// @dev Converts PortfolioManagerArgsBuilder's `feeBps` (PM_BPS = 1e9 scale) into
     ///      PortfolioManagerPricing's `feeWad` (WAD = 1e18 scale) — both scales represent
     ///      100% at their own constant, so this ratio is exact with no rounding.

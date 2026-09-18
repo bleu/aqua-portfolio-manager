@@ -5,6 +5,7 @@ pragma solidity 0.8.30;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title OracleAdapter — Chainlink-style push-feed pricing, per ADR-0005
 /// @notice Two jobs, both per-feed, matching ADR-0005's decision exactly: reject a stale read
@@ -17,7 +18,7 @@ import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 ///         (see `docs/ARCHITECTURE.md`'s Oracle Adapter component note) — this is the corrected
 ///         version.
 library OracleAdapter {
-    uint256 internal constant WAD = 1e18;
+    uint256 internal constant WAD = FixedPointMath.WAD;
 
     error OracleAdapterStalePrice(address feed, uint256 updatedAt, uint256 maxStaleness);
     error OracleAdapterInvalidPrice(address feed, int256 answer);

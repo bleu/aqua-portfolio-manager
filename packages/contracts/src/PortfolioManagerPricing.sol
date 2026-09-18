@@ -17,7 +17,7 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 ///      produced them and never itself reads a balance or a price — PRICING.md's own scope
 ///      note is explicit that resolving `B_i`/`B_o` is a prior step, not this formula's job.
 library PortfolioManagerPricing {
-    uint256 internal constant WAD = 1e18;
+    uint256 internal constant WAD = FixedPointMath.WAD;
 
     error PortfolioManagerPricingZeroBalance();
     error PortfolioManagerPricingInsufficientOutputBalance(uint256 balanceOut, uint256 amountOut);
