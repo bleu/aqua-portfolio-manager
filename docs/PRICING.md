@@ -33,7 +33,7 @@ Fee is taken off the top of the input before it counts toward the priced amount,
 
 Trader specifies `A_o` (amount of token *o* they want out); solve for `A_i`, the gross amount they must pay including fee.
 
-    A_i_eff = B_i * ((B_o / (B_o - A_o))^(w_i / w_o) - 1)
+    A_i_eff = B_i * ((B_o / (B_o - A_o))^(w_o / w_i) - 1)
     A_i = ceil(A_i_eff / (1 - f))
 
 **Rounding: ceil throughout** — both the intermediate `A_i_eff` and the final fee grossed-up `A_i`. Same direction as exact-in: every rounding choice favors the pool, never the trader. `B_o > A_o` is a required precondition (checked, not assumed) — the curve is only defined while there's balance left to trade against, same as any constant-mean pool.

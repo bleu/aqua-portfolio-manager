@@ -77,12 +77,18 @@ library PortfolioManagerPricing {
     ///      fee-grossed-up result, per PRICING.md, so every rounding choice favors the pool,
     ///      never the trader. `amountOut < balanceOut` is a required precondition (checked,
     ///      not assumed) — the curve is undefined once the output side would be fully drained.
+    /// @dev `exponent` here is `w_o/w_i` — the inverse of `exactIn`'s own `w_i/w_o` — because
+    ///      solving the same invariant `(B_i+A_i)^w_i * (B_o-A_o)^w_o = B_i^w_i * B_o^w_o` for
+    ///      `A_i` given `A_o` isolates `(B_i+A_i)/B_i` raised to `1/w_i`, not `1/w_o`; the two
+    ///      directions aren't the same formula with variables swapped. Only invisible to test at
+    ///      `w_i == w_o`, where both ratios equal 1 — see `testFuzz_ExactOutNeverDecreasesTheInvariant`
+    ///      for coverage at unequal weights.
     function exactOut(Quote memory q, uint256 amountOut) internal pure returns (uint256 amountIn) {
         _requireNonZeroBalances(q);
         require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
 
-        uint256 ratio = q.balanceOut * WAD / (q.balanceOut - amountOut);
-        uint256 exponent = q.weightIn * WAD / q.weightOut;
+        uint256 ratio = _ceilDiv(q.balanceOut * WAD, q.balanceOut - amountOut);
+        uint256 exponent = q.weightOut * WAD / q.weightIn;
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
 
         uint256 amountInEff = _ceilDiv(q.balanceIn * (poweredRatio - WAD), WAD);

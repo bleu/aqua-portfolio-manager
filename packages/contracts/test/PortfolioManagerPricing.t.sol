@@ -215,6 +215,89 @@ contract PortfolioManagerPricingTest is Test {
         assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances");
     }
 
+    /// @notice `exactOut`'s own counterpart to `testFuzz_ExactInNeverDecreasesTheInvariant` --
+    /// the invariant proof (DONATION-RESISTANCE-PROOF.md, ADR-0007) applies to both entry points
+    /// equally, but only `exactIn` had fuzz coverage proving it in code.
+    /// @dev Needs a looser tolerance than `exactIn`'s normal-balance test, not just the same one:
+    ///      `exactIn` floors `amountOut`, so a trade tiny relative to a huge balance rounds to
+    ///      exactly 0 output and the invariant check is trivially satisfied -- self-protecting at
+    ///      the exact corner that stresses `FixedPointMath.pow` the most (huge balances, unequal
+    ///      weights). `exactOut` has no equivalent protection: the trader names a small but
+    ///      *fixed, non-zero* `amountOut`, forcing a real `amountIn` computation regardless of how
+    ///      large the balances are, so `pow`'s own series-truncation error (already documented as
+    ///      "PoC-grade precision, not a closed rounding proof" in `exactIn`'s own doc comment
+    ///      above) shows up proportionally larger here. `1e8` matches the tolerance the near-zero
+    ///      variant below already needed for the same underlying reason.
+    function testFuzz_ExactOutNeverDecreasesTheInvariant(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 weightIn,
+        uint256 amountOut
+    ) public pure {
+        balanceIn = bound(balanceIn, 1_000e18, 1_000_000_000e18);
+        balanceOut = bound(balanceOut, 1_000e18, 1_000_000_000e18);
+        weightIn = bound(weightIn, 0.05e18, 0.95e18);
+        uint256 weightOut = WAD - weightIn;
+        amountOut = bound(amountOut, 1e6, balanceOut / 10);
+
+        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+        uint256 amountIn = PortfolioManagerPricing.exactOut(q, amountOut);
+        vm.assume(amountIn > 0);
+
+        uint256 newBalanceIn = balanceIn + amountIn;
+        uint256 newBalanceOut = balanceOut - amountOut;
+
+        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 invariantRatio = growthIn * growthOut / WAD;
+
+        assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease across an exact-out trade");
+    }
+
+    /// @notice `exactOut`'s counterpart to `testFuzz_ExactInNeverDecreasesTheInvariantAtNearZeroBalance`.
+    /// @dev `amountOut` is capped at 10% of `balanceOut`, matching the normal-balance test above --
+    ///      not `balanceOut - 1` (near-total depletion). Draining a near-empty pool down to a few
+    ///      wei is a different, harder question (right at the boundary PRICING.md's own degenerate-
+    ///      cases section calls out as undefined once the output side would be fully drained) than
+    ///      "does precision hold when balances are tiny" that this test exists to check -- the two
+    ///      shouldn't be conflated into one assertion.
+    function testFuzz_ExactOutNeverDecreasesTheInvariantAtNearZeroBalance(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 weightIn,
+        uint256 amountOut
+    ) public {
+        balanceIn = bound(balanceIn, 1, 1e6);
+        balanceOut = bound(balanceOut, 1, 1e6);
+        weightIn = bound(weightIn, 0.05e18, 0.95e18);
+        uint256 weightOut = WAD - weightIn;
+        amountOut = bound(amountOut, 0, balanceOut / 10);
+
+        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+
+        // Same two legitimate revert paths as the exactIn near-zero variant -- FixedPointMath.exp's
+        // exponent cap at extreme weight skew, and exactOut's own preconditions. Only a
+        // non-reverting result needs the invariant checked.
+        uint256 amountIn;
+        try this._exactOut(q, amountOut) returns (uint256 in_) {
+            amountIn = in_;
+        } catch {
+            return;
+        }
+        vm.assume(amountIn > 0);
+
+        uint256 newBalanceIn = balanceIn + amountIn;
+        uint256 newBalanceOut = balanceOut - amountOut;
+
+        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 invariantRatio = growthIn * growthOut / WAD;
+
+        assertGe(
+            invariantRatio + 1e8, WAD, "the curve invariant must never decrease, even at near-zero balances (exact-out)"
+        );
+    }
+
     /// @notice Direct round-trip check at an extreme balance (`balanceIn = 1` wei): trade in,
     /// then trade the received amount back out, and confirm the trader recovers strictly less
     /// than they put in -- no way to profit by trading against a near-empty pool.
