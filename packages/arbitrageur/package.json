@@ -1,0 +1,23 @@
+{
+  "name": "@aqua-portfolio-manager/arbitrageur",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Off-chain taker/solver stand-in for 1inch Pathfinder, exercising a deployed PM strategy against the real chain (BLEUDEV-349)",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0"
+  }
+}
