@@ -136,7 +136,7 @@ library PortfolioManagerArgsCodec {
     }
 
     /// @notice Every member token across every group, in group/member order — the flat
-    ///         "declared universe" `PortfolioManagerStrategyFactory` cross-checks against
+    ///         "declared universe" `PortfolioManagerStrategyValidator` cross-checks against
     ///         `ship()`'s own `tokens` array, and `PortfolioManagerSwap`'s group lookup scans.
     function flattenTokens(Group[] memory groups) internal pure returns (address[] memory tokens) {
         uint256 total;
