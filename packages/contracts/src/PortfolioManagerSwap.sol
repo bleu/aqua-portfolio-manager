@@ -7,8 +7,8 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
-import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerArgsCodec, PM_BPS} from "./utils/PortfolioManagerArgsCodec.sol";
+import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerFee} from "./utils/PortfolioManagerFee.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
@@ -45,15 +45,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev Converts PortfolioManagerArgsCodec's `feeBps` (PM_BPS = 1e9 scale) into
     ///      PortfolioManagerPricing's `feeWad` (WAD = 1e18 scale) — both scales represent
     ///      100% at their own constant, so this ratio is exact with no rounding.
-    uint256 private constant FEE_WAD_PER_BPS = WAD / PM_BPS;
+    uint256 private constant FEE_WAD_PER_BPS = WAD / PortfolioManagerArgsCodec.PM_BPS;
 
     /// @dev The multicall validation that's supposed to run alongside `Aqua.ship()` is
     ///      convention, not enforced by `ship()` itself -- this is what lets the swap opcode
     ///      independently check it actually happened, instead of trusting the caller.
-    IPortfolioManagerStrategyFactory private immutable STRATEGY_FACTORY;
+    IPortfolioManagerStrategyValidator private immutable STRATEGY_VALIDATOR;
 
-    constructor(address aqua, address strategyFactory) Fee(aqua) {
-        STRATEGY_FACTORY = IPortfolioManagerStrategyFactory(strategyFactory);
+    constructor(address aqua, address strategyValidator) Fee(aqua) {
+        STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
     }
 
     /// @param args Encoded via PortfolioManagerArgsCodec.build (tokens, weights, feeBps)
@@ -67,7 +67,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         // monotonic, so the observable behavior is identical either way, without needing to
         // special-case "firstness."
         require(
-            STRATEGY_FACTORY.buildParamsAttested(ctx.query.orderHash),
+            STRATEGY_VALIDATOR.buildParamsAttested(ctx.query.orderHash),
             PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
         );
 
@@ -88,7 +88,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
         if (maxDeviationBps != 0) {
             uint256 sp = PortfolioManagerPricing.spotPrice(quote);
-            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PM_BPS / WAD;
+            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PortfolioManagerArgsCodec.PM_BPS / WAD;
             require(deviationBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(sp, maxDeviationBps));
         }
 

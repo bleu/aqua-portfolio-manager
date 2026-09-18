@@ -9,10 +9,6 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 import {OracleAdapter} from "./OracleAdapter.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
-/// @dev Matches swap-vm's own `Fee.sol` BPS convention (1e9 = 100%) so `feeBps` here reads the
-///      same way as everywhere else in this codebase, not a project-specific scale.
-uint256 constant PM_BPS = 1e9;
-
 /// @title PortfolioManagerArgsCodec — packed-bytes encoding of the Portfolio Manager's
 ///        declared token groups, per-group target weight, oracle feeds, and protocol fee
 /// @notice Real multi-token oracle-valued groups (ADR-0003): each group has 1-5 members, and
@@ -27,6 +23,12 @@ uint256 constant PM_BPS = 1e9;
 ///      payload hashed into `strategyHash` (see `IAqua.ship`), not contract storage.
 library PortfolioManagerArgsCodec {
     using Calldata for bytes;
+
+    /// @dev Matches swap-vm's own `Fee.sol` BPS convention (1e9 = 100%) so `feeBps` here reads
+    ///      the same way as everywhere else in this codebase, not a project-specific scale.
+    ///      `internal` rather than `private` so callers (tests, `PortfolioManagerSwap`) can
+    ///      reference it instead of duplicating the constant.
+    uint256 internal constant PM_BPS = 1e9;
 
     uint256 private constant WAD = FixedPointMath.WAD;
     /// @dev 16-byte weight + 1-byte member count precedes each group's members.
@@ -184,7 +186,7 @@ library PortfolioManagerArgsCodec {
     }
 
     /// @notice Every member token across every group, in group/member order — the flat
-    ///         "declared universe" `PortfolioManagerStrategyFactory` cross-checks against
+    ///         "declared universe" `PortfolioManagerStrategyValidator` cross-checks against
     ///         `ship()`'s own `tokens` array, and `PortfolioManagerSwap`'s group lookup scans.
     function flattenTokens(Group[] memory groups) internal pure returns (address[] memory tokens) {
         uint256 total;
@@ -204,7 +206,7 @@ library PortfolioManagerArgsCodec {
     ///         always goes through `OracleAdapter`, even for a single-member group, so decimal
     ///         normalization and price conversion are uniform regardless of group size. Shared by
     ///         `PortfolioManagerSwap`'s swap-time pricing and
-    ///         `PortfolioManagerStrategyFactory`'s ship-time deviation check.
+    ///         `PortfolioManagerStrategyValidator`'s ship-time deviation check.
     function groupValueWad(Group memory group, address maker) internal view returns (uint256) {
         uint256 n = group.members.length;
         address[] memory tokens = new address[](n);

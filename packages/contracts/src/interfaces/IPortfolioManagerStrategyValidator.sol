@@ -5,19 +5,19 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 
-/// @title IPortfolioManagerStrategyFactory
-/// @notice External interface for `PortfolioManagerStrategyFactory` — see that contract for the
+/// @title IPortfolioManagerStrategyValidator
+/// @notice External interface for `PortfolioManagerStrategyValidator` — see that contract for the
 ///         full rationale (why it validates a PM strategy's `ship()` encoding rather than
 ///         forwarding to `IAqua.ship()` itself).
-interface IPortfolioManagerStrategyFactory {
-    error PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy();
-    error PortfolioManagerStrategyFactoryDeclaredTokenNotShipped(address token);
-    error PortfolioManagerStrategyFactoryShippedTokenNotDeclared(address token);
+interface IPortfolioManagerStrategyValidator {
+    error PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy();
+    error PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(address token);
+    error PortfolioManagerStrategyValidatorShippedTokenNotDeclared(address token);
     /// @dev Ship-time counterpart to `IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation`
     ///      -- `maker`'s wallet is already off-target beyond `maxDeviationBps` before the strategy
     ///      even starts trading (e.g. it was funded that way, or drifted between an earlier
     ///      strategy's expiry and this one's `ship()`).
-    error PortfolioManagerStrategyFactoryExcessivePriceDeviation(
+    error PortfolioManagerStrategyValidatorExcessivePriceDeviation(
         uint256 groupIndex, uint256 actualShareWad, uint256 targetWeightWad
     );
 

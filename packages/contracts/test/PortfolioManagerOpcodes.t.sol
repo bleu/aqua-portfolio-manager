@@ -20,7 +20,7 @@ import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
-import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
@@ -42,7 +42,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
-    PortfolioManagerStrategyFactory internal strategyFactory;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     MockAggregatorV3 internal feedA;
@@ -55,9 +55,9 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        strategyFactory = new PortfolioManagerStrategyFactory();
+        strategyValidator = new PortfolioManagerStrategyValidator();
         router =
-            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyFactory));
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -150,7 +150,7 @@ contract PortfolioManagerOpcodesTest is Test {
         amounts[0] = tokenInLedgerAmount;
         amounts[1] = INITIAL_BALANCE;
 
-        strategyFactory.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         bytes32 strategyHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -434,7 +434,7 @@ contract PortfolioManagerOpcodesTest is Test {
         address[] memory declaredTokens = new address[](2);
         declaredTokens[0] = address(tokenA);
         declaredTokens[1] = address(tokenB);
-        strategyFactory.attestBuildParameters(order, declaredTokens);
+        strategyValidator.attestBuildParameters(order, declaredTokens);
 
         address[] memory tokens = new address[](3);
         tokens[0] = address(tokenA);
@@ -457,7 +457,7 @@ contract PortfolioManagerOpcodesTest is Test {
     }
 
     /// @notice The multicall validation that's supposed to run alongside `ship()`
-    /// (`PortfolioManagerStrategyFactory.attestBuildParameters`) is convention, not enforced by
+    /// (`PortfolioManagerStrategyValidator.attestBuildParameters`) is convention, not enforced by
     /// `Aqua.ship()` itself -- this proves the swap opcode blocks trading on its own when that
     /// convention was skipped, rather than trusting the caller.
     function test_RevertsWhenStrategyWasNeverAttested() public {
@@ -477,7 +477,7 @@ contract PortfolioManagerOpcodesTest is Test {
         amounts[0] = INITIAL_BALANCE;
         amounts[1] = INITIAL_BALANCE;
 
-        // Ships directly, skipping strategyFactory.attestBuildParameters entirely -- exactly what
+        // Ships directly, skipping strategyValidator.attestBuildParameters entirely -- exactly what
         // a caller that never went through the recommended multicall batch would do.
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), tokens, amounts);

@@ -16,7 +16,7 @@ import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgr
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
-import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
@@ -33,7 +33,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
-    PortfolioManagerStrategyFactory internal strategyFactory;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -51,9 +51,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        strategyFactory = new PortfolioManagerStrategyFactory();
+        strategyValidator = new PortfolioManagerStrategyValidator();
         router =
-            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyFactory));
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -137,7 +137,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         amounts[1] = balB;
         amounts[2] = balC;
 
-        strategyFactory.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), tokens, amounts);

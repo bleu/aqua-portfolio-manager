@@ -17,7 +17,7 @@ import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerFee} from "../../../src/utils/PortfolioManagerFee.sol";
-import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../../../src/PortfolioManagerStrategyValidator.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 
 /// @notice Shared setup for the PM strategy E2E suite: on top of `AquaE2EBase`'s forked Aqua/Safe
@@ -60,7 +60,7 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     IERC20 internal pmTokenA;
     IERC20 internal pmTokenB;
     MockTaker internal taker;
-    PortfolioManagerStrategyFactory internal strategyFactory;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     MultiSendCallOnly internal multiSendCallOnly;
 
     PortfolioManagerArgsCodec.Group[] internal groups;
@@ -68,9 +68,9 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     function setUp() public virtual override {
         super.setUp();
 
-        strategyFactory = new PortfolioManagerStrategyFactory();
+        strategyValidator = new PortfolioManagerStrategyValidator();
         router = new PortfolioManagerRouter(
-            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyFactory)
+            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(1); // distinct salt nonce from BasketScopeGuardE2E's/the multi-token fixture's Safes
@@ -157,20 +157,21 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     ///      `_fundAndShip` so callers can skip straight to shipping. Contains exactly one
     ///      external call, so it's safe to arm `vm.expectRevert()` against directly too.
     ///
-    ///      Batches `PortfolioManagerStrategyFactory.attestBuildParameters` (universe match +
+    ///      Batches `PortfolioManagerStrategyValidator.attestBuildParameters` (universe match +
     ///      price-deviation tolerance, plus recording that both ran) with the real `Aqua.ship`
     ///      call via `MultiSendCallOnly`, both legs still originating from `pmSafe` -- not routed
-    ///      through the factory itself, since `Aqua.ship()` keys its ledger by `msg.sender`, and
+    ///      through the validator itself, since `Aqua.ship()` keys its ledger by `msg.sender`, and
     ///      every real trade looks that ledger up by `order.maker`.
     function _shipOnly(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
         internal
         returns (bool)
     {
-        bytes memory attestData = abi.encodeCall(PortfolioManagerStrategyFactory.attestBuildParameters, (order, tokens));
+        bytes memory attestData =
+            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(
-            _encodeMultiSendTx(address(strategyFactory), attestData), _encodeMultiSendTx(address(aqua), shipData)
+            _encodeMultiSendTx(address(strategyValidator), attestData), _encodeMultiSendTx(address(aqua), shipData)
         );
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
 
