@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title PortfolioManagerPricing — the constant-mean weighted curve, per PRICING.md
@@ -78,7 +79,7 @@ library PortfolioManagerPricing {
         _requireNonZeroBalances(q);
 
         uint256 amountInEff = amountIn * (WAD - q.feeWad) / WAD;
-        uint256 ratio = _ceilDiv(q.balanceIn * WAD, q.balanceIn + amountInEff);
+        uint256 ratio = Math.ceilDiv(q.balanceIn * WAD, q.balanceIn + amountInEff);
         uint256 exponent = q.weightIn * WAD / q.weightOut;
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
         // `exponent == WAD` is `pow`'s own exact shortcut (returns `ratio` unchanged, no series
@@ -109,21 +110,17 @@ library PortfolioManagerPricing {
         _requireNonZeroBalances(q);
         require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
 
-        uint256 ratio = _ceilDiv(q.balanceOut * WAD, q.balanceOut - amountOut);
+        uint256 ratio = Math.ceilDiv(q.balanceOut * WAD, q.balanceOut - amountOut);
         uint256 exponent = q.weightOut * WAD / q.weightIn;
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
 
-        uint256 amountInEff = _ceilDiv(q.balanceIn * (poweredRatio - WAD), WAD);
-        amountIn = _ceilDiv(amountInEff * WAD, WAD - q.feeWad);
+        uint256 amountInEff = Math.ceilDiv(q.balanceIn * (poweredRatio - WAD), WAD);
+        amountIn = Math.ceilDiv(amountInEff * WAD, WAD - q.feeWad);
     }
 
     /// @dev `B_i == 0` or `B_o == 0`: a weighted pool's price is undefined at a zero balance
     ///      on either side — same requirement `BasketXYCSwap.sol`'s PoC already enforces.
     function _requireNonZeroBalances(PoolState memory q) private pure {
         require(q.balanceIn > 0 && q.balanceOut > 0, PortfolioManagerPricingZeroBalance());
-    }
-
-    function _ceilDiv(uint256 a, uint256 b) private pure returns (uint256) {
-        return (a + b - 1) / b;
     }
 }
