@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
-import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice The 1IP-103 tiered protocol fee lands in the real 1inch DAO Treasury
@@ -22,14 +22,13 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
         ISwapVM.Order memory order = _buildOrder(FEE_TEST_BPS);
         _fundAndShip(order, INITIAL_BALANCE);
 
-        uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "taker pays the exact amount they specified");
 
-        uint256 expectedDaoAmount =
-            TRADE_AMOUNT * PortfolioManagerProgramBuilder.daoFeeBps(FEE_TEST_BPS) / FEE_BPS_SCALE;
-        uint256 daoBalanceAfter = pmTokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 expectedDaoAmount = TRADE_AMOUNT * PortfolioManagerFee.daoFeeBps(FEE_TEST_BPS) / FEE_BPS_SCALE;
+        uint256 daoBalanceAfter = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         assertGt(expectedDaoAmount, 0, "sanity: this tier/amount must produce a nonzero fee");
         assertEq(

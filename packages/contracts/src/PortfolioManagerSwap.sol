@@ -10,7 +10,7 @@ import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
 import {PortfolioManagerArgsCodec, PM_BPS} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
-import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "./utils/PortfolioManagerFee.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {FixedPointMath} from "./utils/FixedPointMath.sol";
@@ -80,7 +80,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
             _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut);
 
-        uint32 daoBps = PortfolioManagerProgramBuilder.daoFeeBps(feeBps);
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
         uint256 daoAmount;
 
         if (ctx.query.isExactIn) {
@@ -116,7 +116,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         // Theori #10). Skipped entirely in quote() (isStaticContext) — same divergence
         // Fee.sol's transfer-performing variants document.
         if (daoAmount != 0 && !ctx.vm.isStaticContext) {
-            address recipient = PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS;
+            address recipient = PortfolioManagerFee.DAO_TREASURY_ADDRESS;
             try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoAmount, recipient) {
                 ctx.swap.amountNetPulled += daoAmount;
             } catch {

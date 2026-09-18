@@ -16,6 +16,7 @@ import {AquaE2EBase} from "./AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "../../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 
@@ -38,7 +39,7 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant FEE_BPS_SCALE = 1e9;
 
-    /// @dev Below PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS (≈0.1225%) — 1/4 tier.
+    /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (≈0.1225%) — 1/4 tier.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
 
     /// @dev WETH predeploy address, standard across every OP-stack chain (Base included).

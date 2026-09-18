@@ -5,6 +5,7 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 
 /// @notice `build()`'s own wire-format output, asserted directly against VM.sol's runLoop
@@ -43,16 +44,16 @@ contract PortfolioManagerProgramBuilderTest is Test {
     }
 
     function test_DaoFeeBpsTiering() public pure {
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(0), 0, "zero LP fee yields zero protocol fee");
-        assertEq(PortfolioManagerProgramBuilder.daoFeeBps(200_000), 50_000, "1/4 of 2 bps, well under the threshold");
+        assertEq(PortfolioManagerFee.daoFeeBps(0), 0, "zero LP fee yields zero protocol fee");
+        assertEq(PortfolioManagerFee.daoFeeBps(200_000), 50_000, "1/4 of 2 bps, well under the threshold");
         assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS),
-            PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS / 4,
+            PortfolioManagerFee.daoFeeBps(PortfolioManagerFee.TIER_THRESHOLD_BPS),
+            PortfolioManagerFee.TIER_THRESHOLD_BPS / 4,
             "the threshold itself is still low-tier (<=), per 1IP-103's own wording"
         );
         assertEq(
-            PortfolioManagerProgramBuilder.daoFeeBps(PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1),
-            (PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS + 1) / 6,
+            PortfolioManagerFee.daoFeeBps(PortfolioManagerFee.TIER_THRESHOLD_BPS + 1),
+            (PortfolioManagerFee.TIER_THRESHOLD_BPS + 1) / 6,
             "one wei above the threshold is high-tier"
         );
     }
