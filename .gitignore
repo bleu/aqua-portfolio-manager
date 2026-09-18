@@ -2,10 +2,8 @@
 cache/
 out/
 
-# Forked-Anvil dev deploys (docker-compose.yml) — not real deployment records, never committed.
-# Real mainnet/testnet deployment tracking is separate, out of scope until Milestone 4.
+# forge script broadcast artifacts — not committed
 packages/contracts/broadcast/
-packages/contracts/deployments/*.json
 
 # Dotenv file
 .env

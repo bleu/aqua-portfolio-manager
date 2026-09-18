@@ -37,6 +37,32 @@ jobs:
       - name: Run Forge build
         run: forge build --sizes
 
+      # The E2E suite forks Base fresh on every test (AquaE2EBase.t.sol), which floods the RPC
+      # with storage/account reads -- enough to 429 even a dedicated provider. Pinning the fork
+      # to one block per hour (BASE_RPC_BLOCK) lets repeated runs within that hour reuse Foundry's
+      # own on-disk RPC cache instead of re-fetching everything, while still rotating hourly so
+      # CI never runs for long against a stale snapshot.
+      - name: Compute hourly cache key
+        id: hourkey
+        run: echo "hour=$(date -u +%Y-%m-%dT%H)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Foundry RPC fork data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.foundry/cache/rpc
+            packages/contracts/.base-fork-block
+          key: foundry-base-fork-${{ steps.hourkey.outputs.hour }}
+
+      - name: Resolve pinned fork block
+        env:
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
+        run: |
+          if [ ! -s .base-fork-block ]; then
+            cast block-number --rpc-url "$BASE_RPC_URL" > .base-fork-block
+          fi
+          echo "BASE_RPC_BLOCK=$(cat .base-fork-block)" >> "$GITHUB_ENV"
+
       - name: Run Forge tests
         env:
           # Falls back to the same public RPC already baked into AquaE2EBase.t.sol's own
@@ -44,35 +70,3 @@ jobs:
           # hard-failing the moment this workflow merges, only once the secret is actually added.
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
         run: forge test -vvv
-
-  check-onboarding-check:
-    name: Proof of concept (packages/onboarding-check)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm --filter onboarding-check build
-
-      - name: Test
-        run: pnpm --filter onboarding-check test

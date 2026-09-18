@@ -14,9 +14,6 @@ implementation work is starting.
   prices against a multi-token basket by reading a third token's Aqua balance directly, not
   just the two tokens `Context` describes. `test/BasketXYCSwap.t.sol` covers this end-to-end
   against a real `AquaRouter`.
-- `script/Deploy.s.sol` — deploys both against whichever RPC it's pointed at. On the
-  docker-compose forked-Anvil environment (below), it targets Aqua's real deployed registry
-  address instead of a fresh local one.
 
 ## Running
 
@@ -26,14 +23,14 @@ forge build
 forge test
 ```
 
-## Forked-Anvil environment
+## E2E tests (real Base fork)
 
-`../../docker-compose.yml` forks Base via Anvil, deploys this package's contracts against the
-*real* Aqua registry live on that fork, then runs `forge test` against that same mutated fork
-state — so M2 work gets validated against real protocol state, not a clean-room chain. From
-the repo root:
+`test/e2e/` forks Base directly (`vm.createSelectFork`, reading `BASE_RPC_URL` via `vm.envOr`)
+and deploys every contract it needs — router, strategy factory, Safe infra, test fixtures —
+inline in its own `setUp()`, against Aqua's *real* deployed registry on that fork. No separate
+deploy step, no external Anvil process: plain `forge test` above already runs these for real, so
+M2 work gets validated against real protocol state, not a clean-room chain.
 
 ```bash
-cp .env.example .env   # set BASE_RPC_URL for anything beyond a quick smoke test
-docker compose up
+cp .env.example .env   # set BASE_RPC_URL to avoid the public endpoint's rate limits
 ```
