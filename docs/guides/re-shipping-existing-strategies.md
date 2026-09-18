@@ -1,4 +1,4 @@
-# Re-shipping Existing Strategies From the New Wallet — Guide
+# Re-shipping Existing Strategies to the New Wallet — Guide
 
 Migrates an LP's existing **non-PM** Aqua strategies — whatever else the LP already runs on Aqua
 from another wallet — into the new dedicated Safe wallet that will also host the Portfolio
