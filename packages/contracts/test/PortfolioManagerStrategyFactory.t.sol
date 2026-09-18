@@ -8,8 +8,8 @@ import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 
-import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsBuilder} from "../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerStrategyFactory} from "../src/interfaces/IPortfolioManagerStrategyFactory.sol";
 

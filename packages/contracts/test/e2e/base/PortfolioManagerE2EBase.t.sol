@@ -14,8 +14,8 @@ import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {AquaE2EBase} from "./AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerArgsBuilder} from "../../../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "../../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsBuilder} from "../../../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 

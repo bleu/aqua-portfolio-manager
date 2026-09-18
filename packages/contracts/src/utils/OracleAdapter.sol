@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title OracleAdapter — Chainlink-style push-feed pricing, per ADR-0005

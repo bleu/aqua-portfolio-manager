@@ -4,8 +4,8 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {Test} from "forge-std/Test.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsBuilder} from "../src/utils/PortfolioManagerArgsBuilder.sol";
 
 /// @notice `build()`'s own wire-format output, asserted directly against VM.sol's runLoop
 /// format (`[opcode:1][argsLength:1][args]`) -- every other test exercises this only

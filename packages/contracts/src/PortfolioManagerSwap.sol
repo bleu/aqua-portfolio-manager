@@ -8,12 +8,12 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
-import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerPricing} from "./PortfolioManagerPricing.sol";
-import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
-import {OracleAdapter} from "./OracleAdapter.sol";
+import {PortfolioManagerArgsBuilder, PM_BPS} from "./utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
+import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
+import {OracleAdapter} from "./utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
-import {FixedPointMath} from "./FixedPointMath.sol";
+import {FixedPointMath} from "./utils/FixedPointMath.sol";
 
 /// @title PortfolioManagerSwap — the real weighted-curve SwapVM instruction, per PRICING.md
 /// @notice Wires PortfolioManagerArgsBuilder's declared groups and PortfolioManagerPricing's

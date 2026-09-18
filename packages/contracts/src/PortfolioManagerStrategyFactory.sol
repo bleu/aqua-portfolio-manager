@@ -6,8 +6,8 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerArgsBuilder} from "./PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsBuilder} from "./utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 
 /// @title PortfolioManagerStrategyFactory — validates a PM strategy's ship() encoding
 /// @notice A PM strategy's declared universe exists in two places `IAqua.ship()` never

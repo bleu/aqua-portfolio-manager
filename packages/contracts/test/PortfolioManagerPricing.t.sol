@@ -2,8 +2,8 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {FixedPointMath} from "../src/FixedPointMath.sol";
-import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
+import {FixedPointMath} from "../src/utils/FixedPointMath.sol";
+import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 
 contract PortfolioManagerPricingTest is Test {
     uint256 constant WAD = 1e18;

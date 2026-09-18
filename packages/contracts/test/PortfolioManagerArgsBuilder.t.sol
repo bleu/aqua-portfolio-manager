@@ -2,7 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {PortfolioManagerArgsBuilder, PM_BPS} from "../src/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerArgsBuilder, PM_BPS} from "../src/utils/PortfolioManagerArgsBuilder.sol";
 
 contract PortfolioManagerArgsBuilderTest is Test {
     uint256 constant WAD = 1e18;

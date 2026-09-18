@@ -15,11 +15,11 @@ import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerArgsBuilder} from "../../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsBuilder} from "../../src/utils/PortfolioManagerArgsBuilder.sol";
+import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerPricing} from "../../src/PortfolioManagerPricing.sol";
-import {OracleAdapter} from "../../src/OracleAdapter.sol";
+import {PortfolioManagerPricing} from "../../src/utils/PortfolioManagerPricing.sol";
+import {OracleAdapter} from "../../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
