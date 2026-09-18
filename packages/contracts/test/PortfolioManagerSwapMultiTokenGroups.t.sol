@@ -220,20 +220,20 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
         // Correct expectation: balanceOut is group0's FULL oracle-valued sum (balA + balB).
-        PortfolioManagerPricing.Quote memory correctQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory correctPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: balC, balanceOut: balA + balB, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(correctQuote, amountIn);
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(correctPoolState, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "must price off group0's full 2-member sum");
 
         // Wrong expectation (what a regression to single-token-only pricing would compute):
         // balanceOut = tokenA's own raw balance alone, ignoring tokenB entirely. With balA this
         // small relative to amountIn, that pool looks far more skewed/thin, so it would yield a
         // strictly worse (smaller) output than the correct group-valued quote above.
-        PortfolioManagerPricing.Quote memory wrongQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory wrongPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: balC, balanceOut: balA, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
         });
-        uint256 wrongAmountOut = PortfolioManagerPricing.exactIn(wrongQuote, amountIn);
+        uint256 wrongAmountOut = PortfolioManagerPricing.exactIn(wrongPoolState, amountIn);
         assertGt(
             actualAmountOut, wrongAmountOut, "must clearly differ from a single-token-only (tokenA-balance-only) quote"
         );

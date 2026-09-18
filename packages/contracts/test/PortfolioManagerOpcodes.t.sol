@@ -219,7 +219,7 @@ contract PortfolioManagerOpcodesTest is Test {
     ///      then grossed up by daoBps/(FEE_BPS - daoBps)) so tests can assert an independently
     ///      derived expected value instead of just "some nonzero fee landed".
     function _expectedExactOutDaoAmount(uint32 lpFeeBps, uint256 amountOut) internal view returns (uint256) {
-        PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: INITIAL_BALANCE,
             balanceOut: INITIAL_BALANCE,
             weightIn: groups[0].weight,

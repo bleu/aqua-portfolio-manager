@@ -60,7 +60,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
         require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
-        PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker),
             balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker),
             weightIn: groups[groupInIdx].weight,

@@ -316,7 +316,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
         uint256 usdcAmountIn = 300e6; // 300 USDC, well within the stables group's funded balance
 
-        PortfolioManagerPricing.Quote memory correctQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory correctPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: correctBalanceIn,
             balanceOut: correctBalanceOut,
             weightIn: STABLES_WEIGHT,
@@ -327,7 +327,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // Wrong expectation (what a regression to single-token-only pricing would compute):
         // balanceOut = WETH's own oracle value alone, ignoring WBTC entirely.
         uint256 wethOnlyValueWad = _usdValueWad(address(weth), wethFeed, weth.balanceOf(address(multiTokenSafe)));
-        PortfolioManagerPricing.Quote memory wrongQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory wrongPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: correctBalanceIn,
             balanceOut: wethOnlyValueWad,
             weightIn: STABLES_WEIGHT,
@@ -340,8 +340,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // native 6-decimal units. Convert in, then convert the result back to WETH's own native
         // units, mirroring exactly what PortfolioManagerSwap._portfolioManagerSwapXD itself does.
         uint256 usdcAmountInValueWad = _usdValueWad(address(usdc), usdcFeed, usdcAmountIn);
-        uint256 expectedCorrectOutValueWad = PortfolioManagerPricing.exactIn(correctQuote, usdcAmountInValueWad);
-        uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongQuote, usdcAmountInValueWad);
+        uint256 expectedCorrectOutValueWad = PortfolioManagerPricing.exactIn(correctPoolState, usdcAmountInValueWad);
+        uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongPoolState, usdcAmountInValueWad);
 
         uint256 wethPriceWad = OracleAdapter.priceWad(
             OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: maxStaleness})

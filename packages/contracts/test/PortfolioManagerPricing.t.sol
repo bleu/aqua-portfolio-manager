@@ -10,24 +10,24 @@ contract PortfolioManagerPricingTest is Test {
 
     // See FixedPointMath.t.sol for why internal library calls need an external wrapper for
     // `vm.expectRevert` to intercept the revert at the right call depth.
-    function _exactIn(PortfolioManagerPricing.Quote memory q, uint256 amountIn) external pure returns (uint256) {
+    function _exactIn(PortfolioManagerPricing.PoolState memory q, uint256 amountIn) external pure returns (uint256) {
         return PortfolioManagerPricing.exactIn(q, amountIn);
     }
 
-    function _exactOut(PortfolioManagerPricing.Quote memory q, uint256 amountOut) external pure returns (uint256) {
+    function _exactOut(PortfolioManagerPricing.PoolState memory q, uint256 amountOut) external pure returns (uint256) {
         return PortfolioManagerPricing.exactOut(q, amountOut);
     }
 
-    function _spotPrice(PortfolioManagerPricing.Quote memory q) external pure returns (uint256) {
+    function _spotPrice(PortfolioManagerPricing.PoolState memory q) external pure returns (uint256) {
         return PortfolioManagerPricing.spotPrice(q);
     }
 
     function _quote(uint256 balanceIn, uint256 balanceOut, uint256 weightIn, uint256 weightOut, uint256 feeWad)
         internal
         pure
-        returns (PortfolioManagerPricing.Quote memory)
+        returns (PortfolioManagerPricing.PoolState memory)
     {
-        return PortfolioManagerPricing.Quote({
+        return PortfolioManagerPricing.PoolState({
             balanceIn: balanceIn, balanceOut: balanceOut, weightIn: weightIn, weightOut: weightOut, feeWad: feeWad
         });
     }
@@ -35,13 +35,13 @@ contract PortfolioManagerPricingTest is Test {
     function test_SpotPriceAtEqualWeightsMatchesPlainBalanceRatio() public pure {
         // 50/50: SP should just be balanceOut/balanceIn's ratio... actually SP(i->o) = (B_i/w_i)/(B_o/w_o),
         // which at equal weights reduces to B_i/B_o.
-        PortfolioManagerPricing.Quote memory q = _quote(20_000e18, 10e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(20_000e18, 10e18, 0.5e18, 0.5e18, 0);
         uint256 sp = PortfolioManagerPricing.spotPrice(q);
         assertEq(sp, 2000e18);
     }
 
     function test_SpotPriceRevertsOnZeroBalance() public {
-        PortfolioManagerPricing.Quote memory q = _quote(0, 10e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(0, 10e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerPricing.PortfolioManagerPricingZeroBalance.selector));
         this._spotPrice(q);
     }
@@ -55,7 +55,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 balanceOut = 100_000e18;
         uint256 amountIn = 1_000e18;
 
-        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, 0.5e18, 0.5e18, 0);
         uint256 amountOut = PortfolioManagerPricing.exactIn(q, amountIn);
 
         uint256 xykExpected = balanceOut - (balanceIn * balanceOut) / (balanceIn + amountIn);
@@ -75,14 +75,14 @@ contract PortfolioManagerPricingTest is Test {
         // 666666666666666666, not 666666666666666667. Before ceiling the ratio fed into `pow`,
         // this returned the latter: flooring `balanceIn*WAD/(balanceIn+amountInEff)` floored
         // `poweredRatio` too, which inflated `WAD - poweredRatio` past the true value.
-        PortfolioManagerPricing.Quote memory q = _quote(1e18, 1e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(1e18, 1e18, 0.5e18, 0.5e18, 0);
         uint256 amountOut = PortfolioManagerPricing.exactIn(q, 2e18);
         assertEq(amountOut, 666666666666666666, "amountOut must floor toward the pool, never round up to the trader");
     }
 
     function test_ExactInFeeReducesOutputVersusZeroFee() public pure {
-        PortfolioManagerPricing.Quote memory noFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
-        PortfolioManagerPricing.Quote memory withFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory noFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory withFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0.0002e18);
 
         uint256 outNoFee = PortfolioManagerPricing.exactIn(noFee, 1_000e18);
         uint256 outWithFee = PortfolioManagerPricing.exactIn(withFee, 1_000e18);
@@ -91,19 +91,19 @@ contract PortfolioManagerPricingTest is Test {
     }
 
     function test_ExactInRevertsOnZeroBalance() public {
-        PortfolioManagerPricing.Quote memory q = _quote(0, 100_000e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(0, 100_000e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerPricing.PortfolioManagerPricingZeroBalance.selector));
         this._exactIn(q, 1_000e18);
     }
 
     function test_ExactOutRevertsOnZeroBalance() public {
-        PortfolioManagerPricing.Quote memory q = _quote(0, 100_000e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(0, 100_000e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerPricing.PortfolioManagerPricingZeroBalance.selector));
         this._exactOut(q, 1_000e18);
     }
 
     function test_ExactOutRevertsWhenDrainingTheFullOutputBalance() public {
-        PortfolioManagerPricing.Quote memory q = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
         vm.expectRevert(
             abi.encodeWithSelector(
                 PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector,
@@ -115,8 +115,8 @@ contract PortfolioManagerPricingTest is Test {
     }
 
     function test_ExactOutFeeIncreasesRequiredInputVersusZeroFee() public pure {
-        PortfolioManagerPricing.Quote memory noFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
-        PortfolioManagerPricing.Quote memory withFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory noFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0);
+        PortfolioManagerPricing.PoolState memory withFee = _quote(100_000e18, 100_000e18, 0.5e18, 0.5e18, 0.0002e18);
 
         uint256 inNoFee = PortfolioManagerPricing.exactOut(noFee, 1_000e18);
         uint256 inWithFee = PortfolioManagerPricing.exactOut(withFee, 1_000e18);
@@ -145,7 +145,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 weightOut = WAD - weightIn;
         amountIn = bound(amountIn, 1e6, balanceIn / 10);
 
-        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
         uint256 amountOut = PortfolioManagerPricing.exactIn(q, amountIn);
         vm.assume(amountOut > 0 && amountOut < balanceOut);
 
@@ -187,7 +187,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 weightOut = WAD - weightIn;
         amountIn = bound(amountIn, 1, 1_000_000e18);
 
-        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
         // Two independent revert paths can legitimately fire here: FixedPointMath.exp's own
         // exponent cap at extreme weight skew, and exactIn's own would-drain-the-pool guard. Both
@@ -240,7 +240,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 weightOut = WAD - weightIn;
         amountOut = bound(amountOut, 1e6, balanceOut / 10);
 
-        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
         uint256 amountIn = PortfolioManagerPricing.exactOut(q, amountOut);
         vm.assume(amountIn > 0);
 
@@ -273,7 +273,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 weightOut = WAD - weightIn;
         amountOut = bound(amountOut, 0, balanceOut / 10);
 
-        PortfolioManagerPricing.Quote memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
         // Same two legitimate revert paths as the exactIn near-zero variant -- FixedPointMath.exp's
         // exponent cap at extreme weight skew, and exactOut's own preconditions. Only a
@@ -302,7 +302,7 @@ contract PortfolioManagerPricingTest is Test {
     /// then trade the received amount back out, and confirm the trader recovers strictly less
     /// than they put in -- no way to profit by trading against a near-empty pool.
     function test_RoundTripAtOneWeiBalanceNeverProfitsTrader() public pure {
-        PortfolioManagerPricing.Quote memory q1 = _quote(1, 1e18, 0.5e18, 0.5e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q1 = _quote(1, 1e18, 0.5e18, 0.5e18, 0.0002e18);
         uint256 amountIn = 1_000e18;
         uint256 amountOut = PortfolioManagerPricing.exactIn(q1, amountIn);
 
@@ -310,7 +310,7 @@ contract PortfolioManagerPricingTest is Test {
         uint256 newBalanceOut = 1e18 - amountOut;
         vm.assume(newBalanceOut > 0);
 
-        PortfolioManagerPricing.Quote memory q2 = _quote(newBalanceOut, newBalanceIn, 0.5e18, 0.5e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q2 = _quote(newBalanceOut, newBalanceIn, 0.5e18, 0.5e18, 0.0002e18);
         uint256 amountBack = PortfolioManagerPricing.exactIn(q2, amountOut);
 
         assertLt(amountBack, amountIn, "round-tripping through a near-empty pool must not profit the trader");
@@ -321,7 +321,7 @@ contract PortfolioManagerPricingTest is Test {
     /// more than the pool holds) or revert cleanly -- never silently wrap, over/underflow, or
     /// return something outside `(0, balanceOut)`.
     function test_ExtremeWeightSkewStaysBoundedOrRevertsCleanly() public {
-        PortfolioManagerPricing.Quote memory q = _quote(1, 1e18, 0.01e18, 0.99e18, 0);
+        PortfolioManagerPricing.PoolState memory q = _quote(1, 1e18, 0.01e18, 0.99e18, 0);
         try this._exactIn(q, 1_000_000e18) returns (uint256 amountOut) {
             assertGt(amountOut, 0, "a non-reverting trade must return a nonzero amount");
             assertLt(amountOut, 1e18, "a non-reverting trade must never return more than the pool holds");
@@ -338,7 +338,7 @@ contract PortfolioManagerPricingTest is Test {
     /// exactly `balanceOut`: the entire pool, handed out for an ordinary-sized trade against an
     /// imbalanced-but-not-degenerate pool. Regression test for that guard.
     function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
-        PortfolioManagerPricing.Quote memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
         vm.expectRevert(
             abi.encodeWithSelector(
                 PortfolioManagerPricing.PortfolioManagerPricingInsufficientOutputBalance.selector, 1_000_000, 1_000_000
@@ -356,10 +356,10 @@ contract PortfolioManagerPricingTest is Test {
     function test_ExactInMatchesIndependentReferenceImplementation() public pure {
         // Reference values computed independently via Decimal arithmetic at 60 significant
         // digits, from PRICING.md's formula directly (not via this contract's code).
-        PortfolioManagerPricing.Quote memory q1 = _quote(100_000e18, 100_000e18, 0.3e18, 0.7e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q1 = _quote(100_000e18, 100_000e18, 0.3e18, 0.7e18, 0.0002e18);
         _assertMatchesReference(PortfolioManagerPricing.exactIn(q1, 1000e18), 425450270259556705827);
 
-        PortfolioManagerPricing.Quote memory q2 = _quote(1_000_000e18, 1_000_000e18, 0.9e18, 0.1e18, 0.0002e18);
+        PortfolioManagerPricing.PoolState memory q2 = _quote(1_000_000e18, 1_000_000e18, 0.9e18, 0.1e18, 0.0002e18);
         _assertMatchesReference(PortfolioManagerPricing.exactIn(q2, 50_000e18), 355335828958235306891709);
     }
 
