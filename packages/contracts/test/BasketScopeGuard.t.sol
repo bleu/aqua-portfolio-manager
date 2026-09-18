@@ -218,8 +218,6 @@ contract BasketScopeGuardTest is Test {
     /// `test_AllowsPmStrategyEvenAcrossBaskets`/`test_RevertsOnCrossBasketStrategy`/
     /// `test_AllowsSingleBasketStrategy` above already cover individually.
     function testFuzz_CrossStrategyInvariantHoldsUnderRandomizedTradeSequences(uint256 seed) public {
-        guard.attestOnboardingClean();
-
         address[] memory universe = new address[](5);
         universe[0] = tokenA; // basket 1
         universe[1] = tokenB; // basket 1
@@ -286,7 +284,7 @@ contract BasketScopeGuardTest is Test {
     }
 
     /// @dev Mirrors `BasketScopeGuard._check`'s own logic exactly (see that function): PM always
-    ///      passes once attested; otherwise every token must belong to the same nonzero basket.
+    ///      passes unconditionally; otherwise every token must belong to the same nonzero basket.
     function _predictedOutcome(bool isPM, address[] memory tokens) private view returns (bool) {
         if (isPM) return true;
         if (tokens.length == 0) return false;
