@@ -15,17 +15,11 @@ interface IBasketScopeGuard {
     error EmptyTokenList();
     error TokenNotInAnyBasket(address token);
     error CrossBasketStrategyForbidden(address tokenA, address tokenB);
-    error OnboardingNotAttested();
-    error OnlySafeCanAttest();
-    error AlreadyAttested();
-
-    event OnboardingAttested();
 
     /// @notice The Aqua core contract this guard watches `ship()` calls to.
     function AQUA() external view returns (address);
 
-    /// @notice The Safe this guard is installed on — the only address allowed to call
-    ///         `attestOnboardingClean`.
+    /// @notice The Safe this guard is installed on.
     function SAFE() external view returns (address);
 
     /// @notice The exact `keccak256(strategy)` of this LP's already-parameterized PM strategy,
@@ -34,14 +28,4 @@ interface IBasketScopeGuard {
 
     /// @notice `basketOf[token] == 0` means the token is outside the declared universe.
     function basketOf(address token) external view returns (uint256);
-
-    /// @notice Set once, via `attestOnboardingClean`, after the off-chain onboarding
-    ///         pre-existing-strategy check has come back clean for this Safe. PM's own
-    ///         strategy cannot ship until this is `true`.
-    function onboardingAttested() external view returns (bool);
-
-    /// @notice Records that the off-chain onboarding pre-existing-strategy check (scanning
-    ///         `Shipped` events for this Safe) has been run and came back clean. Callable only
-    ///         by the Safe itself. Irreversible once set.
-    function attestOnboardingClean() external;
 }

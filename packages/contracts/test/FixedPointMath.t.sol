@@ -2,19 +2,15 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {FixedPointMath} from "../src/FixedPointMath.sol";
+import {FixedPointMath} from "../src/utils/FixedPointMath.sol";
 
+/// @notice `pow` is now a thin wrapper around PRBMath's `UD60x18.pow` (see FixedPointMath.sol's
+/// own doc comment) — these tests check `pow`'s black-box behavior (known values, monotonicity),
+/// not any particular algorithm's internals, since the algorithm itself is PRBMath's, not ours.
 contract FixedPointMathTest is Test {
     uint256 constant WAD = FixedPointMath.WAD;
 
-    // Reference constants, computed independently (any calculator/spec), not from this
-    // library's own output — what the tests below check against, not what they assume.
-    uint256 constant E_WAD = 2718281828459045235; // e
-    uint256 constant LN2_WAD = 693147180559945309; // ln(2)
-
-    // 1e-9 relative tolerance (WAD/1e9 absolute, scaled to the magnitude under test) — well
-    // inside what a 20/15-term series at this domain should clear; see FixedPointMath's own
-    // comments for the precision budget this is meant to confirm, not just assume.
+    // 1e-9 relative tolerance (WAD/1e9 absolute, scaled to the magnitude under test).
     uint256 constant REL_TOL = 1e9;
 
     function _assertApproxRelWad(uint256 actual, uint256 expected, uint256 relTol) internal pure {
@@ -22,100 +18,6 @@ contract FixedPointMathTest is Test {
         uint256 maxDiff = expected / relTol;
         if (maxDiff == 0) maxDiff = 1;
         assertLe(diff, maxDiff, "value outside relative tolerance");
-    }
-
-    // `ln`/`exp` are `internal pure` on the library, so calling them directly from the test
-    // inlines the code into the test contract -- no CALL opcode happens, and `vm.expectRevert`
-    // requires the revert to occur at a depth below the cheatcode call. Routing through these
-    // external wrappers (a real self-CALL via `this.xxx(...)`) gives `expectRevert` a real call
-    // boundary to intercept.
-    function _callLn(uint256 x) external pure returns (int256) {
-        return FixedPointMath.ln(x);
-    }
-
-    function _callExp(int256 x) external pure returns (uint256) {
-        return FixedPointMath.exp(x);
-    }
-
-    // ---- ln: known reference points ----
-
-    function test_LnOfWadIsZero() public pure {
-        assertEq(FixedPointMath.ln(WAD), 0);
-    }
-
-    function test_LnOfTwo() public pure {
-        int256 result = FixedPointMath.ln(2 * WAD);
-        _assertApproxRelWad(uint256(result), LN2_WAD, REL_TOL);
-    }
-
-    function test_LnOfE() public pure {
-        int256 result = FixedPointMath.ln(E_WAD);
-        _assertApproxRelWad(uint256(result), WAD, REL_TOL);
-    }
-
-    function test_LnOfHalfIsNegativeLn2() public pure {
-        int256 result = FixedPointMath.ln(WAD / 2);
-        assertLt(result, 0);
-        _assertApproxRelWad(uint256(-result), LN2_WAD, REL_TOL);
-    }
-
-    function test_LnRevertsOnZero() public {
-        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathLnRequiresPositive.selector, 0));
-        this._callLn(0);
-    }
-
-    function test_LnHandlesVeryLargeAndVerySmallInputs() public pure {
-        // Must not revert or loop unboundedly -- both directions of the normalization loop.
-        FixedPointMath.ln(1); // smallest possible positive input
-        FixedPointMath.ln(type(uint128).max); // large, still well under the exp() output cap
-    }
-
-    // ---- exp: known reference points ----
-
-    function test_ExpOfZeroIsWad() public pure {
-        assertEq(FixedPointMath.exp(0), WAD);
-    }
-
-    function test_ExpOfOne() public pure {
-        uint256 result = FixedPointMath.exp(int256(WAD));
-        _assertApproxRelWad(result, E_WAD, REL_TOL);
-    }
-
-    function test_ExpOfLn2IsTwo() public pure {
-        uint256 result = FixedPointMath.exp(int256(LN2_WAD));
-        _assertApproxRelWad(result, 2 * WAD, REL_TOL);
-    }
-
-    function test_ExpOfNegativeOneIsReciprocalOfE() public pure {
-        uint256 result = FixedPointMath.exp(-int256(WAD));
-        uint256 expected = (WAD * WAD) / E_WAD;
-        _assertApproxRelWad(result, expected, REL_TOL);
-    }
-
-    function test_ExpRevertsAboveCap() public {
-        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathExpInputTooLarge.selector, int256(131e18)));
-        this._callExp(131e18);
-    }
-
-    /// @notice `EXP_MIN_INPUT` (~-20.72e18) is now the binding lower reject, tighter than the
-    /// symmetric `-EXP_MAX_INPUT` (-130e18) the overflow guard alone would imply -- an input
-    /// this far negative hits the *precision* floor (see `EXP_MIN_INPUT`'s own doc comment) long
-    /// before it would ever risk `exp`'s output underflowing to 0 and wrapping.
-    function test_ExpRevertsBelowPrecisionFloor() public {
-        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathExpInputTooSmall.selector, int256(-131e18)));
-        this._callExp(-131e18);
-    }
-
-    // ---- round trips ----
-
-    function testFuzz_ExpOfLnRoundTrips(uint256 x) public pure {
-        // Lower bound raised from 1e6 to 1e10: below that, ln(x) falls past EXP_MIN_INPUT (the
-        // new precision-floor guard), which is the correct behavior being guarded against, not
-        // a bug this round-trip property should be asserting through.
-        x = bound(x, 1e10, 1e30); // stay well inside exp()'s output cap after ln()
-        int256 lnX = FixedPointMath.ln(x);
-        uint256 result = FixedPointMath.exp(lnX);
-        _assertApproxRelWad(result, x, REL_TOL);
     }
 
     // ---- pow: exact shortcuts ----
@@ -160,11 +62,8 @@ contract FixedPointMathTest is Test {
 
     // ---- monotonicity: the property PortfolioManagerPricing.t.sol's invariant fuzz test needs ----
     //
-    // Bounds below keep |exponent * ln(base) / WAD| under EXP_MAX_INPUT (130 WAD) with margin,
-    // so a legitimate domain-cap revert never masquerades as a monotonicity failure. Base is
-    // bounded to a real value in [1e-5, 1e5] (|ln| <= ~11.5 WAD) and exponent to [0.01, 10]
-    // WAD (a generous superset of the weight-ratio domain `PortfolioManagerPricing` actually
-    // calls `pow` with) -- worst case product is ~115 WAD, comfortably under the 130 WAD cap.
+    // Base bounded to a real value in [1e-5, 1e5] and exponent to [0.01, 10] WAD (a generous
+    // superset of the weight-ratio domain `PortfolioManagerPricing` actually calls `pow` with).
 
     function testFuzz_PowMonotonicInBaseAboveOne(uint256 baseLow, uint256 baseHigh, uint256 exponent) public pure {
         baseLow = bound(baseLow, WAD, 1e23);
@@ -178,10 +77,7 @@ contract FixedPointMathTest is Test {
     }
 
     function testFuzz_PowMonotonicInBaseBelowOne(uint256 baseLow, uint256 baseHigh, uint256 exponent) public pure {
-        // Lower bound raised from 1e13 to 2e17: at the max fuzzed exponent (10.0), a base below
-        // ~1.26e17 pushes `exponent * ln(base)` past `EXP_MIN_INPUT`, the new precision-floor
-        // guard -- correctly rejected, not a monotonicity property this test should probe.
-        baseLow = bound(baseLow, 2e17, WAD);
+        baseLow = bound(baseLow, 1e13, WAD);
         baseHigh = bound(baseHigh, baseLow, WAD);
         exponent = bound(exponent, 1e16, 10e18);
         vm.assume(baseHigh > baseLow);
@@ -196,14 +92,14 @@ contract FixedPointMathTest is Test {
         expLow = bound(expLow, 1e16, 10e18);
         expHigh = bound(expHigh, expLow, 10e18);
         vm.assume(expHigh > expLow);
-        // `exponent == WAD` is an exact shortcut (`return base` unchanged); every other exponent
-        // goes through the approximate `exp(exponent * ln(base) / WAD)` composition, which does
-        // not round-trip to bit-exact agreement with that shortcut. Right at this seam, a
-        // single-wei-adjacent exponent can land a few ULPs on either side of the exact value,
-        // which is a real, expected limit of composing two independently-truncating series, not
-        // something a wider tolerance or more series terms meaningfully fixes at the point of
-        // stitching an exact identity onto an approximate curve. Excluding the exact seam value
-        // keeps this test checking real monotonicity, not this one-point discontinuity.
+        // `exponent == WAD` is an exact shortcut (`return base` unchanged, PRBMath's own); every
+        // other exponent goes through the approximate `exp2(log2(base)*exponent)` composition,
+        // which does not round-trip to bit-exact agreement with that shortcut. Right at this
+        // seam, a single-wei-adjacent exponent can land a few ULPs on either side of the exact
+        // value -- a real, expected limit of composing independently-truncating steps, not
+        // something a wider tolerance meaningfully fixes at the point of stitching an exact
+        // identity onto an approximate curve. Excluding the exact seam value keeps this test
+        // checking real monotonicity, not this one-point discontinuity.
         vm.assume(expLow != WAD && expHigh != WAD);
 
         uint256 resultLow = FixedPointMath.pow(base, expLow);
@@ -212,8 +108,7 @@ contract FixedPointMathTest is Test {
     }
 
     function testFuzz_PowMonotonicInExponentBelowOneBase(uint256 base, uint256 expLow, uint256 expHigh) public pure {
-        // Same EXP_MIN_INPUT margin as testFuzz_PowMonotonicInBaseBelowOne above.
-        base = bound(base, 2e17, WAD - 1);
+        base = bound(base, 1e13, WAD - 1);
         expLow = bound(expLow, 1e16, 10e18);
         expHigh = bound(expHigh, expLow, 10e18);
         vm.assume(expHigh > expLow);

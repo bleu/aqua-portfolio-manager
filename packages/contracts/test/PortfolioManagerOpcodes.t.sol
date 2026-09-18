@@ -15,16 +15,17 @@ import {Fee} from "swap-vm/instructions/Fee.sol";
 import {MockTaker} from "../lib/swap-vm/test/mocks/MockTaker.sol";
 
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerPricing} from "../src/PortfolioManagerPricing.sol";
+import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
 /// against a real Aqua registry — not the individual instructions in isolation, which
-/// PortfolioManagerPricing.t.sol/PortfolioManagerArgsBuilder.t.sol already cover. This file
+/// PortfolioManagerPricing.t.sol/PortfolioManagerArgsCodec.t.sol already cover. This file
 /// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
 /// per 1IP-103) actually behave as designed end to end, and is it actually mandatory — not just
 /// something PortfolioManagerProgramBuilder happens to include.
@@ -33,7 +34,7 @@ contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
 
-    /// @dev Below PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS (0.1225%) — 1/4 tier.
+    /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (0.1225%) — 1/4 tier.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
     /// @dev Above the threshold — 1/6 tier.
     uint32 internal constant HIGH_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%
@@ -48,7 +49,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     address internal maker;
 
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
         aqua = new Aqua();
@@ -75,14 +76,14 @@ contract PortfolioManagerOpcodesTest is Test {
     function _singleMemberGroup(uint256 weight, address token, address feed)
         internal
         pure
-        returns (PortfolioManagerArgsBuilder.Group memory)
+        returns (PortfolioManagerArgsCodec.Group memory)
     {
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
         // The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours) -- generous on
         // purpose within that ceiling, since this suite's own vm.warp usage (if any) is about
         // ledger/fee mechanics, not oracle freshness.
-        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: 18 hours});
-        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
+        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: 18 hours});
+        return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
@@ -92,10 +93,10 @@ contract PortfolioManagerOpcodesTest is Test {
     /// @dev Deliberately does NOT call PortfolioManagerProgramBuilder — hand-packs the wire
     ///      format directly (opcode 0, the curve, per VM.sol's runLoop) the way any third party
     ///      who never heard of our builder still could, using only the LP-facing
-    ///      PortfolioManagerArgsBuilder encoding (public, documented, nothing secret about it).
+    ///      PortfolioManagerArgsCodec encoding (public, documented, nothing secret about it).
     ///      Proves the protocol fee survives bypassing our own tooling entirely.
     function _buildOrderFromHandCraftedProgram(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory args = PortfolioManagerArgsBuilder.build(groups, lpFeeBps);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, lpFeeBps);
         bytes memory program = abi.encodePacked(uint8(0), uint8(args.length), args);
         return _orderForProgram(program);
     }
@@ -219,7 +220,7 @@ contract PortfolioManagerOpcodesTest is Test {
     ///      then grossed up by daoBps/(FEE_BPS - daoBps)) so tests can assert an independently
     ///      derived expected value instead of just "some nonzero fee landed".
     function _expectedExactOutDaoAmount(uint32 lpFeeBps, uint256 amountOut) internal view returns (uint256) {
-        PortfolioManagerPricing.Quote memory quote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: INITIAL_BALANCE,
             balanceOut: INITIAL_BALANCE,
             weightIn: groups[0].weight,
@@ -227,7 +228,7 @@ contract PortfolioManagerOpcodesTest is Test {
             feeWad: uint256(lpFeeBps) * (1e18 / FEE_BPS_SCALE)
         });
         uint256 cleanAmountIn = PortfolioManagerPricing.exactOut(quote, amountOut);
-        uint32 daoBps = PortfolioManagerProgramBuilder.daoFeeBps(lpFeeBps);
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(lpFeeBps);
         return cleanAmountIn * daoBps / (FEE_BPS_SCALE - daoBps);
     }
 
@@ -241,7 +242,7 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(amountIn, SWAP_AMOUNT, "taker pays the exact amount they specified");
 
         uint256 expectedDaoAmount = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
-        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
         assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/4-tier formula");
@@ -259,7 +260,7 @@ contract PortfolioManagerOpcodesTest is Test {
         _swapExactIn(order, SWAP_AMOUNT);
 
         uint256 expectedDaoAmount = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 6) / FEE_BPS_SCALE;
-        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
         assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/6-tier formula");
@@ -271,7 +272,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
         assertEq(amountIn, SWAP_AMOUNT);
-        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0);
+        assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
         assertEq(tokenA.balanceOf(maker), INITIAL_BALANCE + amountIn, "with no LP fee, the full amountIn lands");
     }
 
@@ -284,7 +285,7 @@ contract PortfolioManagerOpcodesTest is Test {
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
         assertEq(amountIn, SWAP_AMOUNT, "swap still completes even though the fee pull was skipped");
-        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
+        assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 skippedEvents = 0;
@@ -294,7 +295,7 @@ contract PortfolioManagerOpcodesTest is Test {
                 (, address token, address to, uint256 skippedAmount) =
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 token;
-                assertEq(to, PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+                assertEq(to, PortfolioManagerFee.DAO_TREASURY_ADDRESS);
                 assertGt(skippedAmount, 0);
             }
         }
@@ -308,7 +309,7 @@ contract PortfolioManagerOpcodesTest is Test {
         _swapExactOut(order, SWAP_AMOUNT);
 
         uint256 expectedDaoAmount = _expectedExactOutDaoAmount(LOW_TIER_FEE_BPS, SWAP_AMOUNT);
-        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
         assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/4-tier exact-out formula");
@@ -321,7 +322,7 @@ contract PortfolioManagerOpcodesTest is Test {
         _swapExactOut(order, SWAP_AMOUNT);
 
         uint256 expectedDaoAmount = _expectedExactOutDaoAmount(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
-        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
         assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/6-tier exact-out formula");
@@ -333,7 +334,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
         (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
         assertEq(amountOut, SWAP_AMOUNT);
-        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0);
+        assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
     }
 
     function test_ProtocolFeeSkipsWhenMakerUnderfundedExactOut() public {
@@ -345,7 +346,7 @@ contract PortfolioManagerOpcodesTest is Test {
         vm.recordLogs();
         (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
         assertEq(amountOut, SWAP_AMOUNT, "swap still completes even though the fee pull was skipped");
-        assertEq(tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
+        assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 skippedEvents = 0;
@@ -402,7 +403,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     /// @notice The one case where our own declared-universe check is genuinely reachable, not
     /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
-    /// never gave a weight to (a ship()/PortfolioManagerArgsBuilder encoding mismatch, not a
+    /// never gave a weight to (a ship()/PortfolioManagerArgsCodec encoding mismatch, not a
     /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
     /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
@@ -451,7 +452,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
         uint256 expectedDaoAmount = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
         assertEq(
-            tokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS),
+            tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS),
             expectedDaoAmount,
             "the DAO still gets paid even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
         );

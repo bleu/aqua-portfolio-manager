@@ -8,13 +8,13 @@ import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 
-import {PortfolioManagerArgsBuilder} from "../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerStrategyFactory} from "../src/interfaces/IPortfolioManagerStrategyFactory.sol";
 
 /// @notice Confirms the factory actually closes the gap it exists for: a mismatch between
-/// PortfolioManagerArgsBuilder's declared universe and IAqua.ship()'s own tokens array, in
+/// PortfolioManagerArgsCodec's declared universe and IAqua.ship()'s own tokens array, in
 /// either direction, reverts. Deliberately a pure validation check only -- it never calls
 /// Aqua.ship() itself, so there's no ledger/settlement path to exercise here; see
 /// PortfolioManagerE2EBase.t.sol for the real Safe + MultiSendCallOnly flow this feeds into.
@@ -43,14 +43,14 @@ contract PortfolioManagerStrategyFactoryTest is Test {
     function _groups(address[] memory declaredTokens, uint256[] memory weights)
         internal
         pure
-        returns (PortfolioManagerArgsBuilder.Group[] memory groups)
+        returns (PortfolioManagerArgsCodec.Group[] memory groups)
     {
-        groups = new PortfolioManagerArgsBuilder.Group[](declaredTokens.length);
+        groups = new PortfolioManagerArgsCodec.Group[](declaredTokens.length);
         for (uint256 i = 0; i < declaredTokens.length; i++) {
-            PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
+            PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
             members[0] =
-                PortfolioManagerArgsBuilder.Member({token: declaredTokens[i], feed: DUMMY_FEED, maxStaleness: 1 hours});
-            groups[i] = PortfolioManagerArgsBuilder.Group({weight: weights[i], members: members});
+                PortfolioManagerArgsCodec.Member({token: declaredTokens[i], feed: DUMMY_FEED, maxStaleness: 1 hours});
+            groups[i] = PortfolioManagerArgsCodec.Group({weight: weights[i], members: members});
         }
     }
 

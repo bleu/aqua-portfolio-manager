@@ -9,7 +9,8 @@ pragma solidity 0.8.30;
 import {Context} from "swap-vm/libs/VM.sol";
 import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 
-contract PortfolioManagerOpcodes is PortfolioManagerSwap {
+/// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerRouter`.
+abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap {
     constructor(address aqua) PortfolioManagerSwap(aqua) {}
 
     function _notInstruction(

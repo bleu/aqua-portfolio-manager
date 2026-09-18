@@ -14,8 +14,9 @@ import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {AquaE2EBase} from "./AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerArgsBuilder} from "../../../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "../../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../../../src/utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "../../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerStrategyFactory} from "../../../src/PortfolioManagerStrategyFactory.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 
@@ -38,7 +39,7 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant FEE_BPS_SCALE = 1e9;
 
-    /// @dev Below PortfolioManagerProgramBuilder.TIER_THRESHOLD_BPS (≈0.1225%) — 1/4 tier.
+    /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (≈0.1225%) — 1/4 tier.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
 
     /// @dev WETH predeploy address, standard across every OP-stack chain (Base included).
@@ -62,7 +63,7 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     PortfolioManagerStrategyFactory internal strategyFactory;
     MultiSendCallOnly internal multiSendCallOnly;
 
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public virtual override {
         super.setUp();
@@ -83,11 +84,11 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     function _singleMemberGroup(uint256 weight, address token, address feed)
         internal
         pure
-        returns (PortfolioManagerArgsBuilder.Group memory)
+        returns (PortfolioManagerArgsCodec.Group memory)
     {
-        PortfolioManagerArgsBuilder.Member[] memory members = new PortfolioManagerArgsBuilder.Member[](1);
-        members[0] = PortfolioManagerArgsBuilder.Member({token: token, feed: feed, maxStaleness: PM_MAX_STALENESS});
-        return PortfolioManagerArgsBuilder.Group({weight: weight, members: members});
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
+        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: PM_MAX_STALENESS});
+        return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
