@@ -119,4 +119,50 @@ contract FixedPointMathTest is Test {
         uint256 resultHigh = FixedPointMath.pow(base, expHigh);
         assertLe(resultHigh, resultLow, "for base < WAD, pow must decrease as exponent increases");
     }
+
+    // ---- mulDown/mulUp/divDown/divUp: rounding direction ----
+
+    function testFuzz_MulDownNeverExceedsMulUp(uint256 a, uint256 b) public pure {
+        a = bound(a, 0, 1e40);
+        b = bound(b, 0, 1e40);
+        assertLe(FixedPointMath.mulDown(a, b), FixedPointMath.mulUp(a, b));
+    }
+
+    function testFuzz_DivDownNeverExceedsDivUp(uint256 a, uint256 b) public pure {
+        a = bound(a, 0, 1e40);
+        b = bound(b, 1, 1e40);
+        assertLe(FixedPointMath.divDown(a, b), FixedPointMath.divUp(a, b));
+    }
+
+    function testFuzz_MulDownUpDifferByAtMostOneRawUnit(uint256 a, uint256 b) public pure {
+        // mulDown/mulUp can only ever disagree by the rounding of one division -- at most 1 raw
+        // unit apart, never a real magnitude difference.
+        a = bound(a, 0, 1e40);
+        b = bound(b, 0, 1e40);
+        assertLe(FixedPointMath.mulUp(a, b) - FixedPointMath.mulDown(a, b), 1);
+    }
+
+    function test_MulDownExactWhenDivisible() public pure {
+        // 2 * 3 WAD / WAD == 6, no fractional remainder -- down and up must agree exactly.
+        assertEq(FixedPointMath.mulDown(2 * WAD, 3 * WAD), 6 * WAD);
+        assertEq(FixedPointMath.mulUp(2 * WAD, 3 * WAD), 6 * WAD);
+    }
+
+    function test_MulUpRoundsUpOnRemainder() public pure {
+        // 1 * 1 / WAD has a nonzero remainder in raw units -- up must exceed down by exactly 1.
+        assertEq(FixedPointMath.mulDown(1, 1), 0);
+        assertEq(FixedPointMath.mulUp(1, 1), 1);
+    }
+
+    function test_DivUpRoundsUpOnRemainder() public pure {
+        // 1 * WAD / 3 doesn't divide evenly -- up must exceed down by exactly 1 raw unit.
+        uint256 down = FixedPointMath.divDown(1, 3);
+        uint256 up = FixedPointMath.divUp(1, 3);
+        assertEq(up - down, 1);
+    }
+
+    function test_DivDownExactWhenDivisible() public pure {
+        assertEq(FixedPointMath.divDown(6, 2), 3 * WAD);
+        assertEq(FixedPointMath.divUp(6, 2), 3 * WAD);
+    }
 }
