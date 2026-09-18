@@ -6,12 +6,12 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerArgsBuilder, PM_BPS} from "./PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsCodec, PM_BPS} from "./utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 
 /// @title PortfolioManagerStrategyFactory — validates a PM strategy's ship() encoding
 /// @notice A PM strategy's declared universe exists in two places `IAqua.ship()` never
-///         cross-checks: `PortfolioManagerArgsBuilder`'s encoded args (what the curve opcode
+///         cross-checks: `PortfolioManagerArgsCodec`'s encoded args (what the curve opcode
 ///         actually prices against) and the `tokens` array passed to `ship()` itself (what
 ///         Aqua's ledger actually tracks). `ship()` succeeds either way, even when they
 ///         disagree -- the mismatch only surfaces later, when some taker happens to trade the
@@ -34,21 +34,21 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
 
     /// @inheritdoc IPortfolioManagerStrategyFactory
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
-        (PortfolioManagerArgsBuilder.Group[] memory groups,,) = PortfolioManagerArgsBuilder.parse(_args(order));
+        (PortfolioManagerArgsCodec.Group[] memory groups,,) = PortfolioManagerArgsCodec.parse(_args(order));
         _requireUniverseMatches(groups, tokens);
     }
 
     /// @inheritdoc IPortfolioManagerStrategyFactory
     function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
-        (PortfolioManagerArgsBuilder.Group[] memory groups,, uint32 maxDeviationBps) =
-            PortfolioManagerArgsBuilder.parse(_args(order));
+        (PortfolioManagerArgsCodec.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsCodec.parse(_args(order));
         _requireBalancedWithinTolerance(groups, maxDeviationBps, maker);
     }
 
     /// @inheritdoc IPortfolioManagerStrategyFactory
     function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external {
-        (PortfolioManagerArgsBuilder.Group[] memory groups,, uint32 maxDeviationBps) =
-            PortfolioManagerArgsBuilder.parse(_args(order));
+        (PortfolioManagerArgsCodec.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsCodec.parse(_args(order));
         _requireUniverseMatches(groups, tokens);
         _requireBalancedWithinTolerance(groups, maxDeviationBps, order.maker);
 
@@ -57,11 +57,11 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
         emit BuildParametersAttested(strategyHash);
     }
 
-    function _requireUniverseMatches(PortfolioManagerArgsBuilder.Group[] memory groups, address[] calldata tokens)
+    function _requireUniverseMatches(PortfolioManagerArgsCodec.Group[] memory groups, address[] calldata tokens)
         private
         pure
     {
-        address[] memory declared = PortfolioManagerArgsBuilder.flattenTokens(groups);
+        address[] memory declared = PortfolioManagerArgsCodec.flattenTokens(groups);
 
         for (uint256 i = 0; i < declared.length; i++) {
             bool shipped = false;
@@ -87,7 +87,7 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
     }
 
     function _requireBalancedWithinTolerance(
-        PortfolioManagerArgsBuilder.Group[] memory groups,
+        PortfolioManagerArgsCodec.Group[] memory groups,
         uint32 maxDeviationBps,
         address maker
     ) private view {
@@ -97,7 +97,7 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
         uint256[] memory groupValuesWad = new uint256[](n);
         uint256 totalValueWad;
         for (uint256 i = 0; i < n; i++) {
-            groupValuesWad[i] = PortfolioManagerArgsBuilder.groupValueWad(groups[i], maker);
+            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker);
             totalValueWad += groupValuesWad[i];
         }
 

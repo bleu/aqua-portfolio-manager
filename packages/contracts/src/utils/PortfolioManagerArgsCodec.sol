@@ -3,16 +3,17 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
-import {Calldata} from "@1inch/solidity-utils/contracts/libraries/Calldata.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Calldata} from "@1inch/solidity-utils/contracts/libraries/Calldata.sol";
+import {FixedPointMath} from "./FixedPointMath.sol";
 import {OracleAdapter} from "./OracleAdapter.sol";
-import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
 /// @dev Matches swap-vm's own `Fee.sol` BPS convention (1e9 = 100%) so `feeBps` here reads the
 ///      same way as everywhere else in this codebase, not a project-specific scale.
 uint256 constant PM_BPS = 1e9;
 
-/// @title PortfolioManagerArgsBuilder — packed-bytes encoding of the Portfolio Manager's
+/// @title PortfolioManagerArgsCodec — packed-bytes encoding of the Portfolio Manager's
 ///        declared token groups, per-group target weight, oracle feeds, and protocol fee
 /// @notice Real multi-token oracle-valued groups (ADR-0003): each group has 1-5 members, and
 ///         every member is priced through its own Chainlink-style feed via `OracleAdapter` --
@@ -24,10 +25,10 @@ uint256 constant PM_BPS = 1e9;
 ///         `MAX_GROUPS`) -- a single group has nothing to rebalance against.
 /// @dev Lives entirely in the swapVM instruction's `args` — part of the immutable `strategy`
 ///      payload hashed into `strategyHash` (see `IAqua.ship`), not contract storage.
-library PortfolioManagerArgsBuilder {
+library PortfolioManagerArgsCodec {
     using Calldata for bytes;
 
-    uint256 private constant WAD = 1e18;
+    uint256 private constant WAD = FixedPointMath.WAD;
     /// @dev 16-byte weight + 1-byte member count precedes each group's members.
     uint256 private constant GROUP_HEADER_SIZE = 17;
     /// @dev 20-byte token + 20-byte feed + 2-byte uint16 maxStaleness (seconds) per member.

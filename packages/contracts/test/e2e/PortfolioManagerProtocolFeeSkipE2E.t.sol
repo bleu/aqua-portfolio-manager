@@ -6,7 +6,7 @@ pragma solidity 0.8.30;
 import {Vm} from "forge-std/Vm.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {Fee} from "swap-vm/instructions/Fee.sol";
-import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerFee} from "../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice Best-effort protocol-fee collection against the actually deployed
@@ -28,14 +28,14 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
         // the wallet's real balance (what the curve prices off) is fully funded.
         _fundAndShip(order, 0);
 
-        uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+        uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "swap still completes even though the fee pull was skipped");
 
         assertEq(
-            pmTokenA.balanceOf(PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS),
+            pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS),
             daoBalanceBefore,
             "DAO Treasury balance must be unchanged when the pull is skipped"
         );
@@ -48,7 +48,7 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
                 (, address token, address to, uint256 skippedAmount) =
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 assertEq(token, address(pmTokenA));
-                assertEq(to, PortfolioManagerProgramBuilder.DAO_TREASURY_ADDRESS);
+                assertEq(to, PortfolioManagerFee.DAO_TREASURY_ADDRESS);
                 assertGt(skippedAmount, 0);
             }
         }

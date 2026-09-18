@@ -2,7 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {FixedPointMath} from "../src/FixedPointMath.sol";
+import {FixedPointMath} from "../src/utils/FixedPointMath.sol";
 
 contract FixedPointMathTest is Test {
     uint256 constant WAD = FixedPointMath.WAD;

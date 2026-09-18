@@ -15,13 +15,13 @@ import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
 import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
-import {PortfolioManagerArgsBuilder} from "../../src/PortfolioManagerArgsBuilder.sol";
-import {PortfolioManagerProgramBuilder} from "../../src/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerStrategyFactory} from "../../src/interfaces/IPortfolioManagerStrategyFactory.sol";
 import {IPortfolioManagerSwap} from "../../src/interfaces/IPortfolioManagerSwap.sol";
-import {PortfolioManagerPricing} from "../../src/PortfolioManagerPricing.sol";
-import {OracleAdapter} from "../../src/OracleAdapter.sol";
+import {PortfolioManagerPricing} from "../../src/utils/PortfolioManagerPricing.sol";
+import {OracleAdapter} from "../../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
@@ -90,7 +90,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     uint256 internal maxStaleness;
 
     /// @dev groups[0] = majors {WETH, WBTC}, groups[1] = stables {DAI, USDT, USDC}.
-    PortfolioManagerArgsBuilder.Group[] internal groups;
+    PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public override {
         super.setUp();
@@ -116,21 +116,18 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
         taker = new MockTaker(aqua, router, address(this));
 
-        PortfolioManagerArgsBuilder.Member[] memory majors = new PortfolioManagerArgsBuilder.Member[](2);
-        majors[0] =
-            PortfolioManagerArgsBuilder.Member({token: address(weth), feed: wethFeed, maxStaleness: maxStaleness});
-        majors[1] =
-            PortfolioManagerArgsBuilder.Member({token: address(wbtc), feed: wbtcFeed, maxStaleness: maxStaleness});
-        groups.push(PortfolioManagerArgsBuilder.Group({weight: MAJORS_WEIGHT, members: majors}));
+        PortfolioManagerArgsCodec.Member[] memory majors = new PortfolioManagerArgsCodec.Member[](2);
+        majors[0] = PortfolioManagerArgsCodec.Member({token: address(weth), feed: wethFeed, maxStaleness: maxStaleness});
+        majors[1] = PortfolioManagerArgsCodec.Member({token: address(wbtc), feed: wbtcFeed, maxStaleness: maxStaleness});
+        groups.push(PortfolioManagerArgsCodec.Group({weight: MAJORS_WEIGHT, members: majors}));
 
-        PortfolioManagerArgsBuilder.Member[] memory stables = new PortfolioManagerArgsBuilder.Member[](3);
-        stables[0] =
-            PortfolioManagerArgsBuilder.Member({token: address(dai), feed: daiFeed, maxStaleness: maxStaleness});
+        PortfolioManagerArgsCodec.Member[] memory stables = new PortfolioManagerArgsCodec.Member[](3);
+        stables[0] = PortfolioManagerArgsCodec.Member({token: address(dai), feed: daiFeed, maxStaleness: maxStaleness});
         stables[1] =
-            PortfolioManagerArgsBuilder.Member({token: address(usdt), feed: usdtFeed, maxStaleness: maxStaleness});
+            PortfolioManagerArgsCodec.Member({token: address(usdt), feed: usdtFeed, maxStaleness: maxStaleness});
         stables[2] =
-            PortfolioManagerArgsBuilder.Member({token: address(usdc), feed: usdcFeed, maxStaleness: maxStaleness});
-        groups.push(PortfolioManagerArgsBuilder.Group({weight: STABLES_WEIGHT, members: stables}));
+            PortfolioManagerArgsCodec.Member({token: address(usdc), feed: usdcFeed, maxStaleness: maxStaleness});
+        groups.push(PortfolioManagerArgsCodec.Group({weight: STABLES_WEIGHT, members: stables}));
     }
 
     // ===== Helpers =====
@@ -325,7 +322,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     ///      real live price, normalized by the token's own decimals) so tests can assert an
     ///      analytically-derived expected quote against the actual swap output, the same pattern
     ///      `PortfolioManagerSwapMultiTokenGroups.t.sol`'s unit tests use.
-    function _groupValueWad(PortfolioManagerArgsBuilder.Member[] memory members) internal view returns (uint256 total) {
+    function _groupValueWad(PortfolioManagerArgsCodec.Member[] memory members) internal view returns (uint256 total) {
         for (uint256 i = 0; i < members.length; i++) {
             OracleAdapter.PriceFeed memory feed = OracleAdapter.PriceFeed({
                 feed: AggregatorV3Interface(members[i].feed), maxStaleness: members[i].maxStaleness
@@ -381,7 +378,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
         uint256 usdcAmountIn = 300e6; // 300 USDC, well within the stables group's funded balance
 
-        PortfolioManagerPricing.Quote memory correctQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory correctPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: correctBalanceIn,
             balanceOut: correctBalanceOut,
             weightIn: STABLES_WEIGHT,
@@ -392,7 +389,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // Wrong expectation (what a regression to single-token-only pricing would compute):
         // balanceOut = WETH's own oracle value alone, ignoring WBTC entirely.
         uint256 wethOnlyValueWad = _usdValueWad(address(weth), wethFeed, weth.balanceOf(address(multiTokenSafe)));
-        PortfolioManagerPricing.Quote memory wrongQuote = PortfolioManagerPricing.Quote({
+        PortfolioManagerPricing.PoolState memory wrongPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: correctBalanceIn,
             balanceOut: wethOnlyValueWad,
             weightIn: STABLES_WEIGHT,
@@ -405,8 +402,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // native 6-decimal units. Convert in, then convert the result back to WETH's own native
         // units, mirroring exactly what PortfolioManagerSwap._portfolioManagerSwapXD itself does.
         uint256 usdcAmountInValueWad = _usdValueWad(address(usdc), usdcFeed, usdcAmountIn);
-        uint256 expectedCorrectOutValueWad = PortfolioManagerPricing.exactIn(correctQuote, usdcAmountInValueWad);
-        uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongQuote, usdcAmountInValueWad);
+        uint256 expectedCorrectOutValueWad = PortfolioManagerPricing.exactIn(correctPoolState, usdcAmountInValueWad);
+        uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongPoolState, usdcAmountInValueWad);
 
         uint256 wethPriceWad = OracleAdapter.priceWad(
             OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: maxStaleness})
