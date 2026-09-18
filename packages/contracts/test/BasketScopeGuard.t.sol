@@ -46,9 +46,6 @@ contract BasketScopeGuardTest is Test {
         basketIds[2] = 2;
         basketIds[3] = 2;
 
-        // address(this) stands in for "the Safe" in the unit tests below — it's the only
-        // address allowed to call attestOnboardingClean(), and these tests call it directly
-        // (not through a real Safe), so msg.sender is already this test contract.
         guard = new BasketScopeGuard(address(aqua), address(this), pmStrategyHash, tokens, basketIds);
     }
 
@@ -77,9 +74,7 @@ contract BasketScopeGuardTest is Test {
         return abi.encodeCall(Aqua.ship, (address(0xAAAA), strategy, tokens, amounts));
     }
 
-    function test_AllowsPmStrategyEvenAcrossBaskets() public {
-        guard.attestOnboardingClean();
-
+    function test_AllowsPmStrategyEvenAcrossBaskets() public view {
         address[] memory tokens = new address[](4);
         tokens[0] = tokenA;
         tokens[1] = tokenB;
@@ -100,40 +95,6 @@ contract BasketScopeGuardTest is Test {
             address(0)
         );
         // no revert = pass
-    }
-
-    function test_RevertsOnPmStrategyBeforeAttestation() public {
-        address[] memory tokens = new address[](2);
-        tokens[0] = tokenA;
-        tokens[1] = tokenB;
-
-        vm.expectRevert(IBasketScopeGuard.OnboardingNotAttested.selector);
-        guard.checkTransaction(
-            address(aqua),
-            0,
-            _shipCalldata(pmStrategy, tokens),
-            Enum.Operation.Call,
-            0,
-            0,
-            0,
-            address(0),
-            payable(address(0)),
-            "",
-            address(0)
-        );
-    }
-
-    function test_RevertsOnAttestFromNonSafe() public {
-        vm.prank(address(0xBEEF));
-        vm.expectRevert(IBasketScopeGuard.OnlySafeCanAttest.selector);
-        guard.attestOnboardingClean();
-    }
-
-    function test_RevertsOnDoubleAttestation() public {
-        guard.attestOnboardingClean();
-
-        vm.expectRevert(IBasketScopeGuard.AlreadyAttested.selector);
-        guard.attestOnboardingClean();
     }
 
     function test_AllowsSingleBasketStrategy() public view {
@@ -343,26 +304,6 @@ contract BasketScopeGuardTest is Test {
     // the module path, both actually calling the real Aqua contract.
     // ---------------------------------------------------------------------
 
-    /// @dev A fresh Guard scoped to `safe` — needed wherever a test exercises
-    ///      `attestOnboardingClean`, since the shared `guard` from setUp() is pinned to
-    ///      `address(this)` and every real Guard:Safe pairing is 1:1 anyway (matches
-    ///      script/Deploy.s.sol, which deploys exactly one Guard per Safe).
-    function _deployGuardForSafe(address safe) internal returns (BasketScopeGuard) {
-        address[] memory tokens = new address[](4);
-        tokens[0] = tokenA;
-        tokens[1] = tokenB;
-        tokens[2] = tokenC;
-        tokens[3] = tokenD;
-
-        uint256[] memory basketIds = new uint256[](4);
-        basketIds[0] = 1;
-        basketIds[1] = 1;
-        basketIds[2] = 2;
-        basketIds[3] = 2;
-
-        return new BasketScopeGuard(address(aqua), safe, pmStrategyHash, tokens, basketIds);
-    }
-
     function _deploySafeWithOwner(uint256 ownerPk) internal returns (Safe safe, address owner) {
         owner = vm.addr(ownerPk);
         Safe singleton = new Safe();
@@ -440,12 +381,8 @@ contract BasketScopeGuardTest is Test {
     function test_Integration_SafeAllowsPmStrategyAcrossBasketsViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0003;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
-        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
 
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
-        bool attested =
-            _execViaOwner(safe, ownerPk, address(scopedGuard), abi.encodeWithSignature("attestOnboardingClean()"));
-        assertTrue(attested, "onboarding attestation should succeed via a real signed Safe transaction");
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
 
         address[] memory tokens = new address[](4);
         tokens[0] = tokenA;
@@ -454,32 +391,7 @@ contract BasketScopeGuardTest is Test {
         tokens[3] = tokenD;
 
         bool ok = _execViaOwner(safe, ownerPk, address(aqua), _shipCalldata(pmStrategy, tokens));
-        assertTrue(ok, "PM's own strategy should be allowed to span baskets once onboarding is attested");
-    }
-
-    function test_Integration_SafeBlocksPmStrategyBeforeAttestation() public {
-        uint256 ownerPk = 0xA11CE0006;
-        (Safe safe,) = _deploySafeWithOwner(ownerPk);
-        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
-
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
-
-        address[] memory tokens = new address[](4);
-        tokens[0] = tokenA;
-        tokens[1] = tokenB;
-        tokens[2] = tokenC;
-        tokens[3] = tokenD;
-
-        // Guard is installed but onboarding was never attested — PM's own strategy must still
-        // be blocked, exactly like the scenario a dirty pre-existing strategy would create if
-        // the onboarding check was skipped.
-        bytes memory shipData = _shipCalldata(pmStrategy, tokens);
-        bytes memory signature = _signFor(safe, ownerPk, address(aqua), shipData);
-
-        vm.expectRevert(IBasketScopeGuard.OnboardingNotAttested.selector);
-        safe.execTransaction(
-            address(aqua), 0, shipData, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), signature
-        );
+        assertTrue(ok, "PM's own strategy should be allowed to span baskets through a guarded Safe");
     }
 
     function test_Integration_ModuleGuardBlocksCrossBasketShip() public {
