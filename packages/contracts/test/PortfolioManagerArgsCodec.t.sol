@@ -156,8 +156,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         // group[1] is never reached -- group[0]'s own empty-members check reverts first --
         // it's here only so the array itself satisfies MIN_GROUPS.
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] =
-            PortfolioManagerArgsCodec.Group({weight: WAD, members: new PortfolioManagerArgsCodec.Member[](0)});
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: WAD, members: new PortfolioManagerArgsCodec.Member[](0)});
         groups[1] = _singleMemberGroup(WAD, TOKEN_B, FEED_B);
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerEmptyGroup.selector, 0));
