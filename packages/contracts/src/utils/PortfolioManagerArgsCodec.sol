@@ -182,6 +182,45 @@ library PortfolioManagerArgsCodec {
             uint32(bytes4(args.slice(offset, offset + 4, PortfolioManagerMissingMaxDeviationBps.selector)));
     }
 
+    /// @notice Decodes `args` the same way `parse()` does, but skips every structural check
+    ///         `parse()` re-derives (group/member bounds, weight sum, duplicate tokens, zero
+    ///         feed, fee range) — including the O(n²) duplicate-token scan, the single most
+    ///         expensive part of `parse()`. Safe ONLY when the caller has independently proven
+    ///         those invariants already hold for these exact bytes: `PortfolioManagerSwap`'s
+    ///         swap path is the sole intended caller, gated on
+    ///         `PortfolioManagerStrategyValidator.buildParamsAttested`, which already ran the
+    ///         full validating `parse()` against this same immutable order's `args` once, at
+    ///         `attestBuildParameters` time. Never call this against unattested/untrusted args.
+    function decodeTrusted(bytes calldata args)
+        internal
+        pure
+        returns (Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps)
+    {
+        uint8 groupCount = uint8(bytes1(args.slice(0, 1)));
+        groups = new Group[](groupCount);
+        uint256 offset = 1;
+
+        for (uint256 i = 0; i < groupCount; i++) {
+            uint256 weight = uint256(uint128(bytes16(args.slice(offset, offset + 16))));
+            uint8 memberCount = uint8(bytes1(args.slice(offset + 16, offset + GROUP_HEADER_SIZE)));
+            offset += GROUP_HEADER_SIZE;
+
+            Member[] memory members = new Member[](memberCount);
+            for (uint256 j = 0; j < memberCount; j++) {
+                address token = address(bytes20(args.slice(offset, offset + 20)));
+                address feed = address(bytes20(args.slice(offset + 20, offset + 40)));
+                uint256 maxStaleness = uint256(uint16(bytes2(args.slice(offset + 40, offset + MEMBER_ENTRY_SIZE))));
+                members[j] = Member({token: token, feed: feed, maxStaleness: maxStaleness});
+                offset += MEMBER_ENTRY_SIZE;
+            }
+            groups[i] = Group({weight: weight, members: members});
+        }
+
+        feeBps = uint32(bytes4(args.slice(offset, offset + 4)));
+        offset += 4;
+        maxDeviationBps = uint32(bytes4(args.slice(offset, offset + 4)));
+    }
+
     /// @notice Every member token across every group, in group/member order — the flat
     ///         "declared universe" `PortfolioManagerStrategyValidator` cross-checks against
     ///         `ship()`'s own `tokens` array, and `PortfolioManagerSwap`'s group lookup scans.
@@ -201,10 +240,15 @@ library PortfolioManagerArgsCodec {
 
     /// @notice `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) --
     ///         always goes through `OracleAdapter`, even for a single-member group, so decimal
-    ///         normalization and price conversion are uniform regardless of group size. Shared by
-    ///         `PortfolioManagerSwap`'s swap-time pricing and
-    ///         `PortfolioManagerStrategyValidator`'s ship-time deviation check.
-    function groupValueWad(Group memory group, address maker) internal view returns (uint256) {
+    ///         normalization and price conversion are uniform regardless of group size. Used by
+    ///         `PortfolioManagerStrategyValidator`'s ship-time deviation check, which compares
+    ///         every group's share of the same total, so all groups round the same direction
+    ///         rather than one up and one down as swap-time pricing does.
+    function groupValueWad(Group memory group, address maker, OracleAdapter.Rounding rounding)
+        internal
+        view
+        returns (uint256)
+    {
         uint256 n = group.members.length;
         address[] memory tokens = new address[](n);
         uint256[] memory balances = new uint256[](n);
@@ -215,7 +259,7 @@ library PortfolioManagerArgsCodec {
             balances[i] = IERC20(m.token).balanceOf(maker);
             feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
         }
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
+        return OracleAdapter.groupValueWad(tokens, balances, feeds, rounding);
     }
 
     /// @dev A token declared in two groups would make `PortfolioManagerSwap`'s group lookup

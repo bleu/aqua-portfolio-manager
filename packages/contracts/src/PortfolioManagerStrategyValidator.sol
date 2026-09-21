@@ -8,6 +8,7 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
+import {OracleAdapter} from "./utils/OracleAdapter.sol";
 
 /// @title PortfolioManagerStrategyValidator — validates a PM strategy's ship() encoding
 /// @notice A PM strategy's declared universe exists in two places `IAqua.ship()` never
@@ -30,8 +31,37 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
     uint256 private constant WAD = 1e18;
 
     /// @inheritdoc IPortfolioManagerStrategyValidator
+    mapping(bytes32 => bool) public buildParamsAttested;
+
+    /// @inheritdoc IPortfolioManagerStrategyValidator
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
         (PortfolioManagerArgsCodec.Group[] memory groups,,) = PortfolioManagerArgsCodec.parse(_args(order));
+        _requireUniverseMatches(groups, tokens);
+    }
+
+    /// @inheritdoc IPortfolioManagerStrategyValidator
+    function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
+        (PortfolioManagerArgsCodec.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsCodec.parse(_args(order));
+        _requireBalancedWithinTolerance(groups, maxDeviationBps, maker);
+    }
+
+    /// @inheritdoc IPortfolioManagerStrategyValidator
+    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external {
+        (PortfolioManagerArgsCodec.Group[] memory groups,, uint32 maxDeviationBps) =
+            PortfolioManagerArgsCodec.parse(_args(order));
+        _requireUniverseMatches(groups, tokens);
+        _requireBalancedWithinTolerance(groups, maxDeviationBps, order.maker);
+
+        bytes32 strategyHash = keccak256(abi.encode(order));
+        buildParamsAttested[strategyHash] = true;
+        emit BuildParametersAttested(strategyHash);
+    }
+
+    function _requireUniverseMatches(PortfolioManagerArgsCodec.Group[] memory groups, address[] calldata tokens)
+        private
+        pure
+    {
         address[] memory declared = PortfolioManagerArgsCodec.flattenTokens(groups);
 
         for (uint256 i = 0; i < declared.length; i++) {
@@ -57,19 +87,21 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         }
     }
 
-    /// @inheritdoc IPortfolioManagerStrategyValidator
-    function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
-        (PortfolioManagerArgsCodec.Group[] memory groups,, uint32 maxDeviationBps) =
-            PortfolioManagerArgsCodec.parse(_args(order));
+    function _requireBalancedWithinTolerance(
+        PortfolioManagerArgsCodec.Group[] memory groups,
+        uint32 maxDeviationBps,
+        address maker
+    ) private view {
         if (maxDeviationBps == 0) return;
 
         uint256 n = groups.length;
         uint256[] memory groupValuesWad = new uint256[](n);
         uint256 totalValueWad;
         for (uint256 i = 0; i < n; i++) {
-            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker);
+            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker, OracleAdapter.Rounding.Down);
             totalValueWad += groupValuesWad[i];
         }
+        require(totalValueWad > 0, PortfolioManagerStrategyValidatorEmptyPortfolio());
 
         for (uint256 i = 0; i < n; i++) {
             uint256 actualShareWad = groupValuesWad[i] * WAD / totalValueWad;

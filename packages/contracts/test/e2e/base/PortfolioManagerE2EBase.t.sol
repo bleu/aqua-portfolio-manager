@@ -33,7 +33,7 @@ import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 ///
 /// Trades real WETH/DAI, funded via `deal()` — same-decimal (both 18) real tokens on purpose,
 /// kept for historical continuity with this fixture's existing tests (every group goes through
-/// `OracleAdapter` uniformly now, ADR-0003, so mixed-decimal pairings are safe by
+/// `OracleAdapter` uniformly now, ADR-0003/BLEUDEV-347, so mixed-decimal pairings are safe by
 /// construction — see `PortfolioManagerMultiTokenBasketE2E.t.sol` for one that exercises that).
 abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
@@ -68,8 +68,10 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     function setUp() public virtual override {
         super.setUp();
 
-        router = new PortfolioManagerRouter(address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1");
         strategyValidator = new PortfolioManagerStrategyValidator();
+        router = new PortfolioManagerRouter(
+            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+        );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(1); // distinct salt nonce from BasketScopeGuardE2E's/the multi-token fixture's Safes
 
@@ -155,25 +157,21 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     ///      `_fundAndShip` so callers can skip straight to shipping. Contains exactly one
     ///      external call, so it's safe to arm `vm.expectRevert()` against directly too.
     ///
-    ///      Batches `PortfolioManagerStrategyValidator.requireUniverseMatches` and
-    ///      `requireBalancedWithinTolerance` with the real `Aqua.ship` call via
-    ///      `MultiSendCallOnly`, every leg still originating from `pmSafe` -- not routed through
-    ///      the validator itself, since `Aqua.ship()` keys its ledger by `msg.sender`, and every
-    ///      real trade looks that ledger up by `order.maker`.
+    ///      Batches `PortfolioManagerStrategyValidator.attestBuildParameters` (universe match +
+    ///      price-deviation tolerance, plus recording that both ran) with the real `Aqua.ship`
+    ///      call via `MultiSendCallOnly`, both legs still originating from `pmSafe` -- not routed
+    ///      through the validator itself, since `Aqua.ship()` keys its ledger by `msg.sender`, and
+    ///      every real trade looks that ledger up by `order.maker`.
     function _shipOnly(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
         internal
         returns (bool)
     {
-        bytes memory validateData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.requireUniverseMatches, (order, tokens));
-        bytes memory toleranceData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.requireBalancedWithinTolerance, (order, order.maker));
+        bytes memory attestData =
+            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(
-            _encodeMultiSendTx(address(strategyValidator), validateData),
-            _encodeMultiSendTx(address(strategyValidator), toleranceData),
-            _encodeMultiSendTx(address(aqua), shipData)
+            _encodeMultiSendTx(address(strategyValidator), attestData), _encodeMultiSendTx(address(aqua), shipData)
         );
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
 

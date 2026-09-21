@@ -24,6 +24,11 @@ library OracleAdapter {
     error OracleAdapterInvalidPrice(address feed, int256 answer);
     error OracleAdapterTokensFeedsLengthMismatch();
 
+    enum Rounding {
+        Down,
+        Up
+    }
+
     /// @param feed         The Chainlink-style aggregator for one declared token.
     /// @param maxStaleness Per-feed threshold (ADR-0005: "coverage quality varies by token, so
     ///                     one global threshold isn't appropriate") — a config value, not a
@@ -33,10 +38,10 @@ library OracleAdapter {
         uint256 maxStaleness;
     }
 
-    /// @notice WAD-scaled price of one whole unit of the feed's underlying token.
+    /// @notice WAD-scaled price of one whole token, rounded in the requested direction.
     /// @dev Reverts on a stale or non-positive read — ADR-0005's Decision is explicit that a
-    ///      stale read reverts the whole trade, never falls back to a last-known-good price.
-    function priceWad(PriceFeed memory config) internal view returns (uint256) {
+    ///      stale read reverts the whole trade. Prices below one raw WAD unit also revert.
+    function priceWad(PriceFeed memory config, Rounding rounding) internal view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = config.feed.latestRoundData();
         require(answer > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
         require(
@@ -47,14 +52,10 @@ library OracleAdapter {
             OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness)
         );
 
-        uint8 feedDecimals = config.feed.decimals();
-        uint256 rawPrice = uint256(answer);
-        if (feedDecimals < 18) {
-            return rawPrice * 10 ** (18 - feedDecimals);
-        } else if (feedDecimals > 18) {
-            return rawPrice / 10 ** (feedDecimals - 18);
-        }
-        return rawPrice;
+        uint8 decimals = config.feed.decimals();
+        uint256 lower = FixedPointMath.scaleDown(uint256(answer), decimals, 18);
+        require(lower > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
+        return rounding == Rounding.Up ? FixedPointMath.scaleUp(uint256(answer), decimals, 18) : lower;
     }
 
     /// @notice `Σ (token_balance_j × oracle_price_j)` over a group's declared members
@@ -62,19 +63,24 @@ library OracleAdapter {
     ///         `B_o` for a multi-token group. `balances` are each token's own real, native-
     ///         decimal balance (e.g. a plain wallet `balanceOf` read), not yet normalized for
     ///         either the token's own decimals or the feed's — both normalizations happen here.
-    function groupValueWad(address[] memory tokens, uint256[] memory balances, PriceFeed[] memory feeds)
-        internal
-        view
-        returns (uint256 totalValueWad)
-    {
+    /// @param rounding Round each member up for input reserves, down for output reserves.
+    function groupValueWad(
+        address[] memory tokens,
+        uint256[] memory balances,
+        PriceFeed[] memory feeds,
+        Rounding rounding
+    ) internal view returns (uint256 totalValueWad) {
         require(
             tokens.length == balances.length && tokens.length == feeds.length, OracleAdapterTokensFeedsLengthMismatch()
         );
 
         for (uint256 i = 0; i < tokens.length; i++) {
             uint8 tokenDecimals = IERC20Metadata(tokens[i]).decimals();
-            uint256 price = priceWad(feeds[i]);
-            totalValueWad += balances[i] * price / 10 ** tokenDecimals;
+            uint256 price = priceWad(feeds[i], rounding);
+            uint256 unit = FixedPointMath.scaleDown(1, 0, tokenDecimals);
+            totalValueWad += rounding == Rounding.Up
+                ? FixedPointMath.mulDivUp(balances[i], price, unit)
+                : FixedPointMath.mulDivDown(balances[i], price, unit);
         }
     }
 }

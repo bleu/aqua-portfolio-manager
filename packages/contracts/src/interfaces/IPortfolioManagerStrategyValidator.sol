@@ -20,6 +20,14 @@ interface IPortfolioManagerStrategyValidator {
     error PortfolioManagerStrategyValidatorExcessivePriceDeviation(
         uint256 groupIndex, uint256 actualShareWad, uint256 targetWeightWad
     );
+    /// @dev The deviation check divides by the wallet's total declared value -- an unfunded
+    ///      wallet would otherwise hit a bare division-by-zero panic instead of this descriptive
+    ///      revert.
+    error PortfolioManagerStrategyValidatorEmptyPortfolio();
+
+    /// @dev Emitted once per successful `attestBuildParameters` call -- not just on the first,
+    ///      since re-attesting an already-attested strategy is a harmless no-op, not an error.
+    event BuildParametersAttested(bytes32 indexed strategyHash);
 
     /// @notice Reverts unless `order`'s own encoded universe matches `tokens` exactly -- same
     ///         members, both directions. Only accepts programs whose first (and, for a real PM
@@ -31,4 +39,14 @@ interface IPortfolioManagerStrategyValidator {
     ///         ship()-time check, batched alongside `requireUniverseMatches` -- see
     ///         `PortfolioManagerE2EBase.sol::_shipOnly`.
     function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view;
+
+    /// @notice Runs both checks and records that this strategy's build parameters were validated
+    ///         -- `PortfolioManagerSwap` refuses to price a trade for a strategy that was never
+    ///         attested. Permissionless/idempotent: the recorded fact is independently
+    ///         recomputable, not an authorization decision.
+    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external;
+
+    /// @notice Whether `attestBuildParameters` has ever succeeded for this `strategyHash`
+    ///         (`keccak256(abi.encode(order))` for Aqua-native orders).
+    function buildParamsAttested(bytes32 strategyHash) external view returns (bool);
 }
