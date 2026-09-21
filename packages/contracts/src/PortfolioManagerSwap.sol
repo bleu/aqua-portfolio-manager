@@ -70,9 +70,9 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         // as if it were a $1 unit, since PortfolioManagerPricing itself is unit-agnostic and
         // trusts amountIn/amountOut to already share balanceIn/balanceOut's unit system.
         (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
-            _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn);
+            _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn, OracleAdapter.Rounding.Down);
         (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
-            _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut);
+            _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut, OracleAdapter.Rounding.Up);
 
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
@@ -142,13 +142,14 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev The specific traded token's own price/decimals, separate from its group's
     ///      aggregate `_groupValueWad` sum -- needed to convert the traded amount into and back
     ///      out of the group-value numeraire (see the main function's own note on why).
-    function _priceAndDecimals(PortfolioManagerArgsCodec.Member memory member, address token)
-        private
-        view
-        returns (uint256 priceWad, uint8 decimals)
-    {
+    function _priceAndDecimals(
+        PortfolioManagerArgsCodec.Member memory member,
+        address token,
+        OracleAdapter.Rounding rounding
+    ) private view returns (uint256 priceWad, uint8 decimals) {
         priceWad = OracleAdapter.priceWad(
-            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness})
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness}),
+            rounding
         );
         decimals = IERC20Metadata(token).decimals();
     }

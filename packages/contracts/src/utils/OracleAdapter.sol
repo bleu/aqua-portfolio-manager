@@ -38,10 +38,10 @@ library OracleAdapter {
         uint256 maxStaleness;
     }
 
-    /// @notice WAD-scaled price of one whole unit of the feed's underlying token.
+    /// @notice WAD-scaled price of one whole token, rounded in the requested direction.
     /// @dev Reverts on a stale or non-positive read — ADR-0005's Decision is explicit that a
-    ///      stale read reverts the whole trade, never falls back to a last-known-good price.
-    function priceWad(PriceFeed memory config) internal view returns (uint256) {
+    ///      stale read reverts the whole trade. Prices below one raw WAD unit also revert.
+    function priceWad(PriceFeed memory config, Rounding rounding) internal view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = config.feed.latestRoundData();
         require(answer > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
         require(
@@ -52,7 +52,10 @@ library OracleAdapter {
             OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness)
         );
 
-        return FixedPointMath.scaleDown(uint256(answer), config.feed.decimals(), 18);
+        uint8 decimals = config.feed.decimals();
+        uint256 lower = FixedPointMath.scaleDown(uint256(answer), decimals, 18);
+        require(lower > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
+        return rounding == Rounding.Up ? FixedPointMath.scaleUp(uint256(answer), decimals, 18) : lower;
     }
 
     /// @notice `Σ (token_balance_j × oracle_price_j)` over a group's declared members
@@ -73,7 +76,7 @@ library OracleAdapter {
 
         for (uint256 i = 0; i < tokens.length; i++) {
             uint8 tokenDecimals = IERC20Metadata(tokens[i]).decimals();
-            uint256 price = priceWad(feeds[i]);
+            uint256 price = priceWad(feeds[i], rounding);
             uint256 unit = FixedPointMath.scaleDown(1, 0, tokenDecimals);
             totalValueWad += rounding == Rounding.Up
                 ? FixedPointMath.mulDivUp(balances[i], price, unit)
