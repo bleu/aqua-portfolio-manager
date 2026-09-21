@@ -1,17 +1,17 @@
-# Arbitrageur (BLEUDEV-349)
+# Arbitrageur
 
 An off-chain taker/solver stand-in for 1inch's Pathfinder, so a deployed Portfolio Manager
 strategy's tradeability can actually be exercised end-to-end -- not just unit-tested in Foundry.
 
 ## Why this exists
 
-1inch confirmed directly that Pathfinder is closed-source with **no self-hosted or
-forked-mainnet-testable equivalent** (`docs/ARCHITECTURE.md`'s Milestone 1 section,
-`BLEUDEV-346`). Every real trade against a live PM strategy is meant to come from *some* external
-taker or solver calling the router directly -- Pathfinder is one path to that, but not the only
-one, and not one we can test against ourselves. This package is that external taker, played by a
-real (or fork-local) EOA instead of a same-transaction Foundry mock
-(`lib/swap-vm/test/mocks/MockTaker.sol`, which only works inside a Foundry test process).
+Pathfinder is closed-source with **no self-hosted or forked-mainnet-testable equivalent**
+(`docs/ARCHITECTURE.md`'s Milestone 1 section). Every real trade against a live PM strategy is
+meant to come from *some* external taker or solver calling the router directly -- Pathfinder is
+one path to that, but not the only one, and not one we can test against ourselves. This package
+is that external taker, played by a real (or fork-local) EOA instead of a same-transaction
+Foundry mock (`lib/swap-vm/test/mocks/MockTaker.sol`, which only works inside a Foundry test
+process).
 
 ## Architecture
 
@@ -48,6 +48,9 @@ reasonable future improvement, not a correctness requirement.
 
 Every tick checks **both directions** (tokenIn→tokenOut and tokenOut→tokenIn), since either side
 of the pair could be the one that's mispriced.
+
+One `TOKEN_IN`/`TOKEN_OUT` pair per process, set via env vars -- watching a second pair or
+strategy means running a second instance, not a config change.
 
 ## Running against a local Base fork
 

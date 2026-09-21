@@ -40,13 +40,6 @@ export const arbitrageurAbi = [
     outputs: [{ name: "amountOut", type: "uint256" }],
   },
   {
-    type: "function",
-    name: "owner",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-  {
     type: "event",
     name: "ArbitrageExecuted",
     inputs: [

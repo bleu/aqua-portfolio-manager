@@ -65,6 +65,11 @@ describe("geometricSteps", () => {
     expect(ratio).toBeGreaterThan(5);
     expect(ratio).toBeLessThan(20);
   });
+
+  it("throws a clear error instead of dividing by zero for fewer than 2 steps", () => {
+    expect(() => geometricSteps(1n, 1_000n, 1)).toThrow(/at least 2 steps/);
+    expect(() => geometricSteps(1n, 1_000n, 0)).toThrow(/at least 2 steps/);
+  });
 });
 
 describe("findBestOpportunity", () => {

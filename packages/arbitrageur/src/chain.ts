@@ -27,7 +27,7 @@ export async function ensureAllowance(
   spender: Address,
   amount: bigint,
 ): Promise<void> {
-  const { account, publicClient, walletClient } = clients;
+  const { account, publicClient } = clients;
   const current = await publicClient.readContract({
     address: token,
     abi: erc20Abi,
@@ -37,6 +37,22 @@ export async function ensureAllowance(
 
   if (current >= amount) return;
 
+  // Some tokens (USDT and similar) revert on changing a nonzero allowance directly to a
+  // different nonzero value -- reset to zero first whenever there's an insufficient leftover
+  // from a smaller previous trade.
+  if (current > 0n) {
+    await _approve(clients, token, spender, 0n);
+  }
+  await _approve(clients, token, spender, amount);
+}
+
+async function _approve(
+  clients: ReturnType<typeof makeClients>,
+  token: Address,
+  spender: Address,
+  amount: bigint,
+): Promise<void> {
+  const { account, publicClient, walletClient } = clients;
   const { request } = await publicClient.simulateContract({
     address: token,
     abi: erc20Abi,

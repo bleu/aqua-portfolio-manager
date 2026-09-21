@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Off-chain taker/solver stand-in for 1inch Pathfinder, exercising a deployed PM strategy against the real chain (BLEUDEV-349)",
+  "description": "Off-chain taker/solver stand-in for 1inch Pathfinder, exercising a deployed PM strategy against the real chain",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",

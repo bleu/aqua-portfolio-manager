@@ -41,15 +41,9 @@ export interface Opportunity {
 
 /// Samples `steps` geometrically-spaced trade sizes between `minAmount` and `maxAmount` (log-
 /// scale, so a wide min/max range still gets even coverage across orders of magnitude) and
-/// returns whichever size cleared `minProfitBps` by the widest margin, or `undefined` if none did.
-///
-/// A real weighted-curve AMM's profit-vs-size curve is typically concave for a mispriced pool
-/// (worth more the closer the trade gets to leveling the deviation, worse past that point as the
-/// curve's own price impact eats the edge) -- geometric sampling finds a good size without
-/// assuming strict unimodality (which a plain ternary search would require and ordinary market
-/// noise can violate), at the cost of being an approximation, not the true optimum. Good enough
-/// for a test/monitoring tool; a tighter search is a reasonable future improvement, not a
-/// correctness requirement here.
+/// returns whichever size cleared `minProfitBps` by the widest margin, or `undefined` if none
+/// did. An approximation, not the true optimum -- see README's "Opportunity search" section for
+/// why geometric sampling over a tighter search (e.g. ternary) was the right tradeoff here.
 export async function findBestOpportunity(params: {
   minAmount: bigint;
   maxAmount: bigint;
@@ -88,6 +82,9 @@ export async function findBestOpportunity(params: {
 /// endpoints. Interpolates in floating point (trade sizes are approximate search points, not
 /// values requiring WAD-exact precision) and rounds back to bigint.
 export function geometricSteps(min: bigint, max: bigint, steps: number): bigint[] {
+  if (steps < 2) {
+    throw new Error("geometricSteps requires at least 2 steps");
+  }
   const logMin = Math.log(Number(min));
   const logMax = Math.log(Number(max));
   const result: bigint[] = [];
