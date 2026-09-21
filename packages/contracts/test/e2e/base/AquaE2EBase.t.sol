@@ -23,8 +23,7 @@ import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFa
 abstract contract AquaE2EBase is Test {
     string private constant DEFAULT_BASE_RPC_URL = "https://mainnet.base.org";
 
-    /// @dev 2026-09-21 16:37:09 UTC. ETH, BTC, DAI, USDT and USDC feeds all had positive
-    ///      answers and ages below 12 hours (oldest: USDC, 13,990 seconds).
+    /// @dev Pinned Base snapshot with fresh oracle feeds. Update after successful Live Base checks.
     uint256 internal constant DEFAULT_BASE_RPC_BLOCK = 51_609_641;
 
     /// @dev Aqua's real registry address — deterministic, same on every supported chain
