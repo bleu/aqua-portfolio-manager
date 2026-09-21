@@ -409,18 +409,60 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     // ===== Fuzz: depeg divergence inside a multi-token group =====
 
-    /// @notice group0's two members (tokenA, tokenB) are fuzzed to independently diverging
-    /// prices -- a depeg -- while group1 (tokenC) stays healthy. Round-trip non-profitability
-    /// (DONATION-RESISTANCE-PROOF.md/ADR-0007) is already fuzz-tested at the pure
-    /// `PortfolioManagerPricing` level; this exercises the same guarantee through the real
-    /// `OracleAdapter`-summed group value of a divergently-priced multi-token group, not a value
-    /// handed to the formula directly.
+    /// @notice Narrow-bound counterpart to `testFuzz_DepegDivergenceWithinGroupNeverPanicsAcrossExtremeSkew`
+    /// below: balances stay large and roughly even, and the depeg range is modest, specifically
+    /// so `InsufficientMemberBalance` can't bind and neither leg rounds to zero -- both legs are
+    /// expected to complete on every run. This is what actually exercises round-trip
+    /// non-profitability (DONATION-RESISTANCE-PROOF.md/ADR-0007) through the real
+    /// `OracleAdapter`-summed group value; the wide-bound test below only proves the check
+    /// doesn't panic, since it rarely gets both legs to complete.
+    /// @dev Deliberately no try/catch -- within these bounds a revert here is a real finding
+    ///      (the "reliably completes" assumption broke), not an acceptable outcome to swallow.
+    function testFuzz_DepegDivergenceWithinGroupGuaranteedRoundTripNeverProfits(
+        uint256 balA,
+        uint256 balB,
+        uint256 balC,
+        uint256 priceA,
+        uint256 priceB,
+        uint256 amountIn
+    ) public {
+        balA = bound(balA, 100_000e18, 1_000_000e18);
+        balB = bound(balB, 100_000e18, 1_000_000e18);
+        balC = bound(balC, 100_000e18, 1_000_000e18);
+        // Modest depeg -- still genuine price divergence, tight enough that a member's raw-
+        // balance share can't fall far enough behind its group-value share to trip
+        // InsufficientMemberBalance at these balance ranges.
+        priceA = bound(priceA, 0.5e18, 2e18);
+        priceB = bound(priceB, 0.5e18, 2e18);
+        feedA.setAnswer(int256(priceA), block.timestamp);
+        feedB.setAnswer(int256(priceB), block.timestamp);
+
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, balA, balB, balC);
+
+        // A real fraction of balC, not near-dust -- large enough that neither leg rounds to zero.
+        amountIn = bound(amountIn, balC / 1000, balC / 100);
+
+        (, uint256 amountOutA) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
+        (, uint256 amountBackC) = _swapExactIn(order, address(tokenA), address(tokenC), amountOutA);
+
+        assertLe(
+            amountBackC, amountIn, "round-tripping through a depegged multi-token group must not profit the trader"
+        );
+    }
+
+    /// @notice Wide-bound stress test: group0's two members (tokenA, tokenB) are fuzzed to
+    /// independently diverging prices -- a depeg, up to a 90% haircut or 10x blowup -- while
+    /// group1 (tokenC) stays healthy. Extreme skew makes `InsufficientMemberBalance` and tiny-
+    /// second-leg reverts common, so this mostly verifies the check never panics or misbehaves
+    /// across extreme skew, not the round-trip invariant itself (see
+    /// `testFuzz_DepegDivergenceWithinGroupGuaranteedRoundTripNeverProfits` above for that).
     /// @dev Either leg may legitimately revert with `PortfolioManagerSwapInsufficientMemberBalance`
     /// (a low-priced minority member's raw balance smaller than its share of group value) or
     /// swap-vm's `TakerTraitsAmountOutMustBeGreaterThanZero` (a tiny second-leg trade rounding to
     /// zero). Both asserted by selector, not caught blindly. The invariant is only asserted when
-    /// both legs actually complete.
-    function testFuzz_DepegDivergenceWithinGroupNeverProfitsRoundTripTrader(
+    /// both legs actually complete, which at this bound range is the exception, not the rule.
+    function testFuzz_DepegDivergenceWithinGroupNeverPanicsAcrossExtremeSkew(
         uint256 balA,
         uint256 balB,
         uint256 balC,

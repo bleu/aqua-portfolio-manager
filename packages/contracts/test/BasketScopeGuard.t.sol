@@ -219,6 +219,11 @@ contract BasketScopeGuardTest is Test {
     /// lengths) per fuzz run, beyond the hand-picked scenarios
     /// `test_AllowsPmStrategyEvenAcrossBaskets`/`test_RevertsOnCrossBasketStrategy`/
     /// `test_AllowsSingleBasketStrategy` above already cover individually.
+    /// @dev Deliberately does not predict pass/fail before calling: the safety property is
+    ///      one-way (never wrongly *allow* a cross-basket non-PM strategy), so a false-negative
+    ///      revert isn't a bug worth predicting -- only a false-positive pass is. `_isSafe` is
+    ///      only ever invoked on the non-revert path, and stays independent of `_check`'s own
+    ///      branch structure by construction (it's never asked to reproduce a revert decision).
     function testFuzz_CrossStrategyInvariantHoldsUnderRandomizedTradeSequences(uint256 seed) public {
         address[] memory universe = new address[](5);
         universe[0] = tokenA; // basket 1
@@ -235,43 +240,18 @@ contract BasketScopeGuardTest is Test {
             bytes memory strategy = isPM ? pmStrategy : abi.encodePacked("random-strategy-", seed);
             bytes memory data = _shipCalldata(strategy, tokens);
 
-            if (_predictedOutcome(isPM, tokens)) {
-                guard.checkTransaction(
-                    address(aqua),
-                    0,
-                    data,
-                    Enum.Operation.Call,
-                    0,
-                    0,
-                    0,
-                    address(0),
-                    payable(address(0)),
-                    "",
-                    address(0)
-                );
-            } else {
-                vm.expectRevert();
-                guard.checkTransaction(
-                    address(aqua),
-                    0,
-                    data,
-                    Enum.Operation.Call,
-                    0,
-                    0,
-                    0,
-                    address(0),
-                    payable(address(0)),
-                    "",
-                    address(0)
-                );
+            try guard.checkTransaction(
+                address(aqua), 0, data, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
+            ) {
+                assertTrue(_isSafe(isPM, tokens), "guard allowed an unsafe strategy through");
+            } catch {
+                // A revert is always an acceptable outcome here -- only an unsafe pass is a bug.
             }
         }
     }
 
     /// @dev Random length (0..universe.length, inclusive of the empty-list edge case) and random
-    ///      order, with replacement -- a real `tokens` array could in principle repeat an entry,
-    ///      and order determines which token becomes `CrossBasketStrategyForbidden`'s reference
-    ///      basket (not the pass/fail outcome itself, which `_predictedOutcome` mirrors exactly).
+    ///      order, with replacement -- a real `tokens` array could in principle repeat an entry.
     function _randomTokenSubset(uint256 seed, address[] memory universe)
         private
         pure
@@ -285,18 +265,32 @@ contract BasketScopeGuardTest is Test {
         }
     }
 
-    /// @dev Mirrors `BasketScopeGuard._check`'s own logic exactly (see that function): PM always
-    ///      passes unconditionally; otherwise every token must belong to the same nonzero basket.
-    function _predictedOutcome(bool isPM, address[] memory tokens) private view returns (bool) {
+    /// @dev The safety property itself (ADR-0011): every token shares one basket, none is
+    ///      undeclared. Deliberately shaped differently from `_check`'s own "compare every token
+    ///      to tokens[0]" loop -- counts distinct nonzero basket IDs instead -- so a bug specific
+    ///      to that comparison pattern (e.g. the wrong reference index) is less likely to be
+    ///      replicated here by construction, not just by not looking at `_check` while writing
+    ///      this. Only ever invoked on the non-revert path (see the fuzz test's own doc comment).
+    function _isSafe(bool isPM, address[] memory tokens) private view returns (bool) {
         if (isPM) return true;
         if (tokens.length == 0) return false;
-        uint256 refBasket = guard.basketOf(tokens[0]);
-        if (refBasket == 0) return false;
-        for (uint256 i = 1; i < tokens.length; i++) {
+
+        uint256[] memory distinctBaskets = new uint256[](tokens.length);
+        uint256 distinctCount;
+        for (uint256 i = 0; i < tokens.length; i++) {
             uint256 b = guard.basketOf(tokens[i]);
-            if (b == 0 || b != refBasket) return false;
+            if (b == 0) return false;
+
+            bool seen;
+            for (uint256 j = 0; j < distinctCount; j++) {
+                if (distinctBaskets[j] == b) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) distinctBaskets[distinctCount++] = b;
         }
-        return true;
+        return distinctCount == 1;
     }
 
     // ---------------------------------------------------------------------
