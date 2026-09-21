@@ -17,7 +17,7 @@ import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerPricing} from "../../src/utils/PortfolioManagerPricing.sol";
 import {OracleAdapter} from "../../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
@@ -32,7 +32,7 @@ import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 /// not a mock.
 ///
 /// Deliberately self-contained beyond `AquaE2EBase`'s shared Aqua/Safe infra (own Router/
-/// StrategyFactory/MultiSendCallOnly, not `PortfolioManagerE2EBase`) -- that base's PM-specific
+/// StrategyValidator/MultiSendCallOnly, not `PortfolioManagerE2EBase`) -- that base's PM-specific
 /// fields are hard-shaped around a 2-token, single-member-group universe; this fixture's 5-token,
 /// 2-group universe doesn't fit it.
 contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
@@ -72,7 +72,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     PortfolioManagerRouter internal router;
     Safe internal multiTokenSafe;
     MockTaker internal taker;
-    PortfolioManagerStrategyFactory internal strategyFactory;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     MultiSendCallOnly internal multiSendCallOnly;
 
     IERC20 internal weth;
@@ -94,7 +94,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         super.setUp();
 
         router = new PortfolioManagerRouter(address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1");
-        strategyFactory = new PortfolioManagerStrategyFactory();
+        strategyValidator = new PortfolioManagerStrategyValidator();
         multiSendCallOnly = new MultiSendCallOnly();
         multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
 
@@ -154,7 +154,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         );
     }
 
-    /// @dev Batches `PortfolioManagerStrategyFactory.requireUniverseMatches` with the real
+    /// @dev Batches `PortfolioManagerStrategyValidator.requireUniverseMatches` with the real
     ///      `Aqua.ship` call via `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.t.sol`'s
     ///      identical note on why this doesn't route through the factory itself.
     function _shipOnly(ISwapVM.Order memory order) internal returns (bytes32) {
@@ -189,11 +189,11 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         vm.stopPrank();
 
         bytes memory validateData =
-            abi.encodeCall(PortfolioManagerStrategyFactory.requireUniverseMatches, (order, tokens));
+            abi.encodeCall(PortfolioManagerStrategyValidator.requireUniverseMatches, (order, tokens));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(
-            _encodeMultiSendTx(address(strategyFactory), validateData), _encodeMultiSendTx(address(aqua), shipData)
+            _encodeMultiSendTx(address(strategyValidator), validateData), _encodeMultiSendTx(address(aqua), shipData)
         );
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
 

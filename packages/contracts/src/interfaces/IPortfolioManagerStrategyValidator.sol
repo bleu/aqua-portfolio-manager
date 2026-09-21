@@ -5,14 +5,14 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 
-/// @title IPortfolioManagerStrategyFactory
-/// @notice External interface for `PortfolioManagerStrategyFactory` — see that contract for the
+/// @title IPortfolioManagerStrategyValidator
+/// @notice External interface for `PortfolioManagerStrategyValidator` — see that contract for the
 ///         full rationale (why it validates a PM strategy's `ship()` encoding rather than
 ///         forwarding to `IAqua.ship()` itself).
-interface IPortfolioManagerStrategyFactory {
-    error PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy();
-    error PortfolioManagerStrategyFactoryDeclaredTokenNotShipped(address token);
-    error PortfolioManagerStrategyFactoryShippedTokenNotDeclared(address token);
+interface IPortfolioManagerStrategyValidator {
+    error PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy();
+    error PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(address token);
+    error PortfolioManagerStrategyValidatorShippedTokenNotDeclared(address token);
 
     /// @notice Reverts unless `order`'s own encoded universe matches `tokens` exactly -- same
     ///         members, both directions. Only accepts programs whose first (and, for a real PM

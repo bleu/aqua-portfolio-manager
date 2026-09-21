@@ -10,16 +10,16 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
-import {IPortfolioManagerStrategyFactory} from "../src/interfaces/IPortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
+import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
 
 /// @notice Confirms the factory actually closes the gap it exists for: a mismatch between
 /// PortfolioManagerArgsCodec's declared universe and IAqua.ship()'s own tokens array, in
 /// either direction, reverts. Deliberately a pure validation check only -- it never calls
 /// Aqua.ship() itself, so there's no ledger/settlement path to exercise here; see
 /// PortfolioManagerE2EBase.t.sol for the real Safe + MultiSendCallOnly flow this feeds into.
-contract PortfolioManagerStrategyFactoryTest is Test {
-    PortfolioManagerStrategyFactory internal factory;
+contract PortfolioManagerStrategyValidatorTest is Test {
+    PortfolioManagerStrategyValidator internal factory;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -27,7 +27,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
     address internal maker;
 
     function setUp() public {
-        factory = new PortfolioManagerStrategyFactory();
+        factory = new PortfolioManagerStrategyValidator();
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -116,7 +116,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryDeclaredTokenNotShipped.selector,
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorDeclaredTokenNotShipped.selector,
                 address(tokenC)
             )
         );
@@ -141,7 +141,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryShippedTokenNotDeclared.selector,
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorShippedTokenNotDeclared.selector,
                 address(tokenC)
             )
         );
@@ -179,7 +179,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         tokens[0] = address(tokenA);
 
         vm.expectRevert(
-            IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy.selector
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy.selector
         );
         factory.requireUniverseMatches(order, tokens);
     }

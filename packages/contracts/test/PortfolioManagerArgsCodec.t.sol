@@ -2,7 +2,7 @@
 pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {PortfolioManagerArgsCodec, PM_BPS} from "../src/utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 
 contract PortfolioManagerArgsCodecTest is Test {
     uint256 constant WAD = 1e18;
@@ -100,7 +100,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_BuildThenParseRoundTrips(uint8 seed, uint32 feeBps) public view {
-        feeBps = uint32(bound(feeBps, 0, PM_BPS));
+        feeBps = uint32(bound(feeBps, 0, PortfolioManagerArgsCodec.PM_BPS));
         uint256 n = bound(seed, 1, 10);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -210,9 +210,12 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = _singleMemberGroup(WAD, TOKEN_A, FEED_A);
 
         vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, PM_BPS + 1)
+            abi.encodeWithSelector(
+                PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector,
+                PortfolioManagerArgsCodec.PM_BPS + 1
+            )
         );
-        this._callBuild(groups, uint32(PM_BPS + 1));
+        this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS + 1));
     }
 
     // ---- parse: hand-crafted args must be independently validated, not just trust build() ----
