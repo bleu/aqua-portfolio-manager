@@ -16,17 +16,16 @@ import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFa
 ///         whole fixture lives in the test run itself (Foundry Book: tests should be
 ///         self-contained and reproducible via `vm.createSelectFork`, not an external deployment
 ///         pipeline).
-/// @dev No fixed fork block *by default*: every concrete E2E fixture reads live feed/balance
-///      state and computes its own expectations dynamically, and this whole suite is meant to
-///      exercise *current* real protocol state, not a frozen snapshot. `BASE_RPC_URL` is the
-///      escape hatch for avoiding public-endpoint rate-limiting.
-///      `BASE_RPC_BLOCK` is a narrower escape hatch on top of that: CI resolves and caches a
-///      recent block number once per hour (see `.github/workflows/test.yml`) so repeated runs
-///      within that hour reuse Foundry's own on-disk RPC cache instead of re-fetching every
-///      storage slot from scratch -- still "current" to within an hour, not a permanent snapshot.
-///      Unset (0) locally, so a plain `forge test` still forks genuinely live state.
+/// @dev Local tests and CI default to the same verified Base snapshot so oracle freshness
+///      does not depend on when the suite runs. Time-dependent tests advance the fork clock
+///      explicitly with vm.warp. Override BASE_RPC_BLOCK for another snapshot, or set it to 0
+///      to exercise live state. BASE_RPC_URL can override the public endpoint.
 abstract contract AquaE2EBase is Test {
     string private constant DEFAULT_BASE_RPC_URL = "https://mainnet.base.org";
+
+    /// @dev 2026-09-21 16:37:09 UTC. ETH, BTC, DAI, USDT and USDC feeds all had positive
+    ///      answers and ages below 12 hours (oldest: USDC, 13,990 seconds).
+    uint256 internal constant DEFAULT_BASE_RPC_BLOCK = 51_609_641;
 
     /// @dev Aqua's real registry address — deterministic, same on every supported chain
     ///      (Ethereum, Base, Optimism, Arbitrum, ... — see `lib/aqua/README.md`'s deployment
@@ -45,7 +44,7 @@ abstract contract AquaE2EBase is Test {
 
     function setUp() public virtual {
         string memory rpcUrl = vm.envOr("BASE_RPC_URL", DEFAULT_BASE_RPC_URL);
-        uint256 pinnedBlock = vm.envOr("BASE_RPC_BLOCK", uint256(0));
+        uint256 pinnedBlock = vm.envOr("BASE_RPC_BLOCK", DEFAULT_BASE_RPC_BLOCK);
         if (pinnedBlock == 0) {
             vm.createSelectFork(rpcUrl);
         } else {
