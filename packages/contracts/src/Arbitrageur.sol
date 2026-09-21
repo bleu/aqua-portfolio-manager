@@ -9,31 +9,22 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 
-/// @title Arbitrageur — a minimal, owner-controlled taker for any SwapVM router (BLEUDEV-349)
-/// @notice Real pathfinder-style routing (1inch's own) is closed-source with no self-hosted or
-///         forked-mainnet-testable equivalent (confirmed directly with 1inch, see
-///         `docs/ARCHITECTURE.md`'s Milestone 1 section) -- there is no way to test that a
-///         deployed PM strategy is actually tradeable the way a real taker/solver would trade it,
-///         short of building a stand-in. This contract is that stand-in's on-chain half: a
-///         general-purpose taker that any SwapVM router order can be executed against, callable
-///         by its owner with plain, ABI-typed arguments. The decision logic (when a trade is
-///         profitable, how large to size it) is deliberately kept off-chain, in
-///         `packages/arbitrageur`'s TypeScript server -- exactly the part a real Pathfinder-style
-///         router would own, and the part worth iterating on without a redeploy.
-/// @dev All swaps use SwapVM's `useTransferFromAndAquaPush` taker path (plain `transferFrom` +
-///      `Aqua.push`, no `ITakerCallbacks` implementation needed) specifically so the *owner* can
-///      be a plain EOA -- signing and submitting transactions directly -- rather than needing to
-///      be a contract capable of receiving a mid-swap callback. `TakerTraitsLib.build`'s packed,
-///      bit-shifted encoding is subtle enough (see `lib/swap-vm/src/libs/TakerTraits.sol`) that
-///      hand-replicating it off-chain would be a real correctness risk with no test coverage
-///      protecting it; every call here instead builds it once, in Solidity, reusing the exact
-///      same library the rest of this codebase already relies on and tests.
-/// @dev Deliberately does not hold a standing token balance between calls: `executeArbitrage`
-///      pulls exactly `amountIn` from the owner immediately before swapping, and `tokenOut` is
-///      sent directly to the owner by the router's own settlement (`to: msg.sender` at call
-///      time), not routed back through this contract. `sweep` exists only to recover anything
-///      that ends up here by mistake (e.g. dust from a future taker-traits change), not as part
-///      of the normal flow.
+/// @title Arbitrageur — a minimal, owner-controlled taker for any SwapVM router
+/// @notice A general-purpose taker that any SwapVM router order can be executed against,
+///         callable by its owner with plain, ABI-typed arguments -- the on-chain half of a
+///         Pathfinder-style trading stand-in. Decision logic (when a trade is profitable, how
+///         large to size it) lives off-chain in `packages/arbitrageur` instead, so it can be
+///         iterated on without a redeploy.
+/// @dev Every swap uses `isFirstTransferFromTaker` + `useTransferFromAndAquaPush` with both
+///      `hasPreTransferInCallback`/`hasPreTransferOutCallback` left `false` (see `_takerTraits`),
+///      so the owner never needs to implement `ITakerCallbacks` and can be a plain EOA.
+///      `TakerTraitsLib.build`'s packed, bit-shifted encoding (`lib/swap-vm/src/libs/TakerTraits.sol`)
+///      is built once here, in Solidity, reusing the same library the rest of this codebase
+///      already relies on, rather than hand-replicated off-chain with no test coverage.
+/// @dev Holds no standing token balance between calls: `executeArbitrage` pulls exactly
+///      `amountIn` from the owner immediately before swapping, and `tokenOut` settles directly
+///      to the owner (`to: msg.sender`). `sweep` only recovers anything stranded here by
+///      mistake.
 contract Arbitrageur is Ownable {
     using SafeERC20 for IERC20;
 
@@ -46,6 +37,7 @@ contract Arbitrageur is Ownable {
         uint256 amountIn,
         uint256 amountOut
     );
+    event Swept(address indexed token, uint256 amount, address indexed to);
 
     constructor(address router, address owner_) Ownable(owner_) {
         ROUTER = ISwapVM(router);
@@ -94,11 +86,12 @@ contract Arbitrageur is Ownable {
     ///         normal flow (see this contract's own top-level doc comment).
     function sweep(address token, uint256 amount, address to) external onlyOwner {
         IERC20(token).safeTransfer(to, amount);
+        emit Swept(token, amount, to);
     }
 
     /// @dev Every field this contract never varies (`shouldUnwrapWeth`, hooks, callbacks,
-    ///      signature) is left at its zero/false/empty default -- `useTransferFromAndAquaPush`
-    ///      means no `ITakerCallbacks` implementation is ever invoked, and
+    ///      signature) is left at its zero/false/empty default -- both callback flags being
+    ///      `false` means no `ITakerCallbacks` implementation is ever invoked, and
     ///      `order.traits.useAquaInsteadOfSignature()` (required by every PM strategy, see
     ///      `PortfolioManagerRouter`) means no signature is needed either.
     function _takerTraits(address to, bytes memory threshold, uint40 deadline) private view returns (bytes memory) {
