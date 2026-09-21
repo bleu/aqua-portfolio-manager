@@ -18,6 +18,8 @@ import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
+import {IPortfolioManagerStrategyValidator} from "../../src/interfaces/IPortfolioManagerStrategyValidator.sol";
+import {IPortfolioManagerSwap} from "../../src/interfaces/IPortfolioManagerSwap.sol";
 import {PortfolioManagerPricing} from "../../src/utils/PortfolioManagerPricing.sol";
 import {OracleAdapter} from "../../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
@@ -93,8 +95,10 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     function setUp() public override {
         super.setUp();
 
-        router = new PortfolioManagerRouter(address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1");
         strategyValidator = new PortfolioManagerStrategyValidator();
+        router = new PortfolioManagerRouter(
+            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+        );
         multiSendCallOnly = new MultiSendCallOnly();
         multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
 
@@ -129,7 +133,11 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     // ===== Helpers =====
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps);
+        return _buildOrder(lpFeeBps, 0);
+    }
+
+    function _buildOrder(uint32 lpFeeBps, uint32 maxDeviationBps) internal view returns (ISwapVM.Order memory) {
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps, maxDeviationBps);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: address(multiTokenSafe),
@@ -154,11 +162,51 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         );
     }
 
-    /// @dev Batches `PortfolioManagerStrategyValidator.requireUniverseMatches` with the real
-    ///      `Aqua.ship` call via `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.t.sol`'s
-    ///      identical note on why this doesn't route through the factory itself.
+    /// @dev Batches `PortfolioManagerStrategyValidator.requireUniverseMatches` and
+    ///      `requireBalancedWithinTolerance` with the real `Aqua.ship` call via
+    ///      `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.t.sol`'s identical note on why
+    ///      this doesn't route through the validator itself.
     function _shipOnly(ISwapVM.Order memory order) internal returns (bytes32) {
-        address[] memory tokens = new address[](5);
+        bool ok = _shipRaw(order, WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING, USDT_FUNDING, USDC_FUNDING);
+        require(ok, "ship through multi-token PM Safe failed");
+
+        bytes32 strategyHash = keccak256(abi.encode(order));
+        assertEq(strategyHash, router.hash(order), "strategy hash must match order hash");
+        return strategyHash;
+    }
+
+    /// @dev Funding amounts split out of `_shipOnly` (which always uses the fixture's own
+    ///      defaults) so a deviation-tolerance test can fund the wallet deliberately off-target.
+    ///      Deliberately returns the raw `execTransaction` success bool with no `require` --
+    ///      `vm.expectRevert` needs the original revert (e.g. a custom error from the tolerance
+    ///      check) to reach it directly, not get replaced by a generic string reason.
+    function _shipRaw(
+        ISwapVM.Order memory order,
+        uint256 wethAmount,
+        uint256 wbtcAmount,
+        uint256 daiAmount,
+        uint256 usdtAmount,
+        uint256 usdcAmount
+    ) internal returns (bool) {
+        (address[] memory tokens, uint256[] memory amounts) =
+            _fundAndApprove(wethAmount, wbtcAmount, daiAmount, usdtAmount, usdcAmount);
+        return _execShipBatch(order, tokens, amounts);
+    }
+
+    /// @dev Deals real balances and approves Aqua -- split out of `_shipRaw` so a revert-testing
+    ///      caller can arm `vm.expectRevert()` immediately before the single call that should
+    ///      revert (`_execShipBatch`), not before these several real, non-reverting external
+    ///      calls (`balanceOf`/`approve`), which would otherwise consume `expectRevert`'s "next
+    ///      call" slot instead -- same pitfall `test_StaleFeedEventuallyBlocksTrade` already
+    ///      documents for `deal()`.
+    function _fundAndApprove(
+        uint256 wethAmount,
+        uint256 wbtcAmount,
+        uint256 daiAmount,
+        uint256 usdtAmount,
+        uint256 usdcAmount
+    ) internal returns (address[] memory tokens, uint256[] memory amounts) {
+        tokens = new address[](5);
         tokens[0] = address(weth);
         tokens[1] = address(wbtc);
         tokens[2] = address(dai);
@@ -171,13 +219,13 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // after that script runs). Real funding has to happen here, inside the test itself,
         // same as PortfolioManagerE2EBase.t.sol's `_fundAndShip` already does for the
         // single-group fixture.
-        deal(address(weth), address(multiTokenSafe), WETH_FUNDING);
-        deal(address(wbtc), address(multiTokenSafe), WBTC_FUNDING);
-        deal(address(dai), address(multiTokenSafe), DAI_FUNDING);
-        deal(address(usdt), address(multiTokenSafe), USDT_FUNDING);
-        deal(address(usdc), address(multiTokenSafe), USDC_FUNDING);
+        deal(address(weth), address(multiTokenSafe), wethAmount);
+        deal(address(wbtc), address(multiTokenSafe), wbtcAmount);
+        deal(address(dai), address(multiTokenSafe), daiAmount);
+        deal(address(usdt), address(multiTokenSafe), usdtAmount);
+        deal(address(usdc), address(multiTokenSafe), usdcAmount);
 
-        uint256[] memory amounts = new uint256[](5);
+        amounts = new uint256[](5);
         for (uint256 i = 0; i < 5; i++) {
             amounts[i] = IERC20(tokens[i]).balanceOf(address(multiTokenSafe));
         }
@@ -187,18 +235,37 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             IERC20(tokens[i]).approve(address(aqua), type(uint256).max);
         }
         vm.stopPrank();
+    }
 
-        bytes memory validateData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.requireUniverseMatches, (order, tokens));
+    function _execShipBatch(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts)
+        internal
+        returns (bool)
+    {
+        return _execShipBatch(order, tokens, amounts, true);
+    }
+
+    /// @param attest Whether to include the `attestBuildParameters` leg -- `false` simulates a
+    ///        caller that skips the recommended multicall validation entirely and ships directly,
+    ///        the exact scenario the swap-time attestation gate exists to catch.
+    function _execShipBatch(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts, bool attest)
+        internal
+        returns (bool)
+    {
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
-        bytes memory batch = abi.encodePacked(
-            _encodeMultiSendTx(address(strategyValidator), validateData), _encodeMultiSendTx(address(aqua), shipData)
-        );
+        bytes memory batch = attest
+            ? abi.encodePacked(
+                _encodeMultiSendTx(
+                    address(strategyValidator),
+                    abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens))
+                ),
+                _encodeMultiSendTx(address(aqua), shipData)
+            )
+            : _encodeMultiSendTx(address(aqua), shipData);
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
 
         vm.prank(deployer);
-        bool ok = multiTokenSafe.execTransaction(
+        return multiTokenSafe.execTransaction(
             address(multiSendCallOnly),
             0,
             multiSendData,
@@ -210,11 +277,6 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             payable(address(0)),
             _selfApprovedSignature()
         );
-        require(ok, "ship through multi-token PM Safe failed");
-
-        bytes32 strategyHash = keccak256(abi.encode(order));
-        assertEq(strategyHash, router.hash(order), "strategy hash must match order hash");
-        return strategyHash;
     }
 
     function _encodeMultiSendTx(address to, bytes memory data) internal pure returns (bytes memory) {
@@ -382,6 +444,30 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         );
     }
 
+    /// @notice Unlike `test_SkewReducingBeatsSkewWorseningAtTheSameTradeSize` (which deliberately
+    /// resets state via `vm.snapshotState()` between its two trades to isolate a single-trade
+    /// comparison), this fires two same-direction trades back to back with no reset -- proving
+    /// the second one gets a strictly worse rate purely because the first trade's real balance
+    /// change (read fresh via `balanceOf`, ADR-0002) feeds into the second trade's quote. Neither
+    /// the pure-library fuzz suite (`PortfolioManagerPricing.t.sol`) nor any other E2E test here
+    /// exercises this: the fuzz tests call `exactIn` once per run against synthetic balances,
+    /// with no second call carrying the first's output back in as new state.
+    function test_SecondTradeInSameDirectionGetsWorseRateThanTheFirst() public {
+        ISwapVM.Order memory order = _buildOrder(6);
+        _shipOnly(order);
+
+        uint256 amountIn = 300e6; // 300 USDC each time, well within the funded stables balance
+
+        (, uint256 firstOut) = _swapExactIn(order, address(usdc), address(weth), amountIn);
+        (, uint256 secondOut) = _swapExactIn(order, address(usdc), address(weth), amountIn);
+
+        assertLt(
+            secondOut,
+            firstOut,
+            "a second same-direction trade must get a worse rate once the first trade's real balance change is priced in"
+        );
+    }
+
     function test_SkewReducingBeatsSkewWorseningAtTheSameTradeSize() public {
         ISwapVM.Order memory order = _buildOrder(2);
         _shipOnly(order);
@@ -455,6 +541,57 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         vm.expectRevert(
             abi.encodeWithSelector(
                 OracleAdapter.OracleAdapterStalePrice.selector, oldestFeed, oldestUpdatedAt, maxStaleness
+            )
+        );
+        taker.swap(order, address(usdc), address(weth), amount, takerData);
+    }
+
+    // ===== Price-deviation circuit breaker (ADR-0012) =====
+
+    function test_ShipSucceedsWithGenerousToleranceUnderNormalFunding() public {
+        // A wide 90% band -- not meant to be tight, just proving the new batch leg doesn't
+        // spuriously block a normal ship() under this fixture's real, live-priced funding.
+        ISwapVM.Order memory order = _buildOrder(4, 0.9e9);
+        _shipOnly(order);
+    }
+
+    function test_ShipRevertsWhenWalletIsExtremelySkewedBeyondDeviationTolerance() public {
+        ISwapVM.Order memory order = _buildOrder(5, 0.1e9); // 10% band
+
+        // Stables funded 1000x over -- regardless of live WETH/WBTC prices, a wallet holding
+        // ~99.9% of its value in one group against a 50/50 target is far outside any reasonable
+        // tolerance. Mirrors a wallet that was never balanced to begin with, or drained on the
+        // majors side by a direct Safe-owner withdrawal outside ship()/swap() entirely.
+        (address[] memory tokens, uint256[] memory amounts) =
+            _fundAndApprove(WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING * 1000, USDT_FUNDING * 1000, USDC_FUNDING * 1000);
+
+        // Live oracle prices make the exact `actualShareWad` argument unpredictable -- match on
+        // the selector alone, not the full encoded error.
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
+        );
+        _execShipBatch(order, tokens, amounts);
+    }
+
+    // ===== Build-parameter attestation gate =====
+
+    function test_SwapRevertsWhenShippedWithoutAttestingBuildParameters() public {
+        ISwapVM.Order memory order = _buildOrder(7);
+
+        // Real Safe/MultiSendCallOnly path, but with only the ship() leg -- exactly what a
+        // caller that skips the recommended attest+ship batch would do.
+        (address[] memory tokens, uint256[] memory amounts) =
+            _fundAndApprove(WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING, USDT_FUNDING, USDC_FUNDING);
+        bool ok = _execShipBatch(order, tokens, amounts, false);
+        require(ok, "ship-only batch (no attest leg) must still succeed on its own");
+
+        uint256 amount = 300e6;
+        deal(address(usdc), address(taker), amount * 2);
+        bytes memory takerData = _exactInTakerData();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapBuildParametersNotAttested.selector, router.hash(order)
             )
         );
         taker.swap(order, address(usdc), address(weth), amount, takerData);

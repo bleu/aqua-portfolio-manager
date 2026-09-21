@@ -8,6 +8,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
+import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerFee} from "./utils/PortfolioManagerFee.sol";
@@ -41,14 +42,36 @@ import {FixedPointMath} from "./utils/FixedPointMath.sol";
 abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
 
-    constructor(address aqua) Fee(aqua) {}
+    uint256 private constant WAD = FixedPointMath.WAD;
+
+    /// @dev The multicall validation that's supposed to run alongside `Aqua.ship()` is
+    ///      convention, not enforced by `ship()` itself -- this is what lets the swap opcode
+    ///      independently check it actually happened, instead of trusting the caller.
+    IPortfolioManagerStrategyValidator private immutable STRATEGY_VALIDATOR;
+
+    constructor(address aqua, address strategyValidator) Fee(aqua) {
+        STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
+    }
 
     /// @param args Encoded via PortfolioManagerArgsCodec.build (tokens, weights, feeBps)
     /// @dev Not declared `view`: Solidity won't implicitly widen a view-typed function-pointer
     ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
     ///      `BasketXYCSwap.sol`'s identical note).
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps) = PortfolioManagerArgsCodec.parse(args);
+        // Checked first, before parsing args, so an unattested strategy never pays parse cost.
+        // The flag is monotonic, so re-checking every swap (not just the first) is behaviorally
+        // identical and needs no firstness special-case.
+        require(
+            STRATEGY_VALIDATOR.buildParamsAttested(ctx.query.orderHash),
+            PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
+        );
+
+        // decodeTrusted, not parse: STRATEGY_VALIDATOR.buildParamsAttested above already proves
+        // attestBuildParameters ran parse() successfully against these exact bytes once --
+        // re-deriving group/member bounds, weight sum, duplicate tokens, and fee range on every
+        // swap would just repeat work whose answer can't have changed since attestation.
+        (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =
+            PortfolioManagerArgsCodec.decodeTrusted(args);
 
         (uint256 groupInIdx, uint256 memberInIdx) = _resolve(groups, ctx.query.tokenIn);
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
@@ -61,6 +84,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             weightOut: groups[groupOutIdx].weight,
             feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
         });
+
+        if (maxDeviationBps != 0) {
+            uint256 sp = PortfolioManagerPricing.spotPrice(quote);
+            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PortfolioManagerArgsCodec.PM_BPS / WAD;
+            require(deviationBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(sp, maxDeviationBps));
+        }
 
         // The curve's own balanceIn/balanceOut are oracle-VALUE-scaled (ADR-0003: `Σ balance_j
         // × price_j` per group), not the traded token's native units — so the traded amount
@@ -140,7 +169,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     }
 
     /// @dev The specific traded token's own price/decimals, separate from its group's
-    ///      aggregate `_groupValueWad` sum -- needed to convert the traded amount into and back
+    ///      aggregate `groupValueWad` sum -- needed to convert the traded amount into and back
     ///      out of the group-value numeraire (see the main function's own note on why).
     function _priceAndDecimals(
         PortfolioManagerArgsCodec.Member memory member,

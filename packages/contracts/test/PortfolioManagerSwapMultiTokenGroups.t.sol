@@ -16,6 +16,7 @@ import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgr
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
@@ -32,6 +33,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -49,7 +51,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        router = new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1");
+        strategyValidator = new PortfolioManagerStrategyValidator();
+        router =
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -81,7 +85,11 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     // ===== Helpers =====
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps);
+        return _buildOrder(lpFeeBps, 0);
+    }
+
+    function _buildOrder(uint32 lpFeeBps, uint32 maxDeviationBps) internal view returns (ISwapVM.Order memory) {
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps, maxDeviationBps);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,
@@ -128,6 +136,8 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         amounts[0] = balA;
         amounts[1] = balB;
         amounts[2] = balC;
+
+        strategyValidator.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -344,5 +354,99 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             )
         );
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+    }
+
+    // ===== Price-deviation circuit breaker (ADR-0012) =====
+
+    function test_ExcessivePriceDeviationBlocksTrade() public {
+        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, at target
+
+        // A direct balance change outside ship()/swap() entirely (e.g. the Safe owner's own
+        // withdrawal, or here, a donation) -- group0 (tokenA+tokenB) balloons to 1,000,000e18
+        // while group1 stays at 100,000e18, far past the 10% band around the 50/50 target.
+        tokenA.mint(maker, 900_000e18);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000e18);
+
+        // spotPrice(tokenC->tokenA) = (100,000/0.5) / (1,000,000/0.5) = 0.1e18 exactly (equal
+        // weights cancel), i.e. 90% deviation from WAD -- well past the 10% ceiling.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 0.1e18, uint256(0.1e9)
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+    }
+
+    function test_PriceDeviationWithinToleranceStillPricesNormally() public {
+        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18
+
+        // Only a mild 5% skew -- group0 grows to 105,000e18, group1 stays at 100,000e18, still
+        // inside the 10% band, so the trade must price exactly as it would with the check absent.
+        tokenA.mint(maker, 5_000e18);
+
+        uint256 amountIn = 500e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
+
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18,
+            balanceOut: 105_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "within-tolerance trade must price exactly as without the check");
+    }
+
+    function test_ZeroMaxDeviationBpsDisablesTheCheckEvenUnderExtremeSkew() public {
+        ISwapVM.Order memory order = _buildOrder(0, 0); // disabled
+        _shipOrder(order, 50_000e18, 50_000e18, 100_000e18);
+
+        // Same extreme 90%-deviation skew as test_ExcessivePriceDeviationBlocksTrade -- with the
+        // breaker off, this must still price and settle, unchanged from before ADR-0012 existed.
+        tokenA.mint(maker, 900_000e18);
+
+        uint256 amountIn = 500e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
+
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18,
+            balanceOut: 1_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "maxDeviationBps == 0 must be a true no-op");
+    }
+
+    function _exactInTakerData() internal view returns (bytes memory) {
+        return TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: true,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
     }
 }
