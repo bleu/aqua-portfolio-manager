@@ -337,6 +337,64 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
     }
 
+    function test_ExactInPreservesInvariantWithFractionalInputReserve() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 3);
+        tokenB.burn(maker, INITIAL_BALANCE - 100e18);
+
+        _swapExactIn(order, 200);
+
+        // Constant prices cancel from the equal-weight invariant. Flooring the input
+        // reserve's value from 1.5 to 1 previously paid 99 B and reduced this product.
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
+    }
+
+    function test_ExactOutPreservesInvariantWithFractionalInputReserve() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 3);
+        tokenB.burn(maker, INITIAL_BALANCE - 100e18);
+
+        _swapExactOut(order, 99e18);
+
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
+    }
+
+    function testFuzz_FractionalReservesPreserveSettledInvariant(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 amount,
+        bool exactIn,
+        bool withFee
+    ) public {
+        balanceIn = bound(balanceIn, 3, 1e6);
+        balanceOut = bound(balanceOut, 8, INITIAL_BALANCE);
+        feedA.setAnswer(0.5e18, block.timestamp);
+        feedB.setAnswer(0.75e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(withFee ? LOW_TIER_FEE_BPS : 0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - balanceIn);
+        tokenB.burn(maker, INITIAL_BALANCE - balanceOut);
+
+        if (exactIn) {
+            // Keep output nonzero even at the smallest reserve and after fee rounding.
+            amount = bound(amount, balanceIn + 4, 10 * balanceIn);
+            _swapExactIn(order, amount);
+        } else {
+            amount = bound(amount, 1, balanceOut / 2);
+            // Small output reserves can require much more native input than output.
+            tokenA.mint(address(taker), 10 * balanceIn + 100);
+            _swapExactOut(order, amount);
+        }
+
+        // Uses settled native balances, independent of rounded oracle values or powers.
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), balanceIn * balanceOut);
+        assertGt(tokenB.balanceOf(maker), 0);
+    }
+
     function test_ExactOutRoundsRequestedOutputValueUp() public {
         feedB.setAnswer(0.5e18, block.timestamp);
         ISwapVM.Order memory order = _buildOrder(0);

@@ -24,6 +24,11 @@ library OracleAdapter {
     error OracleAdapterInvalidPrice(address feed, int256 answer);
     error OracleAdapterTokensFeedsLengthMismatch();
 
+    enum Rounding {
+        Down,
+        Up
+    }
+
     /// @param feed         The Chainlink-style aggregator for one declared token.
     /// @param maxStaleness Per-feed threshold (ADR-0005: "coverage quality varies by token, so
     ///                     one global threshold isn't appropriate") — a config value, not a
@@ -55,11 +60,13 @@ library OracleAdapter {
     ///         `B_o` for a multi-token group. `balances` are each token's own real, native-
     ///         decimal balance (e.g. a plain wallet `balanceOf` read), not yet normalized for
     ///         either the token's own decimals or the feed's — both normalizations happen here.
-    function groupValueWad(address[] memory tokens, uint256[] memory balances, PriceFeed[] memory feeds)
-        internal
-        view
-        returns (uint256 totalValueWad)
-    {
+    /// @param rounding Round each member up for input reserves, down for output reserves.
+    function groupValueWad(
+        address[] memory tokens,
+        uint256[] memory balances,
+        PriceFeed[] memory feeds,
+        Rounding rounding
+    ) internal view returns (uint256 totalValueWad) {
         require(
             tokens.length == balances.length && tokens.length == feeds.length, OracleAdapterTokensFeedsLengthMismatch()
         );
@@ -67,7 +74,10 @@ library OracleAdapter {
         for (uint256 i = 0; i < tokens.length; i++) {
             uint8 tokenDecimals = IERC20Metadata(tokens[i]).decimals();
             uint256 price = priceWad(feeds[i]);
-            totalValueWad += FixedPointMath.mulDown(balances[i], price, FixedPointMath.scaleDown(1, 0, tokenDecimals));
+            uint256 unit = FixedPointMath.scaleDown(1, 0, tokenDecimals);
+            totalValueWad += rounding == Rounding.Up
+                ? FixedPointMath.mulUp(balances[i], price, unit)
+                : FixedPointMath.mulDown(balances[i], price, unit);
         }
     }
 }

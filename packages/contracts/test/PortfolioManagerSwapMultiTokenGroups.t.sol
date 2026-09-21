@@ -167,6 +167,19 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     // ===== Tests =====
 
+    function test_FractionalMemberValuesPreserveSettledGroupInvariant() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        feedB.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, 3, 1, 100e18);
+
+        _swapExactIn(order, address(tokenA), address(tokenC), 2);
+
+        // A and B have the same fixed price: multiply by two to cancel it exactly.
+        uint256 afterInvariant = (tokenA.balanceOf(maker) + tokenB.balanceOf(maker)) * tokenC.balanceOf(maker);
+        assertGe(afterInvariant, 4 * 100e18);
+    }
+
     function test_SameGroupSwapReverts() public {
         ISwapVM.Order memory order = _buildOrder(0);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);

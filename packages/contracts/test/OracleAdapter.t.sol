@@ -63,7 +63,7 @@ contract OracleAdapterTest is Test {
         view
         returns (uint256)
     {
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
+        return OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
     }
 
     function _feed(MockAggregatorV3 mock, uint256 maxStaleness) internal pure returns (OracleAdapter.PriceFeed memory) {
@@ -152,7 +152,7 @@ contract OracleAdapterTest is Test {
         feeds[0] = _feed(usdcFeed, 1 hours);
         feeds[1] = _feed(usdtFeed, 1 hours);
 
-        uint256 totalValue = OracleAdapter.groupValueWad(tokens, balances, feeds);
+        uint256 totalValue = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
         assertEq(totalValue, 20_000e18);
     }
 
@@ -167,7 +167,30 @@ contract OracleAdapterTest is Test {
         feeds[0] = _feed(mock, 1 hours);
 
         // The unscaled product 1e60 * 1e18 overflows, but its normalized value fits.
-        assertEq(OracleAdapter.groupValueWad(tokens, balances, feeds), 1e60);
+        assertEq(OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down), 1e60);
+        assertEq(OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Up), 1e60);
+    }
+
+    function testFuzz_GroupValueBoundsMixedDecimals(uint256 balanceA, uint256 balanceB) public {
+        balanceA = bound(balanceA, 1, 1e24);
+        balanceB = bound(balanceB, 1, 1e24);
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(new ERC20MockWithDecimals(18));
+        tokens[1] = address(new ERC20MockWithDecimals(24));
+        uint256[] memory balances = new uint256[](2);
+        balances[0] = balanceA;
+        balances[1] = balanceB;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](2);
+        feeds[0] = _feed(new MockAggregatorV3(18, 0.5e18, block.timestamp), 1 hours);
+        feeds[1] = _feed(new MockAggregatorV3(8, 0.75e8, block.timestamp), 1 hours);
+
+        uint256 lower = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
+        uint256 upper = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Up);
+        // Compare exact rational values at a common denominator, without rounded helpers.
+        uint256 numerator = balanceA * 0.5e18 * 1e6 + balanceB * 0.75e18;
+        assertLe(lower * 1e24, numerator);
+        assertGe(upper * 1e24, numerator);
+        assertLe(upper - lower, 2);
     }
 
     function test_FeedNormalizationRoundsDown() public {

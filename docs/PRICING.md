@@ -38,7 +38,7 @@ Trader specifies `A_o` (amount of token *o* they want out); solve for `A_i`, the
 
 **Rounding:** ceil the balance ratio, weight ratio, effective input, and fee gross-up; use `FixedPointMath.powUp`. Require `A_o < B_o`; zero output requires zero input.
 
-Native-token/value conversions follow the same convention: round down for exact-in and up for exact-out. Shared arithmetic and decimal conversion helpers live in `FixedPointMath`; their API and power bounds are documented there.
+Group reserves round up on the input side and down on the output side. Native-token/value conversions round down for exact-in and up for exact-out. Shared arithmetic and decimal conversion helpers live in `FixedPointMath`; their API and power bounds are documented there.
 
 ## Degenerate cases
 

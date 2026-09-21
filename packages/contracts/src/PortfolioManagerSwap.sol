@@ -55,8 +55,8 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
-            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker),
-            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker),
+            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker, OracleAdapter.Rounding.Up),
+            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker, OracleAdapter.Rounding.Down),
             weightIn: groups[groupInIdx].weight,
             weightOut: groups[groupOutIdx].weight,
             feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
@@ -156,11 +156,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) —
     ///      always goes through `OracleAdapter`, even for a single-member group, so decimal
     ///      normalization and price conversion are uniform regardless of group size.
-    function _groupValueWad(PortfolioManagerArgsCodec.Group memory group, address maker)
-        private
-        view
-        returns (uint256)
-    {
+    function _groupValueWad(
+        PortfolioManagerArgsCodec.Group memory group,
+        address maker,
+        OracleAdapter.Rounding rounding
+    ) private view returns (uint256) {
         uint256 n = group.members.length;
         address[] memory tokens = new address[](n);
         uint256[] memory balances = new uint256[](n);
@@ -171,6 +171,6 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             balances[i] = IERC20(m.token).balanceOf(maker);
             feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
         }
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
+        return OracleAdapter.groupValueWad(tokens, balances, feeds, rounding);
     }
 }
