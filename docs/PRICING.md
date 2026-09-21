@@ -20,7 +20,7 @@ Token *i* priced in terms of token *o*, before fees. Standard constant-mean resu
 
 ## Deviation circuit breaker (ADR-0012)
 
-`SP(i→o)` equals exactly `1` (WAD) when a group pair's real composition matches its declared target weights, regardless of the weight ratio, and diverges from `1` in proportion to how far off-target the pair has drifted. An optional, opt-in `maxDeviationBps` bounds that divergence: if `|SP(i→o) - 1|` (in bps) exceeds it, both the swap-time pairwise check (`PortfolioManagerSwap`, checked against current pre-trade state) and the ship-time whole-portfolio check (`PortfolioManagerStrategyFactory`, checked once at `ship()`) revert rather than price or ship against an already-extreme composition. `maxDeviationBps == 0` disables both checks — this is not part of the pricing formula itself, just a bound checked against its output.
+`SP(i→o)` equals exactly `1` (WAD) when a group pair's real composition matches its declared target weights, regardless of the weight ratio, and diverges from `1` in proportion to how far off-target the pair has drifted. An optional, opt-in `maxDeviationBps` bounds that divergence: if `|SP(i→o) - 1|` (in bps) exceeds it, both the swap-time pairwise check (`PortfolioManagerSwap`, checked against current pre-trade state) and the ship-time whole-portfolio check (`PortfolioManagerStrategyValidator`, checked once at `ship()`) revert rather than price or ship against an already-extreme composition. `maxDeviationBps == 0` disables both checks — this is not part of the pricing formula itself, just a bound checked against its output.
 
 ## Exact-in swap
 

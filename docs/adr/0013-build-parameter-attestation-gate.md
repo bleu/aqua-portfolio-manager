@@ -4,24 +4,27 @@
 
 ## Context
 
-`PortfolioManagerStrategyFactory.requireUniverseMatches` and `requireBalancedWithinTolerance`
+`PortfolioManagerStrategyValidator.requireUniverseMatches` and `requireBalancedWithinTolerance`
 (ADR-0012) both exist to catch a real ship-time mistake before it can hurt a taker later — but
 neither leaves any trace of having run. The only thing that ever made an LP go through them at all
 is convention: the recommended flow batches both checks with the real `Aqua.ship()` call via
-`MultiSendCallOnly`, in the same atomic transaction. `Aqua.ship()` itself has no idea the factory
+`MultiSendCallOnly`, in the same atomic transaction. `Aqua.ship()` itself has no idea the validator
 exists — it's permissionless, and nothing stops a caller from invoking it directly, skipping
 validation entirely. A strategy shipped that way prices and trades exactly as if it had been
 validated, because from the swap opcode's point of view, it had no way to tell the difference.
 
 This is the same shape of gap `ADR-0011`'s Basket Scope Guard closed for cross-basket strategies:
 a check that only runs if the caller happens to cooperate isn't a check at all, just a suggestion.
-That Guard's own fix — `attestOnboardingClean`/`onboardingAttested`, a persisted on-chain fact
-checked before allowing the risky action — is the closest existing precedent in this codebase and
-the one this design mirrors in naming and shape.
+That Guard originally used the same shape this design mirrors in naming — `attestOnboardingClean`/
+`onboardingAttested`, a persisted on-chain fact checked before allowing the risky action — before
+it was removed for recording only that *someone* called it, not that the underlying off-chain
+claim was actually true. The distinction that makes it safe here (see Decision below) is that
+`attestBuildParameters` records a mechanical, independently-recomputable fact, not a subjective
+off-chain claim.
 
 ## Decision
 
-`PortfolioManagerStrategyFactory` gains `mapping(bytes32 => bool) public buildParamsAttested` and
+`PortfolioManagerStrategyValidator` gains `mapping(bytes32 => bool) public buildParamsAttested` and
 `attestBuildParameters(order, tokens)`, which runs both existing checks and then records
 `buildParamsAttested[strategyHash] = true`. `PortfolioManagerSwap`'s opcode checks this flag —
 first thing, before parsing anything else — and reverts outright if it's never been set for that
@@ -69,13 +72,15 @@ allowed to *record* an already-independently-verifiable fact adds no safety.
   `ship()` call's `tokens` either. The requirement this ADR carries forward, unchanged: attest and
   ship **must** be batched atomically, with the literal same `tokens`/`amounts`, in the same
   transaction — exactly what the recommended `MultiSendCallOnly` flow already does.
-- One additional `STATICCALL` + `SLOAD` per swap (reading `buildParamsAttested`) — cheap, and paid
-  by every trade regardless of whether the strategy was ever going to be a problem, in exchange for
-  closing a structural gap rather than trusting convention.
+- One additional cold `STATICCALL` + `SLOAD` per swap (reading `buildParamsAttested`), paid by
+  every trade regardless of whether the strategy was ever going to be a problem, in exchange for
+  closing a structural gap rather than trusting convention. A cache of the attested bit in the
+  swap opcode's own storage after the first successful check would cut this to a warm local
+  read on every swap after — not implemented here, a reasonable follow-up if the cost matters in
+  practice.
 
 ## References
 
-- `docs/adr/0011-safe-wallet-with-basket-scope-guard.md` — `attestOnboardingClean`'s precedent,
-  and the permissionless/idempotent divergence from it explained above
+- `docs/adr/0011-safe-wallet-with-basket-scope-guard.md` — `attestOnboardingClean`'s original
+  design (since removed), and the permissionless/idempotent divergence from it explained above
 - `docs/adr/0012-price-deviation-circuit-breaker.md` — the two checks this attestation wraps
-- `src/BasketScopeGuard.sol` — `onboardingAttested`/`attestOnboardingClean`/`AlreadyAttested`

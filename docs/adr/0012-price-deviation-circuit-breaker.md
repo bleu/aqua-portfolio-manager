@@ -14,14 +14,19 @@ The mechanism reuses existing pricing math rather than inventing new math: `Port
 
 ## Decision
 
-A new per-strategy parameter, `maxDeviationBps` (`uint32`, `PM_BPS`-scaled, same convention as `feeBps`), appended to `PortfolioManagerArgsBuilder`'s encoded args. `0` disables the mechanism entirely — existing and future strategies that don't set it see no behavior change.
+A new per-strategy parameter, `maxDeviationBps` (`uint32`, `PM_BPS`-scaled, same convention as `feeBps`), appended to `PortfolioManagerArgsCodec`'s encoded args. `0` disables the mechanism entirely — existing and future strategies that don't set it see no behavior change.
 
 Two checks, both gated on `maxDeviationBps != 0`, each solving a different half of the problem:
 
 - **Swap-time, pairwise:** in `PortfolioManagerSwap`, immediately after building the pair's `Quote` (before pricing the trade), `spotPrice(quote)`'s deviation from `WAD` is checked against `maxDeviationBps`. Only the two groups already involved in the trade — not the whole portfolio — keeping the hot path's cost unchanged for every group not being traded. This is a check against *current* state, not the hypothetical post-trade state: it answers "is this pair already too far gone to trade against," not "would this specific trade push it over."
-- **Ship-time, whole-portfolio:** a new `view` function on `PortfolioManagerStrategyFactory`, `requireBalancedWithinTolerance`, checks every group's real share of total portfolio value against its target weight. A one-time cost paid at `ship()`, so checking the whole portfolio (not just a pair) is affordable — batched as a third leg alongside the existing `requireUniverseMatches` call in the same `MultiSendCallOnly` transaction.
+- **Ship-time, whole-portfolio:** a new `view` function on `PortfolioManagerStrategyValidator`, `requireBalancedWithinTolerance`, checks every group's real share of total portfolio value against its target weight. A one-time cost paid at `ship()`, so checking the whole portfolio (not just a pair) is affordable — batched as a third leg alongside the existing `requireUniverseMatches` call in the same `MultiSendCallOnly` transaction.
 
-Both parse the same `maxDeviationBps` out of the same encoded args — one config surface, not two.
+Both parse the same `maxDeviationBps` out of the same encoded args — one config *value*, not two —
+but the two checks measure different things against it: the swap-time check is a price-ratio
+deviation (normalized by `WAD`), the ship-time check is a portfolio-share deviation (normalized by
+the group's own target weight). They coincide closely for a 50/50 two-group pair, but diverge for
+unequal weights or more groups — the same configured number is not equally strict on both sides in
+general. Not reconciled here; worth a follow-up decision on whether they should share one formula.
 
 ## Alternatives considered
 
@@ -32,7 +37,7 @@ Both parse the same `maxDeviationBps` out of the same encoded args — one confi
 ## Consequences
 
 - **A skewed pair can become permanently untradeable through this mechanism alone.** Once a group pair's `spotPrice` has drifted past `maxDeviationBps`, no single trade can move it back within tolerance and pass the same pre-trade check in one step — the swap-time guard blocks every trade on that pair until something outside the mechanism restores it (the owner deposits tokens back, or a fresh strategy is shipped with a rebalanced wallet). This is deliberate hard-circuit-breaker behavior, not a self-healing rate limiter, and should be communicated to LPs as a real operational consequence of setting a nonzero `maxDeviationBps`, not a bug.
-- **Byte budget:** `+4` bytes on `PortfolioManagerArgsBuilder`'s encoded args against the wire format's 255-byte cap. The heaviest declared universe in the test suite (2 groups, 5 members total) still fits comfortably under it.
+- **Byte budget:** `+4` bytes on `PortfolioManagerArgsCodec`'s encoded args against the wire format's 255-byte cap. The heaviest declared universe in the test suite (2 groups, 5 members total) still fits comfortably under it.
 - **Opt-in, zero-cost when unused:** `maxDeviationBps == 0` skips both checks outright, so strategies that don't need this see no gas or behavior change.
 - Closes the gap `DONATION-RESISTANCE-PROOF.md` was explicit it didn't cover: a direct Safe-owner withdrawal that never touches `ship()`/`swap()`, and so never crosses `BasketScopeGuard`'s own inspection point, can still be caught the next time someone tries to trade against — or ship a fresh strategy onto — that wallet.
 
