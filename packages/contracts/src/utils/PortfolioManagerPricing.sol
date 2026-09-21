@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title PortfolioManagerPricing — the constant-mean weighted curve, per PRICING.md
@@ -21,6 +22,19 @@ library PortfolioManagerPricing {
 
     error PortfolioManagerPricingZeroBalance();
     error PortfolioManagerPricingInsufficientOutputBalance(uint256 balanceOut, uint256 amountOut);
+    error PortfolioManagerPricingPoweredRatioBelowPrecisionFloor(uint256 poweredRatio);
+
+    /// @dev At extreme weight skew combined with a small `balanceIn`/large trade, `poweredRatio`
+    ///      can compute to a raw WAD value so small it's numerically untrustworthy (a handful of
+    ///      integer units out of 1e18) rather than a real answer -- confirmed via exact-integer
+    ///      arithmetic fuzzing (`testFuzz_ExactInInvariantHoldsUnderExactIntegerArithmeticAtIntegerExponent`)
+    ///      to leak real value to the trader even while still passing `amountOut < balanceOut`
+    ///      (the guard that only catches the *exactly-zero* case). `1e-9` of `WAD` mirrors the
+    ///      precision floor this library's own earlier hand-rolled `ln`/`exp` series used to
+    ///      guard directly at the exponent level -- rebuilt here as a postcondition on `pow`'s
+    ///      output instead, so it holds regardless of which underlying `pow` implementation is
+    ///      in use.
+    uint256 private constant MIN_TRUSTWORTHY_POWERED_RATIO = WAD / 1e9;
 
     /// @param weightIn/weightOut WAD-scaled; need not sum to WAD by themselves (only the full
     ///        declared universe's weights do, per `PortfolioManagerArgsCodec`) — only their
@@ -36,9 +50,12 @@ library PortfolioManagerPricing {
 
     /// @notice `SP(i→o) = (B_i / w_i) / (B_o / w_o)`, WAD-scaled, before fees — token `i`
     ///         priced in terms of token `o`.
+    /// @dev The second step multiplies by a *weight ratio*, not a WAD-scaled factor, so it's
+    ///      `Math.mulDiv(x, weightOut, weightIn)` directly rather than `FixedPointMath.mulDown`
+    ///      (which assumes a `/ WAD` denominator) -- same floor rounding either way.
     function spotPrice(PoolState memory q) internal pure returns (uint256) {
         _requireNonZeroBalances(q);
-        return (q.balanceIn * WAD / q.balanceOut) * q.weightOut / q.weightIn;
+        return Math.mulDiv(FixedPointMath.divDown(q.balanceIn, q.balanceOut), q.weightOut, q.weightIn);
     }
 
     /// @notice Amount of token `o` received for exactly `amountIn` of token `i`.
@@ -55,19 +72,28 @@ library PortfolioManagerPricing {
     ///      bit-exact through the general case — PoC-grade precision, not a closed rounding
     ///      proof through `ln`/`exp`.
     /// @dev At an extreme weight ratio combined with a small `balanceIn` and a large trade,
-    ///      `poweredRatio` can underflow to exactly 0 in fixed-point (the true value is real but
-    ///      below WAD's precision floor), which would otherwise silently return the pool's
-    ///      entire `balanceOut`. Guarded below the same way `exactOut` already guards its own
-    ///      output side.
+    ///      `poweredRatio` can collapse to a raw WAD value near (or exactly) 0 -- a value
+    ///      technically nonzero but well below what fixed-point precision can represent
+    ///      trustworthily -- which would otherwise silently hand out close to the pool's entire
+    ///      `balanceOut` for an ordinary-sized trade. Guarded explicitly below
+    ///      (`MIN_TRUSTWORTHY_POWERED_RATIO`), not just via the downstream `amountOut <
+    ///      balanceOut` check, which only catches the exactly-zero case.
     function exactIn(PoolState memory q, uint256 amountIn) internal pure returns (uint256 amountOut) {
         _requireNonZeroBalances(q);
 
-        uint256 amountInEff = amountIn * (WAD - q.feeWad) / WAD;
-        uint256 ratio = _ceilDiv(q.balanceIn * WAD, q.balanceIn + amountInEff);
-        uint256 exponent = q.weightIn * WAD / q.weightOut;
+        uint256 amountInEff = FixedPointMath.mulDown(amountIn, WAD - q.feeWad);
+        uint256 ratio = FixedPointMath.divUp(q.balanceIn, q.balanceIn + amountInEff);
+        uint256 exponent = FixedPointMath.divDown(q.weightIn, q.weightOut);
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
+        // `exponent == WAD` is `pow`'s own exact shortcut (returns `ratio` unchanged, no series
+        // involved) -- a legitimately tiny `poweredRatio` there is an exact value, not a
+        // precision artifact, so the floor only applies off that shortcut.
+        require(
+            exponent == WAD || poweredRatio >= MIN_TRUSTWORTHY_POWERED_RATIO,
+            PortfolioManagerPricingPoweredRatioBelowPrecisionFloor(poweredRatio)
+        );
 
-        amountOut = q.balanceOut * (WAD - poweredRatio) / WAD;
+        amountOut = FixedPointMath.mulDown(q.balanceOut, WAD - poweredRatio);
         require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
     }
 
@@ -87,21 +113,17 @@ library PortfolioManagerPricing {
         _requireNonZeroBalances(q);
         require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
 
-        uint256 ratio = _ceilDiv(q.balanceOut * WAD, q.balanceOut - amountOut);
-        uint256 exponent = q.weightOut * WAD / q.weightIn;
+        uint256 ratio = FixedPointMath.divUp(q.balanceOut, q.balanceOut - amountOut);
+        uint256 exponent = FixedPointMath.divDown(q.weightOut, q.weightIn);
         uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
 
-        uint256 amountInEff = _ceilDiv(q.balanceIn * (poweredRatio - WAD), WAD);
-        amountIn = _ceilDiv(amountInEff * WAD, WAD - q.feeWad);
+        uint256 amountInEff = FixedPointMath.mulUp(q.balanceIn, poweredRatio - WAD);
+        amountIn = FixedPointMath.divUp(amountInEff, WAD - q.feeWad);
     }
 
     /// @dev `B_i == 0` or `B_o == 0`: a weighted pool's price is undefined at a zero balance
     ///      on either side — same requirement `BasketXYCSwap.sol`'s PoC already enforces.
     function _requireNonZeroBalances(PoolState memory q) private pure {
         require(q.balanceIn > 0 && q.balanceOut > 0, PortfolioManagerPricingZeroBalance());
-    }
-
-    function _ceilDiv(uint256 a, uint256 b) private pure returns (uint256) {
-        return (a + b - 1) / b;
     }
 }

@@ -6,8 +6,8 @@ pragma solidity 0.8.30;
 import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
-import {PortfolioManagerStrategyFactory} from "../../src/PortfolioManagerStrategyFactory.sol";
-import {IPortfolioManagerStrategyFactory} from "../../src/interfaces/IPortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
+import {IPortfolioManagerStrategyValidator} from "../../src/interfaces/IPortfolioManagerStrategyValidator.sol";
 
 /// @notice Ships a real PM strategy from a fresh dedicated maker wallet (ADR-0002)
 /// against the actually deployed router and Aqua registry — see PortfolioManagerE2EBase for the
@@ -100,7 +100,7 @@ contract PortfolioManagerShipE2ETest is PortfolioManagerE2EBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryDeclaredTokenNotShipped.selector,
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorDeclaredTokenNotShipped.selector,
                 address(pmTokenB)
             )
         );

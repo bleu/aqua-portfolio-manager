@@ -8,7 +8,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
-import {PortfolioManagerArgsCodec, PM_BPS} from "./utils/PortfolioManagerArgsCodec.sol";
+import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerFee} from "./utils/PortfolioManagerFee.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
@@ -45,7 +45,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev Converts PortfolioManagerArgsCodec's `feeBps` (PM_BPS = 1e9 scale) into
     ///      PortfolioManagerPricing's `feeWad` (WAD = 1e18 scale) — both scales represent
     ///      100% at their own constant, so this ratio is exact with no rounding.
-    uint256 private constant FEE_WAD_PER_BPS = WAD / PM_BPS;
+    uint256 private constant FEE_WAD_PER_BPS = WAD / PortfolioManagerArgsCodec.PM_BPS;
 
     constructor(address aqua) Fee(aqua) {}
 
@@ -71,7 +71,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
         if (maxDeviationBps != 0) {
             uint256 sp = PortfolioManagerPricing.spotPrice(quote);
-            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PM_BPS / WAD;
+            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PortfolioManagerArgsCodec.PM_BPS / WAD;
             require(deviationBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(sp, maxDeviationBps));
         }
 

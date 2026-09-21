@@ -5,11 +5,11 @@ pragma solidity 0.8.30;
 
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
-import {IPortfolioManagerStrategyFactory} from "./interfaces/IPortfolioManagerStrategyFactory.sol";
-import {PortfolioManagerArgsCodec, PM_BPS} from "./utils/PortfolioManagerArgsCodec.sol";
+import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 
-/// @title PortfolioManagerStrategyFactory — validates a PM strategy's ship() encoding
+/// @title PortfolioManagerStrategyValidator — validates a PM strategy's ship() encoding
 /// @notice A PM strategy's declared universe exists in two places `IAqua.ship()` never
 ///         cross-checks: `PortfolioManagerArgsCodec`'s encoded args (what the curve opcode
 ///         actually prices against) and the `tokens` array passed to `ship()` itself (what
@@ -26,10 +26,10 @@ import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBui
 /// contract only validates. Callers batch a call here together with the real
 /// `ship()` call in the same atomic transaction, e.g. via Safe's own audited
 /// `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.sol::_shipOnly`.
-contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
+contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator {
     uint256 private constant WAD = 1e18;
 
-    /// @inheritdoc IPortfolioManagerStrategyFactory
+    /// @inheritdoc IPortfolioManagerStrategyValidator
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
         (PortfolioManagerArgsCodec.Group[] memory groups,,) = PortfolioManagerArgsCodec.parse(_args(order));
         address[] memory declared = PortfolioManagerArgsCodec.flattenTokens(groups);
@@ -42,7 +42,7 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
                     break;
                 }
             }
-            require(shipped, PortfolioManagerStrategyFactoryDeclaredTokenNotShipped(declared[i]));
+            require(shipped, PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(declared[i]));
         }
 
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -53,11 +53,11 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
                     break;
                 }
             }
-            require(isDeclared, PortfolioManagerStrategyFactoryShippedTokenNotDeclared(tokens[i]));
+            require(isDeclared, PortfolioManagerStrategyValidatorShippedTokenNotDeclared(tokens[i]));
         }
     }
 
-    /// @inheritdoc IPortfolioManagerStrategyFactory
+    /// @inheritdoc IPortfolioManagerStrategyValidator
     function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view {
         (PortfolioManagerArgsCodec.Group[] memory groups,, uint32 maxDeviationBps) =
             PortfolioManagerArgsCodec.parse(_args(order));
@@ -76,10 +76,10 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
             uint256 targetWeightWad = groups[i].weight;
             uint256 diffWad =
                 actualShareWad > targetWeightWad ? actualShareWad - targetWeightWad : targetWeightWad - actualShareWad;
-            uint256 deviationBps = diffWad * PM_BPS / targetWeightWad;
+            uint256 deviationBps = diffWad * PortfolioManagerArgsCodec.PM_BPS / targetWeightWad;
             require(
                 deviationBps <= maxDeviationBps,
-                PortfolioManagerStrategyFactoryExcessivePriceDeviation(i, actualShareWad, targetWeightWad)
+                PortfolioManagerStrategyValidatorExcessivePriceDeviation(i, actualShareWad, targetWeightWad)
             );
         }
     }
@@ -91,7 +91,7 @@ contract PortfolioManagerStrategyFactory is IPortfolioManagerStrategyFactory {
         bytes calldata program = MakerTraitsLib.program(order.traits, order.data);
         require(
             program.length >= 2 && uint8(program[0]) == PortfolioManagerProgramBuilder.CURVE_OPCODE,
-            PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy()
+            PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy()
         );
 
         uint256 argsLength = uint8(program[1]);

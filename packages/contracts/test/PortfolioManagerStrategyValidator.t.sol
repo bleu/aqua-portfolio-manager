@@ -10,17 +10,17 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerStrategyFactory} from "../src/PortfolioManagerStrategyFactory.sol";
-import {IPortfolioManagerStrategyFactory} from "../src/interfaces/IPortfolioManagerStrategyFactory.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
+import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Confirms the factory actually closes the gap it exists for: a mismatch between
+/// @notice Confirms the validator actually closes the gap it exists for: a mismatch between
 /// PortfolioManagerArgsCodec's declared universe and IAqua.ship()'s own tokens array, in
 /// either direction, reverts. Deliberately a pure validation check only -- it never calls
 /// Aqua.ship() itself, so there's no ledger/settlement path to exercise here; see
 /// PortfolioManagerE2EBase.t.sol for the real Safe + MultiSendCallOnly flow this feeds into.
-contract PortfolioManagerStrategyFactoryTest is Test {
-    PortfolioManagerStrategyFactory internal factory;
+contract PortfolioManagerStrategyValidatorTest is Test {
+    PortfolioManagerStrategyValidator internal validator;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -31,7 +31,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
     MockAggregatorV3 internal feedB;
 
     function setUp() public {
-        factory = new PortfolioManagerStrategyFactory();
+        validator = new PortfolioManagerStrategyValidator();
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -45,7 +45,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         maker = vm.addr(0x1234);
     }
 
-    /// @dev The factory only cross-checks token membership, never prices anything, so a shared
+    /// @dev The validator only cross-checks token membership, never prices anything, so a shared
     ///      dummy feed address across every single-member group is fine here.
     address internal constant DUMMY_FEED = address(0xFEED);
 
@@ -103,7 +103,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         ISwapVM.Order memory order = _order(declared, weights);
 
-        factory.requireUniverseMatches(order, declared);
+        validator.requireUniverseMatches(order, declared);
     }
 
     function test_RevertsWhenDeclaredTokenIsNotShipped() public {
@@ -125,11 +125,11 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryDeclaredTokenNotShipped.selector,
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorDeclaredTokenNotShipped.selector,
                 address(tokenC)
             )
         );
-        factory.requireUniverseMatches(order, shipped);
+        validator.requireUniverseMatches(order, shipped);
     }
 
     function test_RevertsWhenShippedTokenIsNotDeclared() public {
@@ -150,16 +150,16 @@ contract PortfolioManagerStrategyFactoryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryShippedTokenNotDeclared.selector,
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorShippedTokenNotDeclared.selector,
                 address(tokenC)
             )
         );
-        factory.requireUniverseMatches(order, shipped);
+        validator.requireUniverseMatches(order, shipped);
     }
 
     function test_RevertsOnNonPortfolioManagerProgram() public {
-        // Opcode 99 doesn't exist on any router this factory knows about -- simulates a program
-        // this factory was never meant to validate, e.g. a different strategy entirely.
+        // Opcode 99 doesn't exist on any router this validator knows about -- simulates a program
+        // this validator was never meant to validate, e.g. a different strategy entirely.
         bytes memory program = abi.encodePacked(uint8(99), uint8(0));
         ISwapVM.Order memory order = MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -188,9 +188,9 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         tokens[0] = address(tokenA);
 
         vm.expectRevert(
-            IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryNotAPortfolioManagerStrategy.selector
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy.selector
         );
-        factory.requireUniverseMatches(order, tokens);
+        validator.requireUniverseMatches(order, tokens);
     }
 
     // ===== requireBalancedWithinTolerance (ADR-0012) =====
@@ -240,7 +240,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         tokenA.mint(maker, 100_000e18);
         tokenB.mint(maker, 100_000e18);
 
-        factory.requireBalancedWithinTolerance(order, maker);
+        validator.requireBalancedWithinTolerance(order, maker);
     }
 
     function test_TolerancePassesWithinBand() public {
@@ -249,7 +249,7 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         tokenA.mint(maker, 105_000e18);
         tokenB.mint(maker, 100_000e18);
 
-        factory.requireBalancedWithinTolerance(order, maker);
+        validator.requireBalancedWithinTolerance(order, maker);
     }
 
     function test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand() public {
@@ -264,13 +264,13 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         uint256 actualShareWad = balA * 1e18 / (balA + balB);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerStrategyFactory.PortfolioManagerStrategyFactoryExcessivePriceDeviation.selector,
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector,
                 uint256(0),
                 actualShareWad,
                 uint256(0.5e18)
             )
         );
-        factory.requireBalancedWithinTolerance(order, maker);
+        validator.requireBalancedWithinTolerance(order, maker);
     }
 
     function test_ToleranceZeroMaxDeviationBpsIsANoOpEvenWhenBadlySkewed() public {
@@ -278,6 +278,6 @@ contract PortfolioManagerStrategyFactoryTest is Test {
         tokenA.mint(maker, 10_000e18);
         tokenB.mint(maker, 100_000e18);
 
-        factory.requireBalancedWithinTolerance(order, maker);
+        validator.requireBalancedWithinTolerance(order, maker);
     }
 }
