@@ -41,12 +41,6 @@ import {FixedPointMath} from "./utils/FixedPointMath.sol";
 abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
 
-    uint256 private constant WAD = FixedPointMath.WAD;
-    /// @dev Converts PortfolioManagerArgsCodec's `feeBps` (PM_BPS = 1e9 scale) into
-    ///      PortfolioManagerPricing's `feeWad` (WAD = 1e18 scale) — both scales represent
-    ///      100% at their own constant, so this ratio is exact with no rounding.
-    uint256 private constant FEE_WAD_PER_BPS = WAD / PortfolioManagerArgsCodec.PM_BPS;
-
     constructor(address aqua) Fee(aqua) {}
 
     /// @param args Encoded via PortfolioManagerArgsCodec.build (tokens, weights, feeBps)
@@ -61,11 +55,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
-            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker),
-            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker),
+            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker, OracleAdapter.Rounding.Up),
+            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker, OracleAdapter.Rounding.Down),
             weightIn: groups[groupInIdx].weight,
             weightOut: groups[groupOutIdx].weight,
-            feeWad: uint256(feeBps) * FEE_WAD_PER_BPS
+            feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
         });
 
         // The curve's own balanceIn/balanceOut are oracle-VALUE-scaled (ADR-0003: `Σ balance_j
@@ -76,9 +70,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         // as if it were a $1 unit, since PortfolioManagerPricing itself is unit-agnostic and
         // trusts amountIn/amountOut to already share balanceIn/balanceOut's unit system.
         (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
-            _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn);
+            _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn, OracleAdapter.Rounding.Down);
         (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
-            _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut);
+            _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut, OracleAdapter.Rounding.Up);
+
+        uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
+        uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
         uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
         uint256 daoAmount;
@@ -91,12 +88,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             // exact-in branch, minus the wrap-the-rest-of-program recursion we don't need
             // here — nothing runs after this instruction).
             uint256 fullAmountIn = ctx.swap.amountIn;
-            daoAmount = fullAmountIn * daoBps / FEE_BPS;
+            daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
             uint256 netAmountIn = fullAmountIn - daoAmount;
 
-            uint256 netAmountInValueWad = netAmountIn * tokenInPriceWad / 10 ** tokenInDecimals;
+            uint256 netAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
             uint256 amountOutValueWad = PortfolioManagerPricing.exactIn(quote, netAmountInValueWad);
-            ctx.swap.amountOut = amountOutValueWad * 10 ** tokenOutDecimals / tokenOutPriceWad;
+            ctx.swap.amountOut = FixedPointMath.mulDivDown(amountOutValueWad, tokenOutUnit, tokenOutPriceWad);
             ctx.swap.amountIn = fullAmountIn;
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
@@ -104,10 +101,10 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             // curve fee (PortfolioManagerPricing.exactOut already grosses that up internally),
             // then the protocol fee is grossed up on top of that — mirrors Fee.sol's own
             // exact-out branch, which fees only once the swap amount is known.
-            uint256 amountOutValueWad = ctx.swap.amountOut * tokenOutPriceWad / 10 ** tokenOutDecimals;
+            uint256 amountOutValueWad = FixedPointMath.mulDivUp(ctx.swap.amountOut, tokenOutPriceWad, tokenOutUnit);
             uint256 amountInValueWad = PortfolioManagerPricing.exactOut(quote, amountOutValueWad);
-            uint256 cleanAmountIn = amountInValueWad * 10 ** tokenInDecimals / tokenInPriceWad;
-            daoAmount = cleanAmountIn * daoBps / (FEE_BPS - daoBps);
+            uint256 cleanAmountIn = FixedPointMath.mulDivUp(amountInValueWad, tokenInUnit, tokenInPriceWad);
+            daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 
@@ -145,13 +142,14 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev The specific traded token's own price/decimals, separate from its group's
     ///      aggregate `_groupValueWad` sum -- needed to convert the traded amount into and back
     ///      out of the group-value numeraire (see the main function's own note on why).
-    function _priceAndDecimals(PortfolioManagerArgsCodec.Member memory member, address token)
-        private
-        view
-        returns (uint256 priceWad, uint8 decimals)
-    {
+    function _priceAndDecimals(
+        PortfolioManagerArgsCodec.Member memory member,
+        address token,
+        OracleAdapter.Rounding rounding
+    ) private view returns (uint256 priceWad, uint8 decimals) {
         priceWad = OracleAdapter.priceWad(
-            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness})
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness}),
+            rounding
         );
         decimals = IERC20Metadata(token).decimals();
     }
@@ -159,11 +157,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) —
     ///      always goes through `OracleAdapter`, even for a single-member group, so decimal
     ///      normalization and price conversion are uniform regardless of group size.
-    function _groupValueWad(PortfolioManagerArgsCodec.Group memory group, address maker)
-        private
-        view
-        returns (uint256)
-    {
+    function _groupValueWad(
+        PortfolioManagerArgsCodec.Group memory group,
+        address maker,
+        OracleAdapter.Rounding rounding
+    ) private view returns (uint256) {
         uint256 n = group.members.length;
         address[] memory tokens = new address[](n);
         uint256[] memory balances = new uint256[](n);
@@ -174,6 +172,6 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             balances[i] = IERC20(m.token).balanceOf(maker);
             feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
         }
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
+        return OracleAdapter.groupValueWad(tokens, balances, feeds, rounding);
     }
 }

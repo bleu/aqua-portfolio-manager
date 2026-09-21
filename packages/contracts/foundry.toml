@@ -27,7 +27,8 @@ remappings = [
 # Never import from it. No remapping is defined for it on purpose.
 
 # The E2E suite (test/e2e/) forks Base directly in its own setUp() via
-# vm.createSelectFork(vm.envOr("BASE_RPC_URL", "https://mainnet.base.org")) -- no external
+# vm.createSelectFork at AquaE2EBase's verified default block. BASE_RPC_BLOCK overrides it
+# (0 selects live state); BASE_RPC_URL overrides https://mainnet.base.org. No external
 # anvil, no deploy script, no manifest file, and no [rpc_endpoints] entry here: forge's own
 # "${VAR:-default}" interpolation isn't supported for named rpc endpoints, so the fallback is
 # resolved in Solidity instead.
