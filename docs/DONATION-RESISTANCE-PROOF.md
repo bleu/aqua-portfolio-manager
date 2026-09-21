@@ -1,12 +1,12 @@
 # Donation resistance proof
 
-A single proof (below) fully discharges ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no additional bound needed for either. Cross-strategy interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
+The argument below analyzes the pricing formula in real arithmetic for this strategy's own trades and for pure donations. Transferring its invariant result to Solidity requires conservative rounding as well; the formula proof alone does not discharge that implementation obligation. Cross-strategy interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
 
 ## What has to be shown
 
 ADR-0007's claim is: no sequence of trades against this strategy can extract value from the wallet, whether preceded by an external donation (an unsolicited transfer meant to skew the price) or ordinary settlement. The pricing formula (`PRICING.md`) reads the wallet's real, current balance directly — no EMA, no TWAP, no moving average of any kind (see "Why no smoothing" below for why that was cut).
 
-## The curve invariant (the whole proof)
+## The curve invariant in real arithmetic
 
 **Assumption, stated explicitly.** Token *i* and token *o* each have their own market price, set externally, that this strategy's own liquidity is too small to move. The proof below is about this strategy's *own* invariant `V` never decreasing — it says nothing about, and doesn't need, either token's price being stable in absolute terms; only that trading against *this* curve can't be a source of profit on its own, regardless of where the external price sits.
 
@@ -39,8 +39,16 @@ Since `A_i_eff = A_i·(1-f) ≤ A_i` for `f ≥ 0`, the ratio `(B_i+A_i)/(B_i+A_
 
 What closes this instead is `ADR-0011`: a Safe Transaction Guard that prevents any strategy but this one from ever moving tokens across a group boundary (ADR-0003) or in from outside the declared universe. That confines any other strategy's activity to *within* one group — and because ADR-0003 already treats intra-group composition as unpriced (only the group's oracle-valued total feeds this curve), a within-group trade by another strategy reduces to exactly the one-sided "donation" case this proof already covers. The proof isn't stronger than it was; the boundary it needs now actually holds, enforced outside this contract entirely.
 
+## Implementation precision
+
+The algebra above assumes exact powers and real-number arithmetic. For its nondecreasing-invariant conclusion to carry over to integer quotes, exact-in must not return more output than the formula allows, and exact-out must not require less input. Equality and strictness statements in the real-arithmetic proof do not describe every integer-rounded trade.
+
+`PortfolioManagerPricing.exactIn` rejects zero balances, rejects a computed full drain, and requires `poweredRatio >= WAD / 1e9` unless its computed exponent equals `WAD`. That shortcut returns the ceiled balance ratio directly. For unequal exponents, the pinned PRBMath `pow` has no documented directional guarantee. The floor excludes a known region of insufficient precision, while the invariant tests provide empirical evidence within their sampled domains. Neither the floor nor those tests proves conservative exact-in rounding for every supported input.
+
+`PortfolioManagerPricing.exactOut` ceilings the balance and weight ratios and uses `FixedPointMath.powUp` before ceiling the effective input and fee gross-up. The helper bounds errors in the pinned PRBMath `log2` and `exp2` source to return an upper bound for bases of at least one. Its bounds must be rechecked on dependency upgrades. It can conservatively overquote tiny trades or revert when the upper bound exceeds the supported domain. This directed rounding establishes the required quote inequality for non-reverting exact-out calculations; it does not turn the separate exact-in evidence into a universal implementation proof.
+
 ## Why no smoothing
 
-Full rationale for dropping the EMA/TWAP lives in `ADR-0006`'s Context. For this proof specifically: it only holds because the exposure reader feeds the *raw*, current balance directly with no averaging — a lagging, smoothed reading would have needed a second, harder proof. With no averaging, the single proof above is unconditionally sufficient for external donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix entirely, not more of this proof — see the correction above and `ADR-0011`.)
+Full rationale for dropping the EMA/TWAP lives in `ADR-0006`'s Context. For this proof specifically: it only holds because the exposure reader feeds the *raw*, current balance directly with no averaging — a lagging, smoothed reading would have needed a second, harder proof. With no averaging, the argument above applies to the stated real-arithmetic model for external donations and ordinary settlement noise; implementation precision remains a separate obligation. (Cross-strategy interaction needed a different fix entirely, not more of this proof — see the correction above and `ADR-0011`.)
 
 ADR-0006's fee + gas-cost profitability gate (no tolerance band, no rate cap — see that ADR's History for why both were dropped) is not load-bearing for this proof either: the proof holds regardless of whether or how often a correction fires, since it's a per-trade property, not one that depends on trade frequency. Gating correction on profitability doesn't reopen the lag problem smoothing did — it's a stateless function of the *current* balance and gas price, with no history to lag.
