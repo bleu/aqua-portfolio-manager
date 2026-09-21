@@ -173,6 +173,32 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         );
     }
 
+    function _exactOutTakerData() internal view returns (bytes memory) {
+        return TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: false,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
+    }
+
     // ===== Tests =====
 
     function test_SameGroupSwapReverts() public {
@@ -258,7 +284,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     /// while tokenB (same group, same $1 price -- no depeg needed to trigger this) holds
     /// 1,000,000 tokens, so group0's value is almost entirely tokenB's. A trade sized off that
     /// value asks for far more raw tokenA than the 1 wei that actually exists.
-    function test_RevertsOnInsufficientMemberBalanceForASpecificDepeggedMember() public {
+    function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance() public {
         ISwapVM.Order memory order = _buildOrder(0);
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
 
@@ -284,6 +310,29 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
                 IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
                 address(tokenA),
                 expectedRequested,
+                1
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+    }
+
+    /// @notice Exact-out counterpart to `test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance`
+    /// -- the new check sits after the shared exactIn/exactOut branch (`PortfolioManagerSwap.sol`),
+    /// so it must catch this on both entry points, not just exactIn. Same fixture: tokenA holds 1
+    /// wei, tokenB holds 1,000,000e18. Unlike exactIn, `amountOut` here is the taker's own direct
+    /// input, so the expected revert value is just the requested amount, not a formula result.
+    function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalanceExactOut() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
+
+        bytes memory takerData = _exactOutTakerData();
+        tokenC.mint(address(taker), 1_000_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
+                address(tokenA),
+                500_000e18,
                 1
             )
         );
@@ -361,20 +410,16 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     // ===== Fuzz: depeg divergence inside a multi-token group =====
 
     /// @notice group0's two members (tokenA, tokenB) are fuzzed to independently diverging
-    /// prices -- a depeg, not the setUp() default of both pegged at $1 -- while group1
-    /// (tokenC) stays healthy. The curve's own round-trip non-profitability guarantee
-    /// (DONATION-RESISTANCE-PROOF.md/ADR-0007), already fuzz-tested at the pure
-    /// `PortfolioManagerPricing` level in `PortfolioManagerPricing.t.sol` for a single
-    /// pre-aggregated balance pair, must hold here too now that `balanceIn`/`balanceOut` are
-    /// actually the oracle-summed value of a *divergently-priced* multi-token group (the real
-    /// wiring this file exists to exercise), not a value handed to the formula directly.
+    /// prices -- a depeg -- while group1 (tokenC) stays healthy. Round-trip non-profitability
+    /// (DONATION-RESISTANCE-PROOF.md/ADR-0007) is already fuzz-tested at the pure
+    /// `PortfolioManagerPricing` level; this exercises the same guarantee through the real
+    /// `OracleAdapter`-summed group value of a divergently-priced multi-token group, not a value
+    /// handed to the formula directly.
     /// @dev Either leg may legitimately revert with `PortfolioManagerSwapInsufficientMemberBalance`
-    /// (a low-priced minority member's own raw balance smaller than its share of the group's
-    /// total value -- exactly what that guard exists to catch instead of an `Aqua.pull()`
-    /// underflow) or swap-vm's own `TakerTraitsAmountOutMustBeGreaterThanZero` (a legitimately
-    /// tiny second-leg trade rounding to zero output, unrelated to this PR). Both are asserted by
-    /// selector, not caught blindly, so any other revert still fails the test. The invariant
-    /// itself is only asserted when both legs actually complete.
+    /// (a low-priced minority member's raw balance smaller than its share of group value) or
+    /// swap-vm's `TakerTraitsAmountOutMustBeGreaterThanZero` (a tiny second-leg trade rounding to
+    /// zero). Both asserted by selector, not caught blindly. The invariant is only asserted when
+    /// both legs actually complete.
     function testFuzz_DepegDivergenceWithinGroupNeverProfitsRoundTripTrader(
         uint256 balA,
         uint256 balB,

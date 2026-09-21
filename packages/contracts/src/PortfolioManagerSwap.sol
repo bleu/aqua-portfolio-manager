@@ -118,14 +118,9 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 
-        // The curve only guarantees amountOut's VALUE fits within its group's aggregate value
-        // (Σ member_balance × price) -- it says nothing about whether that value, converted back
-        // through the specific traded member's own price, still fits that member's own raw
-        // balance. In a single-member group the two coincide (the member IS the group's whole
-        // value) and this never fires; in a multi-member group with divergent member prices (a
-        // depeg), a low-priced minority member can be asked to pay out more raw tokens than it
-        // actually holds even though the payout is well within the group's total value -- caught
-        // here as a clean revert instead of an arithmetic-underflow panic inside Aqua.pull().
+        // Group-aggregate value covering amountOut doesn't guarantee tokenOut's own raw balance
+        // can cover it (a multi-member group with a raw balance imbalance, e.g. from a depeg) --
+        // revert cleanly here instead of underflowing inside Aqua.pull().
         uint256 tokenOutAvailable = IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker);
         require(
             ctx.swap.amountOut <= tokenOutAvailable,

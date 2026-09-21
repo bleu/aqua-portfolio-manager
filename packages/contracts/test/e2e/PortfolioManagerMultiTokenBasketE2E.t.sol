@@ -164,7 +164,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     ///      `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.t.sol`'s identical note on why
     ///      this doesn't route through the validator itself.
     function _shipOnly(ISwapVM.Order memory order) internal returns (bytes32) {
-        bool ok = _shipRaw(order, WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING, USDT_FUNDING, USDC_FUNDING);
+        (address[] memory tokens, uint256[] memory amounts) =
+            _fundAndApprove(WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING, USDT_FUNDING, USDC_FUNDING);
+        bool ok = _execShipBatch(order, tokens, amounts);
         require(ok, "ship through multi-token PM Safe failed");
 
         bytes32 strategyHash = keccak256(abi.encode(order));
@@ -174,28 +176,12 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
     /// @dev Funding amounts split out of `_shipOnly` (which always uses the fixture's own
     ///      defaults) so a deviation-tolerance test can fund the wallet deliberately off-target.
-    ///      Deliberately returns the raw `execTransaction` success bool with no `require` --
-    ///      `vm.expectRevert` needs the original revert (e.g. a custom error from the tolerance
-    ///      check) to reach it directly, not get replaced by a generic string reason.
-    function _shipRaw(
-        ISwapVM.Order memory order,
-        uint256 wethAmount,
-        uint256 wbtcAmount,
-        uint256 daiAmount,
-        uint256 usdtAmount,
-        uint256 usdcAmount
-    ) internal returns (bool) {
-        (address[] memory tokens, uint256[] memory amounts) =
-            _fundAndApprove(wethAmount, wbtcAmount, daiAmount, usdtAmount, usdcAmount);
-        return _execShipBatch(order, tokens, amounts);
-    }
-
-    /// @dev Deals real balances and approves Aqua -- split out of `_shipRaw` so a revert-testing
-    ///      caller can arm `vm.expectRevert()` immediately before the single call that should
-    ///      revert (`_execShipBatch`), not before these several real, non-reverting external
-    ///      calls (`balanceOf`/`approve`), which would otherwise consume `expectRevert`'s "next
-    ///      call" slot instead -- same pitfall `test_StaleFeedEventuallyBlocksTrade` already
-    ///      documents for `deal()`.
+    ///      Deals real balances and approves Aqua; a revert-testing caller arms
+    ///      `vm.expectRevert()` immediately before the single call that should revert
+    ///      (`_execShipBatch`), not before these several real, non-reverting external calls
+    ///      (`balanceOf`/`approve`), which would otherwise consume `expectRevert`'s "next call"
+    ///      slot instead -- same pitfall `test_StaleFeedEventuallyBlocksTrade` already documents
+    ///      for `deal()`.
     function _fundAndApprove(
         uint256 wethAmount,
         uint256 wbtcAmount,
