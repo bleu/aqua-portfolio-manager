@@ -137,6 +137,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 
+        // Group-aggregate value covering amountOut doesn't guarantee tokenOut's own raw balance
+        // can cover it (a multi-member group with a raw balance imbalance, e.g. from a depeg) --
+        // revert cleanly here instead of underflowing inside Aqua.pull().
+        uint256 tokenOutAvailable = IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker);
+        require(
+            ctx.swap.amountOut <= tokenOutAvailable,
+            PortfolioManagerSwapInsufficientMemberBalance(ctx.query.tokenOut, ctx.swap.amountOut, tokenOutAvailable)
+        );
+
         // Best-effort, matching Fee.sol's own _tryPullFee rationale exactly: reverting on an
         // uncollectible fee would make a one-sided position untradable (OpenZeppelin M-09,
         // Theori #10). Skipped entirely in quote() (isStaticContext) — same divergence

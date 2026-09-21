@@ -20,7 +20,7 @@ Nothing else gates a correction. A tolerance band and a rate cap were both tried
 ## Consequences
 
 - Donation resistance no longer depends on any parameter choice here — it's fully closed by the curve invariant alone (`../DONATION-RESISTANCE-PROOF.md`). Cross-strategy resistance was never this ADR's job to close and still isn't — that's `ADR-0011`, enforced at the wallet level, not by any parameter picked here.
-- No free parameters remain in this ADR's scope: `fee` is fixed by ADR-0008, and `gas_cost_b` is an external, real-world number (a representative L2's transaction costs, not tied to a specific chain — see ADR-0009), not something this design picks. Once a gas-per-rebalance number for the actual deployed contract exists (`BLEUDEV-265`), `gas_cost_b` should be replaced by that measured value — tightening an input, not reopening a design choice.
+- No free parameters remain in this ADR's scope: `fee` is fixed by ADR-0008, and `gas_cost_b` is an external, real-world number (a representative L2's transaction costs, not tied to a specific chain — see ADR-0009), not something this design picks. Once a gas-per-rebalance number for the actual deployed contract exists, `gas_cost_b` should be replaced by that measured value — tightening an input, not reopening a design choice.
 - This doesn't change the cost-vs-baselines finding from the same work (0 of 10 swept baseline settings beat the mechanism on both cost and tracking at once — see `ARCHITECTURE.md`'s Milestone 1 section): the mechanism's cost floor is a structural consequence of quoting continuously at all, not something a parameter choice inside this design can lower.
 
 ## History

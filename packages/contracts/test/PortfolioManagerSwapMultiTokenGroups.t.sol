@@ -21,7 +21,7 @@ import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Real multi-token oracle-valued groups (ADR-0003/BLEUDEV-347), exercised through a
+/// @notice Real multi-token oracle-valued groups (ADR-0003), exercised through a
 /// real SwapVM.swap() call: behavior that's meaningless to test at a single-token-group scope --
 /// same-group rejection, a 2-member group's price reflecting its FULL oracle-valued sum (not
 /// just the token actually changing hands), and a stale feed on a non-traded group member still
@@ -182,6 +182,58 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         return taker.swap(order, tokenIn, tokenOut, amount, takerData);
     }
 
+    function _exactInTakerData() internal view returns (bytes memory) {
+        return TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: true,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
+    }
+
+    function _exactOutTakerData() internal view returns (bytes memory) {
+        return TakerTraitsLib.build(
+            TakerTraitsLib.Args({
+                taker: address(taker),
+                isExactIn: false,
+                shouldUnwrapWeth: false,
+                isStrictThresholdAmount: false,
+                isFirstTransferFromTaker: false,
+                useTransferFromAndAquaPush: false,
+                threshold: "",
+                to: address(0),
+                deadline: 0,
+                hasPreTransferInCallback: true,
+                hasPreTransferOutCallback: false,
+                preTransferInHookData: "",
+                postTransferInHookData: "",
+                preTransferOutHookData: "",
+                postTransferOutHookData: "",
+                preTransferInCallbackData: "",
+                preTransferOutCallbackData: "",
+                instructionsArgs: "",
+                signature: ""
+            })
+        );
+    }
+
     // ===== Tests =====
 
     function test_ExactInBoundsHighDecimalInputPrice() public {
@@ -238,29 +290,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         ISwapVM.Order memory order = _buildOrder(0);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
 
-        bytes memory takerData = TakerTraitsLib.build(
-            TakerTraitsLib.Args({
-                taker: address(taker),
-                isExactIn: true,
-                shouldUnwrapWeth: false,
-                isStrictThresholdAmount: false,
-                isFirstTransferFromTaker: false,
-                useTransferFromAndAquaPush: false,
-                threshold: "",
-                to: address(0),
-                deadline: 0,
-                hasPreTransferInCallback: true,
-                hasPreTransferOutCallback: false,
-                preTransferInHookData: "",
-                postTransferInHookData: "",
-                preTransferOutHookData: "",
-                postTransferOutHookData: "",
-                preTransferInCallbackData: "",
-                preTransferOutCallbackData: "",
-                instructionsArgs: "",
-                signature: ""
-            })
-        );
+        bytes memory takerData = _exactInTakerData();
         tokenA.mint(address(taker), 1_000e18);
 
         // tokenA and tokenB are both members of group0 -- the curve only prices cross-group
@@ -323,29 +353,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint256 staleUpdatedAt = block.timestamp - 2 hours;
         feedB.setAnswer(1e18, staleUpdatedAt);
 
-        bytes memory takerData = TakerTraitsLib.build(
-            TakerTraitsLib.Args({
-                taker: address(taker),
-                isExactIn: true,
-                shouldUnwrapWeth: false,
-                isStrictThresholdAmount: false,
-                isFirstTransferFromTaker: false,
-                useTransferFromAndAquaPush: false,
-                threshold: "",
-                to: address(0),
-                deadline: 0,
-                hasPreTransferInCallback: true,
-                hasPreTransferOutCallback: false,
-                preTransferInHookData: "",
-                postTransferInHookData: "",
-                preTransferOutHookData: "",
-                postTransferOutHookData: "",
-                preTransferInCallbackData: "",
-                preTransferOutCallbackData: "",
-                instructionsArgs: "",
-                signature: ""
-            })
-        );
+        bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), 1_000e18);
 
         vm.expectRevert(
@@ -354,6 +362,99 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             )
         );
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+    }
+
+    /// @notice Deterministic reproduction of PortfolioManagerSwapInsufficientMemberBalance,
+    /// rather than relying on the fuzz test below to land on it by chance: tokenA holds 1 wei
+    /// while tokenB (same group, same $1 price -- no depeg needed to trigger this) holds
+    /// 1,000,000 tokens, so group0's value is almost entirely tokenB's. A trade sized off that
+    /// value asks for far more raw tokenA than the 1 wei that actually exists.
+    function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000_000e18);
+
+        // Independently computed expected `requested`, the same way
+        // test_MultiMemberGroupPricesOffFullGroupValueNotJustTheTradedToken does: both tokens are
+        // still pegged at $1 here (this reproduction doesn't need a real depeg, just a raw
+        // balance far below a group's value share), so group0's value is exactly balA + balB and
+        // the value-to-tokenA-raw-units conversion is 1:1.
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
+            balanceIn: 1_000_000e18,
+            balanceOut: 1 + 1_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
+                address(tokenA),
+                expectedRequested,
+                1
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+    }
+
+    /// @notice Exact-out counterpart to `test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance`
+    /// -- the new check sits after the shared exactIn/exactOut branch (`PortfolioManagerSwap.sol`),
+    /// so it must catch this on both entry points, not just exactIn. Same fixture: tokenA holds 1
+    /// wei, tokenB holds 1,000,000e18. Unlike exactIn, `amountOut` here is the taker's own direct
+    /// input, so the expected revert value is just the requested amount, not a formula result.
+    function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalanceExactOut() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
+
+        bytes memory takerData = _exactOutTakerData();
+        tokenC.mint(address(taker), 1_000_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
+                address(tokenA),
+                500_000e18,
+                1
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+    }
+
+    /// @notice The two checks are independent: a within-group raw-balance imbalance can trip
+    /// `InsufficientMemberBalance` even while the deviation breaker is armed and the group-level
+    /// spot price is within tolerance, since spot price only sees each group's aggregate value,
+    /// not how that value splits across its members. Same fixture as
+    /// `test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance`, but with `maxDeviationBps`
+    /// set instead of disabled.
+    function test_InsufficientMemberBalanceStillFiresWithDeviationCheckArmedAndWithinTolerance() public {
+        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        _shipOrder(order, 1, 1_000_000e18, 1_000_000e18); // group0 ~= group1 in value -> ~0% deviation
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000_000e18);
+
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
+            balanceIn: 1_000_000e18,
+            balanceOut: 1 + 1_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
+                address(tokenA),
+                expectedRequested,
+                1
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
     }
 
     // ===== Price-deviation circuit breaker (ADR-0012) =====
@@ -424,29 +525,73 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         assertEq(actualAmountOut, expectedAmountOut, "maxDeviationBps == 0 must be a true no-op");
     }
 
-    function _exactInTakerData() internal view returns (bytes memory) {
-        return TakerTraitsLib.build(
-            TakerTraitsLib.Args({
-                taker: address(taker),
-                isExactIn: true,
-                shouldUnwrapWeth: false,
-                isStrictThresholdAmount: false,
-                isFirstTransferFromTaker: false,
-                useTransferFromAndAquaPush: false,
-                threshold: "",
-                to: address(0),
-                deadline: 0,
-                hasPreTransferInCallback: true,
-                hasPreTransferOutCallback: false,
-                preTransferInHookData: "",
-                postTransferInHookData: "",
-                preTransferOutHookData: "",
-                postTransferOutHookData: "",
-                preTransferInCallbackData: "",
-                preTransferOutCallbackData: "",
-                instructionsArgs: "",
-                signature: ""
-            })
+    // ===== Fuzz: depeg divergence inside a multi-token group =====
+
+    /// @notice Fuzzes independently-diverging group0 prices (a depeg) through the real
+    /// `OracleAdapter` path; accepts `PortfolioManagerSwapInsufficientMemberBalance` or a
+    /// zero-amount second leg as non-violating reverts.
+    function testFuzz_DepegDivergenceWithinGroupNeverProfitsRoundTripTrader(
+        uint256 balA,
+        uint256 balB,
+        uint256 balC,
+        uint256 priceA,
+        uint256 priceB,
+        uint256 amountIn
+    ) public {
+        balA = bound(balA, 1e18, 1_000_000e18);
+        balB = bound(balB, 1e18, 1_000_000e18);
+        balC = bound(balC, 1e18, 1_000_000e18);
+        // A realistic depeg range: anywhere from a 90% haircut to a 10x blowup, independently
+        // for each of group0's two members -- e.g. tokenA depegs to $0.10 while tokenB holds
+        // near $1, or both drift in opposite directions.
+        priceA = bound(priceA, 0.1e18, 10e18);
+        priceB = bound(priceB, 0.1e18, 10e18);
+        feedA.setAnswer(int256(priceA), block.timestamp);
+        feedB.setAnswer(int256(priceB), block.timestamp);
+
+        ISwapVM.Order memory order = _buildOrder(0); // feeBps = 0 isolates the curve's own invariant from the fee's own additional slack
+        _shipOrder(order, balA, balB, balC);
+
+        amountIn = bound(amountIn, 1e6, balC / 10);
+
+        try this._externalSwapExactIn(order, address(tokenC), address(tokenA), amountIn) returns (
+            uint256, uint256 amountOutA
+        ) {
+            if (amountOutA == 0) return;
+
+            try this._externalSwapExactIn(order, address(tokenA), address(tokenC), amountOutA) returns (
+                uint256, uint256 amountBackC
+            ) {
+                assertLe(
+                    amountBackC,
+                    amountIn,
+                    "round-tripping through a depegged multi-token group must not profit the trader"
+                );
+            } catch (bytes memory reason) {
+                _assertAcceptableRoundTripRevert(reason);
+            }
+        } catch (bytes memory reason) {
+            _assertAcceptableRoundTripRevert(reason);
+        }
+    }
+
+    /// @dev `try` requires an external call -- `_swapExactIn` is internal, so this thin wrapper
+    ///      is what the fuzz test above actually calls via `this._externalSwapExactIn(...)`.
+    function _externalSwapExactIn(ISwapVM.Order memory order, address tokenIn, address tokenOut, uint256 amount)
+        external
+        returns (uint256, uint256)
+    {
+        return _swapExactIn(order, tokenIn, tokenOut, amount);
+    }
+
+    /// @dev The two legitimate ways a round-trip leg can revert without violating the invariant
+    ///      this fuzz test checks -- see the test's own doc comment for why each is acceptable.
+    function _assertAcceptableRoundTripRevert(bytes memory reason) private pure {
+        bytes4 selector = bytes4(reason);
+        assertTrue(
+            selector == IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector
+                || selector == TakerTraitsLib.TakerTraitsAmountOutMustBeGreaterThanZero.selector,
+            "unexpected revert reason during round trip"
         );
     }
 }

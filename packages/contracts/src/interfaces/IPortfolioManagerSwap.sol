@@ -17,6 +17,11 @@ interface IPortfolioManagerSwap {
     ///      silently degenerate to a spot price of exactly 1 with zero skew-based curve
     ///      behavior, so it's rejected outright instead of left as an undefined edge case.
     error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
+    /// @dev A multi-member group's aggregate value can afford `amountOut`, but the specific
+    ///      traded member's own raw balance can't -- reachable whenever a member's raw balance
+    ///      diverges from its share of the group's total value, whether from oracle price
+    ///      divergence (a depeg) or simply an imbalanced raw funding across members.
+    error PortfolioManagerSwapInsufficientMemberBalance(address token, uint256 requested, uint256 available);
     /// @dev Pre-trade circuit breaker: the traded pair's current spot price (`spotPrice`, exactly
     ///      `WAD` at perfect target composition regardless of weight ratio) has drifted further
     ///      from `WAD` than `maxDeviationBps` allows -- e.g. a direct Safe-owner withdrawal that
