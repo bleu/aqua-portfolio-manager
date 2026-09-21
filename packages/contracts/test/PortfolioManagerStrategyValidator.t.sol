@@ -45,8 +45,9 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         maker = vm.addr(0x1234);
     }
 
-    /// @dev The validator only cross-checks token membership, never prices anything, so a shared
-    ///      dummy feed address across every single-member group is fine here.
+    /// @dev `requireUniverseMatches` only cross-checks token membership, never prices anything,
+    ///      so a shared dummy feed address across every single-member group is fine for those
+    ///      tests -- `requireBalancedWithinTolerance` tests below use a real, priced feed.
     address internal constant DUMMY_FEED = address(0xFEED);
 
     function _groups(address[] memory declaredTokens, uint256[] memory weights)
@@ -281,7 +282,14 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireBalancedWithinTolerance(order, maker);
     }
 
-    // ===== attestBuildParameters (BLEUDEV-381) =====
+    function test_ToleranceRevertsWithDescriptiveErrorOnEmptyPortfolio() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%, unfunded wallet
+
+        vm.expectRevert(IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorEmptyPortfolio.selector);
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    // ===== attestBuildParameters =====
 
     function test_AttestBuildParametersRecordsStateAndEmitsEvent() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9);

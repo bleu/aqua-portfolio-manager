@@ -100,6 +100,7 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
             groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker);
             totalValueWad += groupValuesWad[i];
         }
+        require(totalValueWad > 0, PortfolioManagerStrategyValidatorEmptyPortfolio());
 
         for (uint256 i = 0; i < n; i++) {
             uint256 actualShareWad = groupValuesWad[i] * WAD / totalValueWad;
