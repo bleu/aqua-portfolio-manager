@@ -137,10 +137,17 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         internal
         returns (uint256, uint256)
     {
+        return _swap(order, tokenIn, tokenOut, amount, true);
+    }
+
+    function _swap(ISwapVM.Order memory order, address tokenIn, address tokenOut, uint256 amount, bool exactIn)
+        internal
+        returns (uint256, uint256)
+    {
         bytes memory takerData = TakerTraitsLib.build(
             TakerTraitsLib.Args({
                 taker: address(taker),
-                isExactIn: true,
+                isExactIn: exactIn,
                 shouldUnwrapWeth: false,
                 isStrictThresholdAmount: false,
                 isFirstTransferFromTaker: false,
@@ -161,11 +168,61 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             })
         );
 
-        TokenMock(tokenIn).mint(address(taker), amount * 2);
+        TokenMock(tokenIn).mint(address(taker), amount * (exactIn ? 2 : 10));
         return taker.swap(order, tokenIn, tokenOut, amount, takerData);
     }
 
     // ===== Tests =====
+
+    function test_ExactInBoundsHighDecimalInputPrice() public {
+        _checkHighDecimalPriceSettlement(true, true);
+    }
+
+    function test_ExactOutBoundsHighDecimalInputPrice() public {
+        _checkHighDecimalPriceSettlement(true, false);
+    }
+
+    function test_ExactInBoundsHighDecimalOutputPrice() public {
+        _checkHighDecimalPriceSettlement(false, true);
+    }
+
+    function test_ExactOutBoundsHighDecimalOutputPrice() public {
+        _checkHighDecimalPriceSettlement(false, false);
+    }
+
+    function _checkHighDecimalPriceSettlement(bool fractionalInput, bool exactIn) internal {
+        feedA = new MockAggregatorV3(24, 1_500_000, block.timestamp);
+        groups[0].members[0].feed = address(feedA);
+        feedB.setAnswer(1, block.timestamp);
+        feedC.setAnswer(1, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        uint256 balanceA = fractionalInput ? 100e18 : 1000e18;
+        _shipOrder(order, balanceA, 1000e18, 1000e18);
+
+        address tokenIn = fractionalInput ? address(tokenA) : address(tokenC);
+        address tokenOut = fractionalInput ? address(tokenC) : address(tokenA);
+        uint256 amount = exactIn ? 1000e18 : (fractionalInput ? 625e18 : 800e18);
+        _swap(order, tokenIn, tokenOut, amount, exactIn);
+
+        // Raw prices are in the ratio 3:2:2. Cancel their common denominator;
+        // neither rounded WAD prices nor production quote helpers enter this invariant.
+        uint256 beforeInvariant = (3 * balanceA + 2 * 1000e18) * 1000e18;
+        uint256 afterInvariant = (3 * tokenA.balanceOf(maker) + 2 * tokenB.balanceOf(maker)) * tokenC.balanceOf(maker);
+        assertGe(afterInvariant, beforeInvariant);
+    }
+
+    function test_FractionalMemberValuesPreserveSettledGroupInvariant() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        feedB.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, 3, 1, 100e18);
+
+        _swapExactIn(order, address(tokenA), address(tokenC), 2);
+
+        // A and B have the same fixed price: multiply by two to cancel it exactly.
+        uint256 afterInvariant = (tokenA.balanceOf(maker) + tokenB.balanceOf(maker)) * tokenC.balanceOf(maker);
+        assertGe(afterInvariant, 4 * 100e18);
+    }
 
     function test_SameGroupSwapReverts() public {
         ISwapVM.Order memory order = _buildOrder(0);
