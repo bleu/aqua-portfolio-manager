@@ -564,7 +564,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         _execShipBatch(order, tokens, amounts);
     }
 
-    // ===== Build-parameter attestation gate (BLEUDEV-381) =====
+    // ===== Build-parameter attestation gate =====
 
     function test_SwapRevertsWhenShippedWithoutAttestingBuildParameters() public {
         ISwapVM.Order memory order = _buildOrder(7);

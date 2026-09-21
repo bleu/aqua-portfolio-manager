@@ -61,11 +61,9 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
     ///      `BasketXYCSwap.sol`'s identical note).
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        // Cheapest possible fail path -- `orderHash` needs no parsing, and checking it before
-        // touching `args` at all means an unattested strategy never even pays for parsing its
-        // own encoded groups. Every swap re-checks this (not just "the first" one): the flag is
-        // monotonic, so the observable behavior is identical either way, without needing to
-        // special-case "firstness."
+        // Checked first, before parsing args, so an unattested strategy never pays parse cost.
+        // The flag is monotonic, so re-checking every swap (not just the first) is behaviorally
+        // identical and needs no firstness special-case.
         require(
             STRATEGY_VALIDATOR.buildParamsAttested(ctx.query.orderHash),
             PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
