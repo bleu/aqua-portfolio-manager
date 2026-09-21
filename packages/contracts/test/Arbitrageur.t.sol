@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: LicenseRef-Degensoft-Aqua-Source-1.1
+pragma solidity 0.8.30;
+
+/// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
+
+import {Test} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
+import {MakerTraits} from "swap-vm/libs/MakerTraits.sol";
+
+import {Arbitrageur} from "../src/Arbitrageur.sol";
+
+/// @notice Access-control checks only -- `onlyOwner` reverts before either function touches
+/// `ROUTER` or any real token, so no fork/shipped strategy is needed (see
+/// `test/e2e/ArbitrageurE2E.t.sol` for the real-fork behavioral coverage). A dummy router
+/// address and an empty order are enough to reach the modifier.
+contract ArbitrageurTest is Test {
+    Arbitrageur private arbitrageur;
+    address private owner;
+
+    function setUp() public {
+        owner = makeAddr("owner");
+        arbitrageur = new Arbitrageur(makeAddr("router"), owner);
+    }
+
+    function test_RevertsWhenCalledByNonOwner() public {
+        ISwapVM.Order memory order = ISwapVM.Order({maker: address(0), traits: MakerTraits.wrap(0), data: ""});
+
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        arbitrageur.executeArbitrage(order, address(0), address(0), 1e18, 0, 0);
+    }
+
+    function test_SweepRevertsForNonOwner() public {
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        arbitrageur.sweep(makeAddr("token"), 1e18, stranger);
+    }
+}

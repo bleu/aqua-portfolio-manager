@@ -4,17 +4,17 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 import {Arbitrageur} from "../../src/Arbitrageur.sol";
 
 /// @notice Real-fork proof that `Arbitrageur` genuinely works as an ordinary EOA-driven taker
-/// against a real, shipped PM strategy (BLEUDEV-349) -- not just that it compiles against
-/// `ISwapVM`'s interface. `arbitrageurOwner` is a plain address (`vm.addr`, not a contract),
-/// exercising the exact property the contract exists for: no `ITakerCallbacks` implementation
-/// anywhere in this test.
+/// against a real, shipped PM strategy -- not just that it compiles against `ISwapVM`'s
+/// interface. `arbitrageurOwner` is a plain address (`vm.addr`, not a contract), exercising the
+/// exact property the contract exists for: no `ITakerCallbacks` implementation anywhere in this
+/// test. Access-control reverts are covered separately in `test/Arbitrageur.t.sol` (no fork
+/// needed there).
 contract ArbitrageurE2ETest is PortfolioManagerE2EBase {
     uint256 private constant OWNER_KEY = 0xA12BEE;
     address private arbitrageurOwner;
@@ -47,20 +47,6 @@ contract ArbitrageurE2ETest is PortfolioManagerE2EBase {
         assertEq(pmTokenB.balanceOf(arbitrageurOwner), amountOut, "tokenOut must land directly on the owner");
         assertEq(pmTokenA.balanceOf(arbitrageurOwner), 0, "tokenIn must be fully pulled from the owner");
         assertEq(pmTokenA.balanceOf(address(arbitrageur)), 0, "contract must not retain tokenIn between calls");
-    }
-
-    function test_RevertsWhenCalledByNonOwner() public {
-        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
-        _fundAndShip(order, INITIAL_BALANCE);
-
-        address stranger = makeAddr("stranger");
-        deal(address(pmTokenA), stranger, 1e18);
-        vm.prank(stranger);
-        pmTokenA.approve(address(arbitrageur), 1e18);
-
-        vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
-        arbitrageur.executeArbitrage(order, address(pmTokenA), address(pmTokenB), 1e18, 0, 0);
     }
 
     function test_RevertsWhenSlippageFloorNotMet() public {
@@ -106,14 +92,5 @@ contract ArbitrageurE2ETest is PortfolioManagerE2EBase {
 
         assertEq(pmTokenA.balanceOf(arbitrageurOwner), 5e18);
         assertEq(pmTokenA.balanceOf(address(arbitrageur)), 0);
-    }
-
-    function test_SweepRevertsForNonOwner() public {
-        deal(address(pmTokenA), address(arbitrageur), 5e18);
-
-        address stranger = makeAddr("stranger");
-        vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
-        arbitrageur.sweep(address(pmTokenA), 5e18, stranger);
     }
 }
