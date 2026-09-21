@@ -243,10 +243,15 @@ library PortfolioManagerArgsCodec {
 
     /// @notice `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) --
     ///         always goes through `OracleAdapter`, even for a single-member group, so decimal
-    ///         normalization and price conversion are uniform regardless of group size. Shared by
-    ///         `PortfolioManagerSwap`'s swap-time pricing and
-    ///         `PortfolioManagerStrategyValidator`'s ship-time deviation check.
-    function groupValueWad(Group memory group, address maker) internal view returns (uint256) {
+    ///         normalization and price conversion are uniform regardless of group size. Used by
+    ///         `PortfolioManagerStrategyValidator`'s ship-time deviation check, which compares
+    ///         every group's share of the same total, so all groups round the same direction
+    ///         rather than one up and one down as swap-time pricing does.
+    function groupValueWad(Group memory group, address maker, OracleAdapter.Rounding rounding)
+        internal
+        view
+        returns (uint256)
+    {
         uint256 n = group.members.length;
         address[] memory tokens = new address[](n);
         uint256[] memory balances = new uint256[](n);
@@ -257,7 +262,7 @@ library PortfolioManagerArgsCodec {
             balances[i] = IERC20(m.token).balanceOf(maker);
             feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
         }
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
+        return OracleAdapter.groupValueWad(tokens, balances, feeds, rounding);
     }
 
     /// @dev A token declared in two groups would make `PortfolioManagerSwap`'s group lookup

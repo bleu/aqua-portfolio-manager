@@ -322,14 +322,22 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     ///      real live price, normalized by the token's own decimals) so tests can assert an
     ///      analytically-derived expected quote against the actual swap output, the same pattern
     ///      `PortfolioManagerSwapMultiTokenGroups.t.sol`'s unit tests use.
-    function _groupValueWad(PortfolioManagerArgsCodec.Member[] memory members) internal view returns (uint256 total) {
+    function _groupValueWad(PortfolioManagerArgsCodec.Member[] memory members, bool roundUp)
+        internal
+        view
+        returns (uint256 total)
+    {
         for (uint256 i = 0; i < members.length; i++) {
             OracleAdapter.PriceFeed memory feed = OracleAdapter.PriceFeed({
                 feed: AggregatorV3Interface(members[i].feed), maxStaleness: members[i].maxStaleness
             });
-            uint256 price = OracleAdapter.priceWad(feed);
+            uint256 price =
+                OracleAdapter.priceWad(feed, roundUp ? OracleAdapter.Rounding.Up : OracleAdapter.Rounding.Down);
             uint8 decimals = IERC20Metadata(members[i].token).decimals();
-            total += IERC20(members[i].token).balanceOf(address(multiTokenSafe)) * price / 10 ** decimals;
+            uint256 numerator = IERC20(members[i].token).balanceOf(address(multiTokenSafe)) * price;
+            uint256 unit = 10 ** decimals;
+            total += numerator / unit;
+            if (roundUp && numerator % unit != 0) total += 1;
         }
     }
 
@@ -339,7 +347,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     function _usdValueWad(address token, address feed, uint256 amount) internal view returns (uint256) {
         OracleAdapter.PriceFeed memory pf =
             OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feed), maxStaleness: maxStaleness});
-        uint256 price = OracleAdapter.priceWad(pf);
+        uint256 price = OracleAdapter.priceWad(pf, OracleAdapter.Rounding.Down);
         uint8 decimals = IERC20Metadata(token).decimals();
         return amount * price / 10 ** decimals;
     }
@@ -373,8 +381,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // the stables group's full sum, balanceOut is the majors group's full sum. Majors' real
         // funding (20 WETH vs. 1 WBTC) is deliberately uneven, so a correct group-valued quote
         // can only be reproduced by summing both members, not by reading WETH alone.
-        uint256 correctBalanceIn = _groupValueWad(groups[1].members);
-        uint256 correctBalanceOut = _groupValueWad(groups[0].members);
+        uint256 correctBalanceIn = _groupValueWad(groups[1].members, true);
+        uint256 correctBalanceOut = _groupValueWad(groups[0].members, false);
 
         uint256 usdcAmountIn = 300e6; // 300 USDC, well within the stables group's funded balance
 
@@ -406,7 +414,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongPoolState, usdcAmountInValueWad);
 
         uint256 wethPriceWad = OracleAdapter.priceWad(
-            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: maxStaleness})
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: maxStaleness}),
+            OracleAdapter.Rounding.Down
         );
         uint256 expectedCorrectOut = expectedCorrectOutValueWad * 1e18 / wethPriceWad;
         uint256 expectedWrongOut = expectedWrongOutValueWad * 1e18 / wethPriceWad;

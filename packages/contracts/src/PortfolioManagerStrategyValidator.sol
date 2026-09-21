@@ -8,6 +8,7 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
+import {OracleAdapter} from "./utils/OracleAdapter.sol";
 
 /// @title PortfolioManagerStrategyValidator — validates a PM strategy's ship() encoding
 /// @notice A PM strategy's declared universe exists in two places `IAqua.ship()` never
@@ -97,7 +98,7 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         uint256[] memory groupValuesWad = new uint256[](n);
         uint256 totalValueWad;
         for (uint256 i = 0; i < n; i++) {
-            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker);
+            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker, OracleAdapter.Rounding.Down);
             totalValueWad += groupValuesWad[i];
         }
         require(totalValueWad > 0, PortfolioManagerStrategyValidatorEmptyPortfolio());
