@@ -88,12 +88,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             // exact-in branch, minus the wrap-the-rest-of-program recursion we don't need
             // here — nothing runs after this instruction).
             uint256 fullAmountIn = ctx.swap.amountIn;
-            daoAmount = FixedPointMath.mulDown(fullAmountIn, daoBps, FEE_BPS);
+            daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
             uint256 netAmountIn = fullAmountIn - daoAmount;
 
-            uint256 netAmountInValueWad = FixedPointMath.mulDown(netAmountIn, tokenInPriceWad, tokenInUnit);
+            uint256 netAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
             uint256 amountOutValueWad = PortfolioManagerPricing.exactIn(quote, netAmountInValueWad);
-            ctx.swap.amountOut = FixedPointMath.divDown(amountOutValueWad, tokenOutPriceWad, tokenOutUnit);
+            ctx.swap.amountOut = FixedPointMath.mulDivDown(amountOutValueWad, tokenOutUnit, tokenOutPriceWad);
             ctx.swap.amountIn = fullAmountIn;
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
@@ -101,10 +101,10 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             // curve fee (PortfolioManagerPricing.exactOut already grosses that up internally),
             // then the protocol fee is grossed up on top of that — mirrors Fee.sol's own
             // exact-out branch, which fees only once the swap amount is known.
-            uint256 amountOutValueWad = FixedPointMath.mulUp(ctx.swap.amountOut, tokenOutPriceWad, tokenOutUnit);
+            uint256 amountOutValueWad = FixedPointMath.mulDivUp(ctx.swap.amountOut, tokenOutPriceWad, tokenOutUnit);
             uint256 amountInValueWad = PortfolioManagerPricing.exactOut(quote, amountOutValueWad);
-            uint256 cleanAmountIn = FixedPointMath.divUp(amountInValueWad, tokenInPriceWad, tokenInUnit);
-            daoAmount = FixedPointMath.mulDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
+            uint256 cleanAmountIn = FixedPointMath.mulDivUp(amountInValueWad, tokenInUnit, tokenInPriceWad);
+            daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 

@@ -244,15 +244,11 @@ contract FixedPointMathTest is Test {
         assertEq(FixedPointMath.scaleDown(scaled, decimals, 0), value);
     }
 
-    function test_CustomScaleArithmeticUsesFullPrecision() public pure {
-        assertEq(FixedPointMath.mulDown(7, 5, 3), 11);
-        assertEq(FixedPointMath.mulUp(7, 5, 3), 12);
-        assertEq(FixedPointMath.divDown(7, 3, 5), 11);
-        assertEq(FixedPointMath.divUp(7, 3, 5), 12);
-        assertEq(FixedPointMath.mulDown(type(uint256).max, 2, 2), type(uint256).max);
-        assertEq(FixedPointMath.mulUp(type(uint256).max, 2, 2), type(uint256).max);
-        assertEq(FixedPointMath.divDown(type(uint256).max, 2, 2), type(uint256).max);
-        assertEq(FixedPointMath.divUp(type(uint256).max, 2, 2), type(uint256).max);
+    function test_MulDivArithmeticUsesFullPrecision() public pure {
+        assertEq(FixedPointMath.mulDivDown(7, 5, 3), 11);
+        assertEq(FixedPointMath.mulDivUp(7, 5, 3), 12);
+        assertEq(FixedPointMath.mulDivDown(type(uint256).max, 2, 2), type(uint256).max);
+        assertEq(FixedPointMath.mulDivUp(type(uint256).max, 2, 2), type(uint256).max);
     }
 
     // ---- mulDown/mulUp/divDown/divUp: rounding direction ----

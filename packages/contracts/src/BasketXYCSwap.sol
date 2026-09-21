@@ -62,13 +62,15 @@ contract BasketXYCSwap {
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, BasketXYCSwapRecomputeDetected());
             // Floor division for tokenOut is desired behavior — same rounding direction as XYCSwap.
-            ctx.swap.amountOut =
-                FixedPointMath.mulDown(ctx.swap.amountIn, effectiveBalanceOut, ctx.swap.balanceIn + ctx.swap.amountIn);
+            ctx.swap.amountOut = FixedPointMath.mulDivDown(
+                ctx.swap.amountIn, effectiveBalanceOut, ctx.swap.balanceIn + ctx.swap.amountIn
+            );
         } else {
             require(ctx.swap.amountIn == 0, BasketXYCSwapRecomputeDetected());
             // Ceiling division for tokenIn is desired behavior — same rounding direction as XYCSwap.
-            ctx.swap.amountIn =
-                FixedPointMath.mulUp(ctx.swap.amountOut, ctx.swap.balanceIn, effectiveBalanceOut - ctx.swap.amountOut);
+            ctx.swap.amountIn = FixedPointMath.mulDivUp(
+                ctx.swap.amountOut, ctx.swap.balanceIn, effectiveBalanceOut - ctx.swap.amountOut
+            );
         }
     }
 }

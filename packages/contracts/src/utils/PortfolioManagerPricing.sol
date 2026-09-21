@@ -43,7 +43,7 @@ library PortfolioManagerPricing {
     /// @dev The second multiplication uses weightIn as its explicit scale.
     function spotPrice(PoolState memory q) internal pure returns (uint256) {
         _requireNonZeroBalances(q);
-        return FixedPointMath.mulDown(FixedPointMath.divDown(q.balanceIn, q.balanceOut), q.weightOut, q.weightIn);
+        return FixedPointMath.mulDivDown(FixedPointMath.divDown(q.balanceIn, q.balanceOut), q.weightOut, q.weightIn);
     }
 
     /// @notice Amount of token `o` received for exactly `amountIn` of token `i`.

@@ -76,8 +76,8 @@ library OracleAdapter {
             uint256 price = priceWad(feeds[i]);
             uint256 unit = FixedPointMath.scaleDown(1, 0, tokenDecimals);
             totalValueWad += rounding == Rounding.Up
-                ? FixedPointMath.mulUp(balances[i], price, unit)
-                : FixedPointMath.mulDown(balances[i], price, unit);
+                ? FixedPointMath.mulDivUp(balances[i], price, unit)
+                : FixedPointMath.mulDivDown(balances[i], price, unit);
         }
     }
 }

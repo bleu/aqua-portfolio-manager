@@ -8,7 +8,7 @@ import {ud} from "prb-math/UD60x18.sol";
 
 /// @title FixedPointMath — arithmetic with explicit rounding directions
 /// @notice Up/Down denote rounding direction, including when converting decimal scales.
-/// Multiplication and division default to WAD and also accept an explicit scale. Powers
+/// Multiplication and division use WAD; mulDivDown/mulDivUp accept an explicit denominator. Powers
 /// use WAD inputs/outputs and provide conservative bounds rather than nearest estimates.
 library FixedPointMath {
     /// @notice Fixed-point one for powers and the default multiplication/division scale.
@@ -62,42 +62,32 @@ library FixedPointMath {
 
     /// @notice `a * b / WAD`, rounded down (floor).
     function mulDown(uint256 a, uint256 b) internal pure returns (uint256) {
-        return mulDown(a, b, WAD);
+        return mulDivDown(a, b, WAD);
     }
 
     /// @notice `a * b / WAD`, rounded up (ceil).
     function mulUp(uint256 a, uint256 b) internal pure returns (uint256) {
-        return mulUp(a, b, WAD);
+        return mulDivUp(a, b, WAD);
     }
 
     /// @notice `a * WAD / b`, rounded down (floor).
     function divDown(uint256 a, uint256 b) internal pure returns (uint256) {
-        return divDown(a, b, WAD);
+        return mulDivDown(a, WAD, b);
     }
 
     /// @notice `a * WAD / b`, rounded up (ceil).
     function divUp(uint256 a, uint256 b) internal pure returns (uint256) {
-        return divUp(a, b, WAD);
+        return mulDivUp(a, WAD, b);
     }
 
-    /// @notice a * b / scale, rounded down with a full-precision intermediate product.
-    function mulDown(uint256 a, uint256 b, uint256 scale) internal pure returns (uint256) {
-        return Math.mulDiv(a, b, scale);
+    /// @notice a * b / denominator, rounded down with a full-precision intermediate product.
+    function mulDivDown(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256) {
+        return Math.mulDiv(a, b, denominator);
     }
 
-    /// @notice a * b / scale, rounded up with a full-precision intermediate product.
-    function mulUp(uint256 a, uint256 b, uint256 scale) internal pure returns (uint256) {
-        return Math.mulDiv(a, b, scale, Math.Rounding.Ceil);
-    }
-
-    /// @notice a * scale / b, rounded down with a full-precision intermediate product.
-    function divDown(uint256 a, uint256 b, uint256 scale) internal pure returns (uint256) {
-        return Math.mulDiv(a, scale, b);
-    }
-
-    /// @notice a * scale / b, rounded up with a full-precision intermediate product.
-    function divUp(uint256 a, uint256 b, uint256 scale) internal pure returns (uint256) {
-        return Math.mulDiv(a, scale, b, Math.Rounding.Ceil);
+    /// @notice a * b / denominator, rounded up with a full-precision intermediate product.
+    function mulDivUp(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256) {
+        return Math.mulDiv(a, b, denominator, Math.Rounding.Ceil);
     }
 
     /// @notice Converts decimal units, rounding down when precision is lost.
@@ -105,7 +95,7 @@ library FixedPointMath {
     function scaleDown(uint256 value, uint8 fromDecimals, uint8 toDecimals) internal pure returns (uint256) {
         if (fromDecimals == toDecimals) return value;
         if (fromDecimals < toDecimals) return value * _decimalFactor(toDecimals - fromDecimals);
-        return divDown(value, _decimalFactor(fromDecimals - toDecimals), 1);
+        return mulDivDown(value, 1, _decimalFactor(fromDecimals - toDecimals));
     }
 
     /// @notice Converts decimal units, rounding up when precision is lost.
@@ -113,7 +103,7 @@ library FixedPointMath {
     function scaleUp(uint256 value, uint8 fromDecimals, uint8 toDecimals) internal pure returns (uint256) {
         if (fromDecimals == toDecimals) return value;
         if (fromDecimals < toDecimals) return value * _decimalFactor(toDecimals - fromDecimals);
-        return divUp(value, _decimalFactor(fromDecimals - toDecimals), 1);
+        return mulDivUp(value, 1, _decimalFactor(fromDecimals - toDecimals));
     }
 
     function _decimalFactor(uint8 difference) private pure returns (uint256) {
