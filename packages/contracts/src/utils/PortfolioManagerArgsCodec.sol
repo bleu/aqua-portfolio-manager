@@ -41,16 +41,13 @@ library PortfolioManagerArgsCodec {
     ///      comfortably wider than any real Chainlink heartbeat.
     uint256 private constant MEMBER_ENTRY_SIZE = 42;
 
-    /// @dev Business-rule bounds on universe shape -- independent per-axis sanity ceilings, much
-    ///      tighter than the wire format's own 255-group/255-member uint8 capacity, keeping the
-    ///      curve's group/member count within what a taker can reason about at a glance. A
-    ///      single-group universe has nothing to rebalance against, hence the floor. These do
-    ///      NOT by themselves guarantee every combination fits the 255-byte total `args` budget
-    ///      (e.g. MAX_GROUPS groups all simultaneously at MAX_MEMBERS_PER_GROUP members each
-    ///      still overflows it) -- `build()`'s own explicit length check is what enforces that,
-    ///      with a descriptive error instead of an opaque cast-overflow one layer up in
-    ///      `PortfolioManagerProgramBuilder`. `internal` rather than `private` so callers (tests,
-    ///      other bound checks) can reference them instead of duplicating the numbers.
+    /// @dev Business-rule bounds on universe shape -- much tighter than the wire format's own
+    ///      255-group/255-member uint8 capacity, keeping group/member count within what a taker
+    ///      can reason about at a glance. A single-group universe has nothing to rebalance
+    ///      against, hence the floor.
+    /// @dev These don't by themselves guarantee every combination fits the 255-byte `args`
+    ///      budget (e.g. MAX_GROUPS at MAX_MEMBERS_PER_GROUP each still overflows it) --
+    ///      `build()`'s own explicit length check enforces that separately.
     uint256 internal constant MIN_GROUPS = 2;
     uint256 internal constant MAX_GROUPS = 4;
     uint256 internal constant MAX_MEMBERS_PER_GROUP = 5;

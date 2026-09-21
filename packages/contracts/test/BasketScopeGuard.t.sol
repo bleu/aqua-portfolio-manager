@@ -211,14 +211,8 @@ contract BasketScopeGuardTest is Test {
     // Fuzz: cross-strategy invariant under randomized inputs
     // ---------------------------------------------------------------------
 
-    /// @notice ADR-0011's structural guarantee, generalized: PM's own attested strategy may
-    /// freely cross basket boundaries; every other strategy sharing the same wallet must stay
-    /// confined to a single basket. `_check` is stateless (immutable `basketOf`/
-    /// `TRUSTED_PM_STRATEGY_HASH`, no setter) -- there's no cross-call ordering to exercise, so
-    /// looping here buys broad input-space coverage (randomized PM/non-PM mix, token subsets,
-    /// lengths) per fuzz run, beyond the hand-picked scenarios
-    /// `test_AllowsPmStrategyEvenAcrossBaskets`/`test_RevertsOnCrossBasketStrategy`/
-    /// `test_AllowsSingleBasketStrategy` above already cover individually.
+    /// @notice Fuzzes randomized PM/non-PM strategy mixes, token subsets, and lengths against
+    /// `_check`'s stateless invariant, beyond the hand-picked scenarios above.
     function testFuzz_CrossStrategyInvariantHoldsUnderRandomizedTradeSequences(uint256 seed) public {
         address[] memory universe = new address[](5);
         universe[0] = tokenA; // basket 1
