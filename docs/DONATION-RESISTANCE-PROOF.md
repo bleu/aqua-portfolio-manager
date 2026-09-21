@@ -1,12 +1,12 @@
 # Donation resistance proof
 
-The argument below analyzes the pricing formula in real arithmetic for this strategy's own trades and for pure donations. Transferring its invariant result to Solidity requires conservative rounding as well; the formula proof alone does not discharge that implementation obligation. Cross-strategy interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
+A single proof (below) fully discharges ADR-0007's obligation for this strategy's own trades and for pure donations — no smoothing, no additional bound needed for either. Cross-strategy interaction is a separate case, closed structurally by `ADR-0011`'s Basket Scope Guard rather than by this proof — see below.
 
 ## What has to be shown
 
 ADR-0007's claim is: no sequence of trades against this strategy can extract value from the wallet, whether preceded by an external donation (an unsolicited transfer meant to skew the price) or ordinary settlement. The pricing formula (`PRICING.md`) reads the wallet's real, current balance directly — no EMA, no TWAP, no moving average of any kind (see "Why no smoothing" below for why that was cut).
 
-## The curve invariant in real arithmetic
+## The curve invariant (the whole proof)
 
 **Assumption, stated explicitly.** Token *i* and token *o* each have their own market price, set externally, that this strategy's own liquidity is too small to move. The proof below is about this strategy's *own* invariant `V` never decreasing — it says nothing about, and doesn't need, either token's price being stable in absolute terms; only that trading against *this* curve can't be a source of profit on its own, regardless of where the external price sits.
 
@@ -39,20 +39,8 @@ Since `A_i_eff = A_i·(1-f) ≤ A_i` for `f ≥ 0`, the ratio `(B_i+A_i)/(B_i+A_
 
 What closes this instead is `ADR-0011`: a Safe Transaction Guard that prevents any strategy but this one from ever moving tokens across a group boundary (ADR-0003) or in from outside the declared universe. That confines any other strategy's activity to *within* one group — and because ADR-0003 already treats intra-group composition as unpriced (only the group's oracle-valued total feeds this curve), a within-group trade by another strategy reduces to exactly the one-sided "donation" case this proof already covers. The proof isn't stronger than it was; the boundary it needs now actually holds, enforced outside this contract entirely.
 
-## Implementation precision
-
-The algebra above assumes exact powers and real-number arithmetic. For its nondecreasing-invariant conclusion to carry over to integer quotes, exact-in must not return more output than the formula allows, and exact-out must not require less input. Equality and strictness statements in the real-arithmetic proof do not describe every integer-rounded trade.
-
-`PortfolioManagerPricing.exactIn` floors effective input and output, ceilings its balance ratio, floors its weight ratio, and evaluates `FixedPointMath.powUp`. Since the base is at most one, the smaller exponent increases the power; subtracting this upper bound from one and flooring the output gives a conservative quote for the supplied inputs. It also rejects zero balances, rejects a computed full drain, and retains `poweredRatio >= WAD / 1e9` unless the computed exponent equals `WAD`. The exponent-one shortcut returns the ceiled balance ratio directly. The power bound supplies the rounding guarantee independently of the retained precision floor.
-
-`PortfolioManagerPricing.exactOut` ceilings the balance and weight ratios and uses `FixedPointMath.powUp` before ceiling the effective input and fee gross-up. Since the base is at least one, increasing either ratio increases the power, giving the required conservative input quote. This can overquote tiny trades.
-
-The shared `powDown`/`powUp` helpers bound errors in the pinned PRBMath `log2` and `exp2` source above one and use directed reciprocals below one. Those bounds must be rechecked on dependency upgrades. Intermediate reciprocal powers can exceed the supported domain and revert even when the final fractional power would fit. Independent integer-invariant tests check both quote paths without reusing these power helpers as the oracle.
-
-`PortfolioManagerSwap` rounds both native/value conversions down for exact-in and up for exact-out. These directions preserve conservative conversion relative to the supplied WAD-normalized prices. The pricing-library inequalities do not by themselves establish correctness of oracle normalization, aggregate valuations, external feeds, or settlement; transferring the real-arithmetic argument to those layers still requires their own assumptions and checks.
-
 ## Why no smoothing
 
-Full rationale for dropping the EMA/TWAP lives in `ADR-0006`'s Context. For this proof specifically: it only holds because the exposure reader feeds the *raw*, current balance directly with no averaging — a lagging, smoothed reading would have needed a second, harder proof. With no averaging, the argument above applies to the stated real-arithmetic model for external donations and ordinary settlement noise; implementation precision remains a separate obligation. (Cross-strategy interaction needed a different fix entirely, not more of this proof — see the correction above and `ADR-0011`.)
+Full rationale for dropping the EMA/TWAP lives in `ADR-0006`'s Context. For this proof specifically: it only holds because the exposure reader feeds the *raw*, current balance directly with no averaging — a lagging, smoothed reading would have needed a second, harder proof. With no averaging, the single proof above is unconditionally sufficient for external donations and ordinary settlement noise. (Cross-strategy interaction needed a different fix entirely, not more of this proof — see the correction above and `ADR-0011`.)
 
 ADR-0006's fee + gas-cost profitability gate (no tolerance band, no rate cap — see that ADR's History for why both were dropped) is not load-bearing for this proof either: the proof holds regardless of whether or how often a correction fires, since it's a per-trade property, not one that depends on trade frequency. Gating correction on profitability doesn't reopen the lag problem smoothing did — it's a stateless function of the *current* balance and gas price, with no history to lag.

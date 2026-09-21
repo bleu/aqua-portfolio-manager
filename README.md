@@ -49,8 +49,6 @@ cd packages/contracts
 
 # test/e2e/ forks Base directly (vm.createSelectFork) and deploys everything it needs inline —
 # no separate deploy step. Optional: set BASE_RPC_URL to avoid the public endpoint's rate limits.
-# Tests default to verified block 51609641. Set BASE_RPC_BLOCK=0 to test live state,
-# or set it to another block number to override the snapshot.
 cp .env.example .env
 
 forge build
