@@ -2,6 +2,7 @@
   "name": "aqua-portfolio-manager",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@10.13.1",
   "description": "1inch Aqua Incubator grant monorepo: contracts + supporting tooling",
   "scripts": {
     "contracts:build": "pnpm --filter @aqua-portfolio-manager/contracts build",
