@@ -14,6 +14,13 @@ library FixedPointMath {
     /// @notice Fixed-point one for powers and the default multiplication/division scale.
     uint256 internal constant WAD = 1e18;
 
+    // PRBMath log2: 59 steps, 18 exact weights, 41 truncations (<41 raw units),
+    // tail <2 and normalization/state loss <3. A 64-unit correction covers these losses.
+    uint256 private constant LOG2_ERROR = 64;
+    // exp2's 64 factors and input conversion each err by <2^-64; product shifts add
+    // <64*2^-191. Total relative error is <4e-18; allow 8e-18 in either direction.
+    uint256 private constant EXP2_RELATIVE_ERROR = 8;
+
     error FixedPointMathUnsupportedDecimalDifference(uint8 difference);
 
     /// @notice Lower bound on base^exponent, with WAD-scaled inputs/output; 0^0 is WAD.
@@ -36,28 +43,20 @@ library FixedPointMath {
         return _powUpAboveOne(base, exponent);
     }
 
-    /// @dev Uses the pinned PRBMath log2/exp2 implementation; recheck these bounds on upgrades.
-    /// log2 has 59 fractional iterations. Its first 18 bit weights are exact; the remaining
-    /// 41 lose <1 raw unit each. The uncomputed tail loses <2 units, and normalization plus
-    /// the geometrically weighted state truncations lose <3 more. Adding 64 therefore
-    /// upper-bounds log2. Ceiling its product with exponent preserves that upper bound.
-    /// exp2 loses <4e-18 relatively before its final integer truncation: 64 factors each
-    /// lose <2^-64, the argument conversion loses <2^-64, and product shifts <64*2^-191.
-    /// Adding ceil(result * 8e-18) + 1 covers that relative loss and the final truncation.
-    /// PRBMath's exponent limit and checked arithmetic revert if the bound cannot fit.
+    /// @dev Recheck the margins against pinned PRBMath on upgrades; +1 covers final truncation.
+    /// FixedPointMath.t.sol checks direction with test_PowUpBoundsIndependentReferences and
+    /// testFuzz_PowUpSquareRootBoundsExactIntegerSquare, independently of these helpers.
     function _powUpAboveOne(uint256 base, uint256 exponent) private pure returns (uint256) {
-        uint256 logUpper = ud(base).log2().unwrap() + 64;
+        uint256 logUpper = ud(base).log2().unwrap() + LOG2_ERROR;
         uint256 result = ud(mulUp(logUpper, exponent)).exp2().unwrap();
-        return result + mulUp(result, 8) + 1;
+        return result + mulUp(result, EXP2_RELATIVE_ERROR) + 1;
     }
 
-    /// @dev PRBMath log2 truncates downward. Flooring its product with exponent preserves
-    /// a lower binary exponent. exp2's factors can err in either direction, so subtract
-    /// ceil(result * 8e-18) to cover its relative overestimate (<4e-18). Its final integer
-    /// truncation already favors this lower bound. The true result is at least WAD here.
+    /// @dev log2 and its product round down; subtract exp2's error margin. The result is >= WAD.
+    /// See FixedPointMath.t.sol's testFuzz_PowDownSquareRootBoundsExactIntegerSquare.
     function _powDownAboveOne(uint256 base, uint256 exponent) private pure returns (uint256) {
         uint256 result = ud(mulDown(ud(base).log2().unwrap(), exponent)).exp2().unwrap();
-        return Math.max(WAD, result - mulUp(result, 8));
+        return Math.max(WAD, result - mulUp(result, EXP2_RELATIVE_ERROR));
     }
 
     /// @notice `a * b / WAD`, rounded down (floor).

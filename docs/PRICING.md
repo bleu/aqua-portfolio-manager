@@ -18,6 +18,10 @@ Because `B_i`/`B_o` is the same real balance Aqua actually moves on pull/push, t
 
 Token *i* priced in terms of token *o*, before fees. Standard constant-mean result — see Martinelli & Mushegian (2019), cited above, for the full derivation.
 
+## Rounding conventions
+
+Group reserves, including feed normalization, round up on the input side and down on the output side. Native-token/value conversions round down for exact-in and up for exact-out. Shared arithmetic and decimal conversion helpers live in `FixedPointMath`; their API and power bounds are documented there.
+
 ## Exact-in swap
 
 Trader specifies `A_i` (amount of token *i* they're sending in); solve for `A_o`.
@@ -37,8 +41,6 @@ Trader specifies `A_o` (amount of token *o* they want out); solve for `A_i`, the
     A_i = ceil(A_i_eff / (1 - f))
 
 **Rounding:** ceil the balance ratio, weight ratio, effective input, and fee gross-up; use `FixedPointMath.powUp`. Require `A_o < B_o`; zero output requires zero input.
-
-Group reserves round up on the input side and down on the output side. Native-token/value conversions round down for exact-in and up for exact-out. Shared arithmetic and decimal conversion helpers live in `FixedPointMath`; their API and power bounds are documented there.
 
 ## Degenerate cases
 
