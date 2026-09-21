@@ -120,6 +120,50 @@ contract FixedPointMathTest is Test {
         assertLe(resultHigh, resultLow, "for base < WAD, pow must decrease as exponent increases");
     }
 
+    function _powUp(uint256 base, uint256 exponent) external pure returns (uint256) {
+        return FixedPointMath.powUp(base, exponent);
+    }
+
+    function test_PowUpPreservesExactIdentities() public pure {
+        assertEq(FixedPointMath.powUp(WAD, type(uint256).max), WAD);
+        assertEq(FixedPointMath.powUp(type(uint256).max, 0), WAD);
+        assertEq(FixedPointMath.powUp(type(uint256).max, WAD), type(uint256).max);
+    }
+
+    function test_PowUpRejectsBaseBelowOne() public {
+        vm.expectRevert(FixedPointMath.FixedPointMathBaseBelowOne.selector);
+        this._powUp(WAD - 1, WAD / 2);
+    }
+
+    function test_PowUpRejectsExponentOutsidePrbDomain() public {
+        vm.expectPartialRevert(bytes4(keccak256("PRBMath_UD60x18_Exp2_InputTooBig(uint256)")));
+        this._powUp(2 * WAD, 192 * WAD);
+    }
+
+    function test_PowUpBoundsIndependentReferences() public pure {
+        // ceil(WAD * (base/WAD)^(exponent/WAD)), evaluated with 160-digit Decimal arithmetic.
+        _assertPowUpReference(WAD + 1, WAD / 2, WAD + 1);
+        _assertPowUpReference(WAD + 101, 111111111111111112, WAD + 12);
+        _assertPowUpReference(2 * WAD, WAD / 3, 1259921049894873165);
+        _assertPowUpReference(3 * WAD, 3 * WAD / 2, 5196152422706631881);
+        _assertPowUpReference(1e30, WAD / 10, 15848931924611134853);
+        _assertPowUpReference(2 * WAD, 191 * WAD, (uint256(1) << 191) * WAD);
+    }
+
+    function _assertPowUpReference(uint256 base, uint256 exponent, uint256 expected) internal pure {
+        uint256 actual = FixedPointMath.powUp(base, exponent);
+        assertGe(actual, expected, "power must never understate the independent reference");
+        // Also bound overcharging for these fixtures; this is not a lower-bound tolerance.
+        assertLe(actual - expected, expected / 1e13 + 1, "power bound must remain close to the curve");
+    }
+
+    /// forge-config: default.fuzz.runs = 50000
+    function testFuzz_PowUpSquareRootBoundsExactIntegerSquare(uint256 base) public pure {
+        base = bound(base, WAD, 1e36);
+        uint256 root = FixedPointMath.powUp(base, WAD / 2);
+        assertGe(root * root, base * WAD, "upper square root must not round below the true root");
+    }
+
     // ---- mulDown/mulUp/divDown/divUp: rounding direction ----
 
     function testFuzz_MulDownNeverExceedsMulUp(uint256 a, uint256 b) public pure {

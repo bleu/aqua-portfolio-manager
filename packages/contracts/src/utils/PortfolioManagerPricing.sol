@@ -7,7 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title PortfolioManagerPricing — the constant-mean weighted curve, per PRICING.md
-/// @notice Implements PRICING.md's spot-price, exact-in, and exact-out formulas exactly — the
+/// @notice Implements fixed-point versions of PRICING.md's pricing formulas — the
 ///         published Balancer weighted-pool formula (Martinelli & Mushegian, 2019,
 ///         "Balancer: A non-custodial portfolio manager, liquidity provider, and price
 ///         sensor"), reimplemented from scratch (see THIRD_PARTY_NOTICES.md / ADR-0004), not
@@ -24,16 +24,9 @@ library PortfolioManagerPricing {
     error PortfolioManagerPricingInsufficientOutputBalance(uint256 balanceOut, uint256 amountOut);
     error PortfolioManagerPricingPoweredRatioBelowPrecisionFloor(uint256 poweredRatio);
 
-    /// @dev At extreme weight skew combined with a small `balanceIn`/large trade, `poweredRatio`
-    ///      can compute to a raw WAD value so small it's numerically untrustworthy (a handful of
-    ///      integer units out of 1e18) rather than a real answer -- confirmed via exact-integer
-    ///      arithmetic fuzzing (`testFuzz_ExactInInvariantHoldsUnderExactIntegerArithmeticAtIntegerExponent`)
-    ///      to leak real value to the trader even while still passing `amountOut < balanceOut`
-    ///      (the guard that only catches the *exactly-zero* case). `1e-9` of `WAD` mirrors the
-    ///      precision floor this library's own earlier hand-rolled `ln`/`exp` series used to
-    ///      guard directly at the exponent level -- rebuilt here as a postcondition on `pow`'s
-    ///      output instead, so it holds regardless of which underlying `pow` implementation is
-    ///      in use.
+    /// @dev Rejects exact-in powers below 1e-9 where fixed-point error can dominate the
+    /// remaining output reserve. This is a precision floor on the power, not a minimum
+    /// balance or a proof of directed rounding for all accepted quotes.
     uint256 private constant MIN_TRUSTWORTHY_POWERED_RATIO = WAD / 1e9;
 
     /// @param weightIn/weightOut WAD-scaled; need not sum to WAD by themselves (only the full
@@ -59,18 +52,10 @@ library PortfolioManagerPricing {
     }
 
     /// @notice Amount of token `o` received for exactly `amountIn` of token `i`.
-    /// @dev Rounds `amountOut` DOWN — the pool keeps the remainder, never the trader, same
-    ///      direction `BasketXYCSwap.sol`'s xy=k special case already uses. That requires
-    ///      `ratio` to be rounded UP (ceiled), not down: `poweredRatio` is monotonic in `ratio`,
-    ///      so flooring `ratio` would floor `poweredRatio` too, which *inflates*
-    ///      `WAD - poweredRatio` (and therefore `amountOut`) past the true value — handing the
-    ///      trader up to a few wei the curve doesn't actually allow (caught by
-    ///      `test_ExactInRoundsInThePoolsFavorAtEqualWeights`, which hits `pow`'s exact
-    ///      `exponent == WAD` shortcut, so this fix is exact there). Off the equal-weight
-    ///      shortcut, `pow`'s own series truncation (already floor-biased, see
-    ///      `FixedPointMath.pow`) is composed on top of this ceiled input rather than proven
-    ///      bit-exact through the general case — PoC-grade precision, not a closed rounding
-    ///      proof through `ln`/`exp`.
+    /// @dev Ceils the input ratio and floors the final output division. For equal weights,
+    /// pow returns the ratio exactly and those steps round in the pool's favor. At unequal
+    /// weights, PRBMath pow is approximate: the precision floor and invariant tests provide
+    /// coverage, not a closed proof that every accepted quote rounds in the pool's favor.
     /// @dev At an extreme weight ratio combined with a small `balanceIn` and a large trade,
     ///      `poweredRatio` can collapse to a raw WAD value near (or exactly) 0 -- a value
     ///      technically nonzero but well below what fixed-point precision can represent
@@ -114,8 +99,11 @@ library PortfolioManagerPricing {
         require(amountOut < q.balanceOut, PortfolioManagerPricingInsufficientOutputBalance(q.balanceOut, amountOut));
 
         uint256 ratio = FixedPointMath.divUp(q.balanceOut, q.balanceOut - amountOut);
-        uint256 exponent = FixedPointMath.divDown(q.weightOut, q.weightIn);
-        uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
+        // Here ratio >= WAD, so increasing either ratio or exponent increases the power.
+        // Both must round up, and pow itself needs an upper bound before subtracting WAD:
+        // ceiling the later divisions cannot recover precision already lost inside pow.
+        uint256 exponent = FixedPointMath.divUp(q.weightOut, q.weightIn);
+        uint256 poweredRatio = FixedPointMath.powUp(ratio, exponent);
 
         uint256 amountInEff = FixedPointMath.mulUp(q.balanceIn, poweredRatio - WAD);
         amountIn = FixedPointMath.divUp(amountInEff, WAD - q.feeWad);
