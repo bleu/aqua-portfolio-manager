@@ -21,12 +21,7 @@ Two checks, both gated on `maxDeviationBps != 0`, each solving a different half 
 - **Swap-time, pairwise:** in `PortfolioManagerSwap`, immediately after building the pair's `Quote` (before pricing the trade), `spotPrice(quote)`'s deviation from `WAD` is checked against `maxDeviationBps`. Only the two groups already involved in the trade — not the whole portfolio — keeping the hot path's cost unchanged for every group not being traded. This is a check against *current* state, not the hypothetical post-trade state: it answers "is this pair already too far gone to trade against," not "would this specific trade push it over."
 - **Ship-time, whole-portfolio:** a new `view` function on `PortfolioManagerStrategyValidator`, `requireBalancedWithinTolerance`, checks every group's real share of total portfolio value against its target weight. A one-time cost paid at `ship()`, so checking the whole portfolio (not just a pair) is affordable — batched as a third leg alongside the existing `requireUniverseMatches` call in the same `MultiSendCallOnly` transaction.
 
-Both parse the same `maxDeviationBps` out of the same encoded args — one config *value*, not two —
-but the two checks measure different things against it: the swap-time check is a price-ratio
-deviation (normalized by `WAD`), the ship-time check is a portfolio-share deviation (normalized by
-the group's own target weight). They coincide closely for a 50/50 two-group pair, but diverge for
-unequal weights or more groups — the same configured number is not equally strict on both sides in
-general. Not reconciled here; worth a follow-up decision on whether they should share one formula.
+Both parse the same `maxDeviationBps` out of the same encoded args — one config *value*, not two — but the two checks measure different things against it: the swap-time check is a price-ratio deviation (normalized by `WAD`), the ship-time check is a portfolio-share deviation (normalized by the group's own target weight). They coincide closely for a 50/50 two-group pair, but diverge for unequal weights or more groups — the same configured number is not equally strict on both sides in general. Not reconciled here; worth a follow-up decision on whether they should share one formula.
 
 ## Alternatives considered
 
