@@ -16,8 +16,8 @@ Sets up a new dedicated maker wallet for a Portfolio Manager strategy, per
    Guard to.
 2. Compute the PM strategy's hash off-chain (`keccak256(strategy)`) from its already-built
    strategy bytes.
-3. Deploy `BasketScopeGuard`, passing the Safe's address, the trusted PM strategy hash, and the
-   universe's token → basket mapping.
+3. Deploy `BasketScopeGuard`, passing Aqua's address, the Safe's address, the trusted PM strategy
+   hash, and the universe's token → basket mapping.
 4. Install the Guard on the Safe (`Safe.setGuard(guardAddress)`) before shipping anything — the
    Guard cannot see transactions that happened before it was installed.
 5. If reusing a Safe with prior activity, first scan its `Shipped` events off-chain to confirm no
