@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 /// exists to answer a design question: what does swapVM need to price tokenIn -> tokenOut
 /// while also accounting for a third token's balance. Not part of any milestone deliverable.
 
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {FixedPointMath} from "./utils/FixedPointMath.sol";
 import {Calldata} from "@1inch/solidity-utils/contracts/libraries/Calldata.sol";
 import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
@@ -62,12 +62,13 @@ contract BasketXYCSwap {
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, BasketXYCSwapRecomputeDetected());
             // Floor division for tokenOut is desired behavior — same rounding direction as XYCSwap.
-            ctx.swap.amountOut = (ctx.swap.amountIn * effectiveBalanceOut) / (ctx.swap.balanceIn + ctx.swap.amountIn);
+            ctx.swap.amountOut =
+                FixedPointMath.mulDown(ctx.swap.amountIn, effectiveBalanceOut, ctx.swap.balanceIn + ctx.swap.amountIn);
         } else {
             require(ctx.swap.amountIn == 0, BasketXYCSwapRecomputeDetected());
             // Ceiling division for tokenIn is desired behavior — same rounding direction as XYCSwap.
             ctx.swap.amountIn =
-                Math.ceilDiv(ctx.swap.amountOut * ctx.swap.balanceIn, (effectiveBalanceOut - ctx.swap.amountOut));
+                FixedPointMath.mulUp(ctx.swap.amountOut, ctx.swap.balanceIn, effectiveBalanceOut - ctx.swap.amountOut);
         }
     }
 }

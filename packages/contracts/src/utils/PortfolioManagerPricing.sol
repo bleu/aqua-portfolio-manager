@@ -3,7 +3,6 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title PortfolioManagerPricing — the constant-mean weighted curve, per PRICING.md
@@ -12,11 +11,9 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 ///         "Balancer: A non-custodial portfolio manager, liquidity provider, and price
 ///         sensor"), reimplemented from scratch (see THIRD_PARTY_NOTICES.md / ADR-0004), not
 ///         Balancer's GPL Solidity.
-/// @dev `balanceIn`/`balanceOut` here are already-resolved values — either a single-token
-///      group's raw wallet `balanceOf` reading, or a multi-token group's
-///      `OracleAdapter.groupValueWad` sum (ADR-0003). This library is opaque to which case
-///      produced them and never itself reads a balance or a price — PRICING.md's own scope
-///      note is explicit that resolving `B_i`/`B_o` is a prior step, not this formula's job.
+/// @dev Balances and quoted amounts must share the same units. PortfolioManagerSwap supplies
+/// oracle-valued group totals and converts native token amounts around these calls. This
+/// library itself never reads a balance or price.
 library PortfolioManagerPricing {
     uint256 internal constant WAD = FixedPointMath.WAD;
 
@@ -26,7 +23,7 @@ library PortfolioManagerPricing {
 
     /// @dev Rejects exact-in powers below 1e-9 where fixed-point error can dominate the
     /// remaining output reserve. This is a precision floor on the power, not a minimum
-    /// balance or a proof of directed rounding for all accepted quotes.
+    /// balance. Retained as a limit on near-total depletion even with directed powers.
     uint256 private constant MIN_TRUSTWORTHY_POWERED_RATIO = WAD / 1e9;
 
     /// @param weightIn/weightOut WAD-scaled; need not sum to WAD by themselves (only the full
@@ -43,36 +40,26 @@ library PortfolioManagerPricing {
 
     /// @notice `SP(i→o) = (B_i / w_i) / (B_o / w_o)`, WAD-scaled, before fees — token `i`
     ///         priced in terms of token `o`.
-    /// @dev The second step multiplies by a *weight ratio*, not a WAD-scaled factor, so it's
-    ///      `Math.mulDiv(x, weightOut, weightIn)` directly rather than `FixedPointMath.mulDown`
-    ///      (which assumes a `/ WAD` denominator) -- same floor rounding either way.
+    /// @dev The second multiplication uses weightIn as its explicit scale.
     function spotPrice(PoolState memory q) internal pure returns (uint256) {
         _requireNonZeroBalances(q);
-        return Math.mulDiv(FixedPointMath.divDown(q.balanceIn, q.balanceOut), q.weightOut, q.weightIn);
+        return FixedPointMath.mulDown(FixedPointMath.divDown(q.balanceIn, q.balanceOut), q.weightOut, q.weightIn);
     }
 
     /// @notice Amount of token `o` received for exactly `amountIn` of token `i`.
-    /// @dev Ceils the input ratio and floors the final output division. For equal weights,
-    /// pow returns the ratio exactly and those steps round in the pool's favor. At unequal
-    /// weights, PRBMath pow is approximate: the precision floor and invariant tests provide
-    /// coverage, not a closed proof that every accepted quote rounds in the pool's favor.
-    /// @dev At an extreme weight ratio combined with a small `balanceIn` and a large trade,
-    ///      `poweredRatio` can collapse to a raw WAD value near (or exactly) 0 -- a value
-    ///      technically nonzero but well below what fixed-point precision can represent
-    ///      trustworthily -- which would otherwise silently hand out close to the pool's entire
-    ///      `balanceOut` for an ordinary-sized trade. Guarded explicitly below
-    ///      (`MIN_TRUSTWORTHY_POWERED_RATIO`), not just via the downstream `amountOut <
-    ///      balanceOut` check, which only catches the exactly-zero case.
+    /// @dev Ceils the input ratio, floors the exponent (the base is <= WAD), and uses an
+    /// upper bound on the power before subtracting it from WAD. Flooring the resulting
+    /// output therefore preserves the pool-favoring direction through every step.
+    /// @dev The existing powered-ratio floor still limits near-total depletion at unequal
+    /// weights. The directed power bound supplies conservative rounding independently.
     function exactIn(PoolState memory q, uint256 amountIn) internal pure returns (uint256 amountOut) {
         _requireNonZeroBalances(q);
 
         uint256 amountInEff = FixedPointMath.mulDown(amountIn, WAD - q.feeWad);
         uint256 ratio = FixedPointMath.divUp(q.balanceIn, q.balanceIn + amountInEff);
         uint256 exponent = FixedPointMath.divDown(q.weightIn, q.weightOut);
-        uint256 poweredRatio = FixedPointMath.pow(ratio, exponent);
-        // `exponent == WAD` is `pow`'s own exact shortcut (returns `ratio` unchanged, no series
-        // involved) -- a legitimately tiny `poweredRatio` there is an exact value, not a
-        // precision artifact, so the floor only applies off that shortcut.
+        uint256 poweredRatio = FixedPointMath.powUp(ratio, exponent);
+        // Equal exponents use the exact identity shortcut and bypass the precision floor.
         require(
             exponent == WAD || poweredRatio >= MIN_TRUSTWORTHY_POWERED_RATIO,
             PortfolioManagerPricingPoweredRatioBelowPrecisionFloor(poweredRatio)

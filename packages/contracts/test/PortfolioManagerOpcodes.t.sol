@@ -337,6 +337,46 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
     }
 
+    function test_ExactOutRoundsRequestedOutputValueUp() public {
+        feedB.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 100);
+        tokenB.burn(maker, INITIAL_BALANCE - 100);
+
+        // Three output units are worth 1.5 value units. Flooring that request to one
+        // charges only three input units, violating (100 + input) * (100 - 3) >= 100^2.
+        // Constant prices cancel from this equal-weight invariant, so native balances
+        // provide an independent integer oracle without using the production pricing math.
+        (, uint256 amountOut) = _swapExactOut(order, 3);
+
+        assertEq(amountOut, 3);
+        assertGe(
+            tokenA.balanceOf(maker) * tokenB.balanceOf(maker),
+            100 * 100,
+            "rounding output value down must not decrease the settled invariant"
+        );
+    }
+
+    function test_ExactOutRoundsRequiredNativeInputUp() public {
+        feedA.setAnswer(2e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 100);
+        tokenB.burn(maker, INITIAL_BALANCE - 100);
+
+        // The conservative curve quote requires three value units, or 1.5 input units.
+        // Paying only one native unit would leave 101 * 99 < 100^2 in the maker's wallet.
+        (, uint256 amountOut) = _swapExactOut(order, 1);
+
+        assertEq(amountOut, 1);
+        assertGe(
+            tokenA.balanceOf(maker) * tokenB.balanceOf(maker),
+            100 * 100,
+            "rounding native input down must not decrease the settled invariant"
+        );
+    }
+
     function test_ProtocolFeeSkipsWhenMakerUnderfundedExactOut() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 

@@ -156,6 +156,25 @@ contract OracleAdapterTest is Test {
         assertEq(totalValue, 20_000e18);
     }
 
+    function test_GroupValueUsesFullPrecisionBalanceConversion() public {
+        ERC20MockWithDecimals token = new ERC20MockWithDecimals(18);
+        MockAggregatorV3 mock = new MockAggregatorV3(18, 1e18, block.timestamp);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(token);
+        uint256[] memory balances = new uint256[](1);
+        balances[0] = 1e60;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](1);
+        feeds[0] = _feed(mock, 1 hours);
+
+        // The unscaled product 1e60 * 1e18 overflows, but its normalized value fits.
+        assertEq(OracleAdapter.groupValueWad(tokens, balances, feeds), 1e60);
+    }
+
+    function test_FeedNormalizationRoundsDown() public {
+        MockAggregatorV3 mock = new MockAggregatorV3(24, 1_999_999, block.timestamp);
+        assertEq(OracleAdapter.priceWad(_feed(mock, 1 hours)), 1);
+    }
+
     function test_GroupValueRevertsIfAnyMemberFeedIsStale() public {
         ERC20MockWithDecimals tokenA = new ERC20MockWithDecimals(18);
         ERC20MockWithDecimals tokenB = new ERC20MockWithDecimals(18);

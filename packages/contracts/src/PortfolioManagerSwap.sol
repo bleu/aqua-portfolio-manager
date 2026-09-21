@@ -41,12 +41,6 @@ import {FixedPointMath} from "./utils/FixedPointMath.sol";
 abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
 
-    uint256 private constant WAD = FixedPointMath.WAD;
-    /// @dev Converts PortfolioManagerArgsCodec's `feeBps` (PM_BPS = 1e9 scale) into
-    ///      PortfolioManagerPricing's `feeWad` (WAD = 1e18 scale) — both scales represent
-    ///      100% at their own constant, so this ratio is exact with no rounding.
-    uint256 private constant FEE_WAD_PER_BPS = WAD / PortfolioManagerArgsCodec.PM_BPS;
-
     constructor(address aqua) Fee(aqua) {}
 
     /// @param args Encoded via PortfolioManagerArgsCodec.build (tokens, weights, feeBps)
@@ -65,7 +59,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker),
             weightIn: groups[groupInIdx].weight,
             weightOut: groups[groupOutIdx].weight,
-            feeWad: uint256(feeBps) * FEE_WAD_PER_BPS
+            feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
         });
 
         // The curve's own balanceIn/balanceOut are oracle-VALUE-scaled (ADR-0003: `Σ balance_j
@@ -80,6 +74,9 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
             _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut);
 
+        uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
+        uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
+
         uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
         uint256 daoAmount;
 
@@ -91,12 +88,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             // exact-in branch, minus the wrap-the-rest-of-program recursion we don't need
             // here — nothing runs after this instruction).
             uint256 fullAmountIn = ctx.swap.amountIn;
-            daoAmount = fullAmountIn * daoBps / FEE_BPS;
+            daoAmount = FixedPointMath.mulDown(fullAmountIn, daoBps, FEE_BPS);
             uint256 netAmountIn = fullAmountIn - daoAmount;
 
-            uint256 netAmountInValueWad = netAmountIn * tokenInPriceWad / 10 ** tokenInDecimals;
+            uint256 netAmountInValueWad = FixedPointMath.mulDown(netAmountIn, tokenInPriceWad, tokenInUnit);
             uint256 amountOutValueWad = PortfolioManagerPricing.exactIn(quote, netAmountInValueWad);
-            ctx.swap.amountOut = amountOutValueWad * 10 ** tokenOutDecimals / tokenOutPriceWad;
+            ctx.swap.amountOut = FixedPointMath.divDown(amountOutValueWad, tokenOutPriceWad, tokenOutUnit);
             ctx.swap.amountIn = fullAmountIn;
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
@@ -104,10 +101,10 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             // curve fee (PortfolioManagerPricing.exactOut already grosses that up internally),
             // then the protocol fee is grossed up on top of that — mirrors Fee.sol's own
             // exact-out branch, which fees only once the swap amount is known.
-            uint256 amountOutValueWad = ctx.swap.amountOut * tokenOutPriceWad / 10 ** tokenOutDecimals;
+            uint256 amountOutValueWad = FixedPointMath.mulUp(ctx.swap.amountOut, tokenOutPriceWad, tokenOutUnit);
             uint256 amountInValueWad = PortfolioManagerPricing.exactOut(quote, amountOutValueWad);
-            uint256 cleanAmountIn = amountInValueWad * 10 ** tokenInDecimals / tokenInPriceWad;
-            daoAmount = cleanAmountIn * daoBps / (FEE_BPS - daoBps);
+            uint256 cleanAmountIn = FixedPointMath.divUp(amountInValueWad, tokenInPriceWad, tokenInUnit);
+            daoAmount = FixedPointMath.mulDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 

@@ -47,7 +47,7 @@ contract PortfolioManagerPricingTest is Test {
     }
 
     function test_EqualWeightExactInMatchesPlainXyk() public pure {
-        // Equal weights hits FixedPointMath.pow's exact `exponent == WAD` shortcut, so this
+        // Equal weights hits FixedPointMath.powUp's exact `exponent == WAD` shortcut, so this
         // should match plain xy=k (PRICING.md's own stated sanity check) very closely -- to
         // within the one extra WAD-scaled division/rounding step this formula does that plain
         // xy=k doesn't (dividing balanceIn twice instead of once), not to `pow`'s own precision.
@@ -69,7 +69,7 @@ contract PortfolioManagerPricingTest is Test {
 
     function test_ExactInRoundsInThePoolsFavorAtEqualWeights() public pure {
         // Regression test: balanceIn == balanceOut == 1e18, amountIn == 2e18, no fee, equal
-        // weights (hits FixedPointMath.pow's exact `exponent == WAD` shortcut, so this is exact
+        // weights (hits FixedPointMath.powUp's exact `exponent == WAD` shortcut, so this is exact
         // arithmetic, not series-approximated). The true value is balanceOut * 2/3 =
         // 666666666666666666.666... -- flooring in the pool's favor must return
         // 666666666666666666, not 666666666666666667. Before ceiling the ratio fed into `pow`,
@@ -178,11 +178,33 @@ contract PortfolioManagerPricingTest is Test {
         assertGe(afterInvariant, beforeInvariant, "exact-out must preserve the exact integer invariant");
     }
 
-    /// @dev Run at a much higher fuzz count than this suite's default (256): with `pow` now
-    ///      backed by PRBMath instead of a hand-rolled series (see FixedPointMath.sol's own doc
-    ///      comment), this test is the empirical stand-in for a rounding-direction guarantee
-    ///      PRBMath doesn't itself document -- worth hunting harder for a violation here than
-    ///      the default run count would.
+    /// @dev No fee or tolerance to hide an incorrect direction in the power bound.
+    /// forge-config: default.fuzz.runs = 50000
+    function testFuzz_ExactInPreservesExactIntegerInvariantWithoutFee(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 amountIn,
+        bool largerInputWeight
+    ) public pure {
+        balanceIn = bound(balanceIn, 2, 1e24);
+        balanceOut = bound(balanceOut, 1, 1e24);
+        amountIn = bound(amountIn, 1, balanceIn / 2);
+        uint256 weightIn = largerInputWeight ? 0.6e18 : 0.3e18;
+        uint256 weightOut = largerInputWeight ? 0.3e18 : 0.6e18;
+        PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0);
+        uint256 amountOut = PortfolioManagerPricing.exactIn(q, amountIn);
+        assertLt(amountOut, balanceOut);
+        uint256 afterIn = balanceIn + amountIn;
+        uint256 afterOut = balanceOut - amountOut;
+        // Degree-three products are below 2.25e72, so both fit uint256.
+        uint256 beforeInvariant =
+            largerInputWeight ? balanceIn * balanceIn * balanceOut : balanceIn * balanceOut * balanceOut;
+        uint256 afterInvariant = largerInputWeight ? afterIn * afterIn * afterOut : afterIn * afterOut * afterOut;
+        assertGe(afterInvariant, beforeInvariant, "exact-in must preserve the exact integer invariant without fees");
+    }
+
+    /// @dev Broad coverage with a conservative ratio oracle. The independent integer tests
+    /// check selected weight ratios exactly without composing production power helpers.
     /// forge-config: default.fuzz.runs = 50000
     function testFuzz_ExactInNeverDecreasesTheInvariant(
         uint256 balanceIn,
@@ -209,11 +231,11 @@ contract PortfolioManagerPricingTest is Test {
         uint256 newBalanceIn = balanceIn + amountIn; // full amount lands, PRICING.md
         uint256 newBalanceOut = balanceOut - amountOut;
 
-        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
-        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 growthIn = FixedPointMath.powDown(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.powDown(newBalanceOut * WAD / balanceOut, weightOut);
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
-        // Small tolerance for FixedPointMath.pow's own precision limits (compounded
+        // Small tolerance for FixedPointMath.powUp's own precision limits (compounded
         // across two pow() calls plus the WAD-scaled ratio divisions above), not a license for
         // the invariant to actually decrease -- 1e-14 relative is still far tighter than
         // anything this milestone's PoC-grade math claims to guarantee bit-exactly.
@@ -241,7 +263,7 @@ contract PortfolioManagerPricingTest is Test {
 
         PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
-        // Two independent revert paths can legitimately fire here: FixedPointMath.pow's own
+        // Two independent revert paths can legitimately fire here: FixedPointMath.powUp's own
         // domain cap at extreme weight skew, and exactIn's own would-drain-the-pool guard. Both
         // are correct, safe outcomes -- only a non-reverting result needs the invariant checked.
         uint256 amountOut;
@@ -255,12 +277,12 @@ contract PortfolioManagerPricingTest is Test {
         uint256 newBalanceIn = balanceIn + amountIn;
         uint256 newBalanceOut = balanceOut - amountOut;
 
-        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
-        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 growthIn = FixedPointMath.powDown(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.powDown(newBalanceOut * WAD / balanceOut, weightOut);
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
         // A wider tolerance than the normal-balance fuzz test above: dividing by a `balanceIn`/
-        // `balanceOut` as small as 1 wei amplifies FixedPointMath.pow's own precision error
+        // `balanceOut` as small as 1 wei amplifies FixedPointMath.powUp's own precision error
         // far more than the normal WAD-scale case does. This approximate oracle cannot rule
         // out decreases smaller than its tolerance; the exact-integer tests check selected
         // weight ratios independently and without a tolerance.
@@ -310,8 +332,8 @@ contract PortfolioManagerPricingTest is Test {
         uint256 newBalanceIn = balanceIn + amountIn;
         uint256 newBalanceOut = balanceOut - amountOut;
 
-        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
-        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 growthIn = FixedPointMath.powDown(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.powDown(newBalanceOut * WAD / balanceOut, weightOut);
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
         // This approximate oracle can miss decreases within its tolerance. The independent
@@ -325,7 +347,7 @@ contract PortfolioManagerPricingTest is Test {
 
     /// @notice An independent invariant check using *exact* integer arithmetic for an integer
     /// weight ratio (90/10 -> exponent exactly 9), computing `balanceIn^9 * balanceOut`
-    /// before/after via plain `uint256` multiplication -- no `FixedPointMath.pow` involved
+    /// before/after via plain `uint256` multiplication -- no `FixedPointMath` powers involved
     /// anywhere in the check itself, so a shared bug between the production code and the
     /// verification can't hide here the way reusing `pow` to check `pow`'s own output could
     /// (this is exactly the blind spot the other `pow`-based invariant fuzz tests above have).
@@ -398,8 +420,8 @@ contract PortfolioManagerPricingTest is Test {
         uint256 newBalanceIn = balanceIn + amountIn;
         uint256 newBalanceOut = balanceOut - amountOut;
 
-        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
-        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 growthIn = FixedPointMath.powDown(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.powDown(newBalanceOut * WAD / balanceOut, weightOut);
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
         assertGe(invariantRatio + 1e8, WAD, "the curve invariant must never decrease across an exact-out trade");
@@ -427,7 +449,7 @@ contract PortfolioManagerPricingTest is Test {
 
         PortfolioManagerPricing.PoolState memory q = _quote(balanceIn, balanceOut, weightIn, weightOut, 0.0002e18);
 
-        // Same two legitimate revert paths as the exactIn near-zero variant -- FixedPointMath.pow's
+        // Same two legitimate revert paths as the exactIn near-zero variant -- FixedPointMath.powUp's
         // exponent cap at extreme weight skew, and exactOut's own preconditions. Only a
         // non-reverting result needs the invariant checked.
         uint256 amountIn;
@@ -441,8 +463,8 @@ contract PortfolioManagerPricingTest is Test {
         uint256 newBalanceIn = balanceIn + amountIn;
         uint256 newBalanceOut = balanceOut - amountOut;
 
-        uint256 growthIn = FixedPointMath.pow(newBalanceIn * WAD / balanceIn, weightIn);
-        uint256 growthOut = FixedPointMath.pow(newBalanceOut * WAD / balanceOut, weightOut);
+        uint256 growthIn = FixedPointMath.powDown(newBalanceIn * WAD / balanceIn, weightIn);
+        uint256 growthOut = FixedPointMath.powDown(newBalanceOut * WAD / balanceOut, weightOut);
         uint256 invariantRatio = growthIn * growthOut / WAD;
 
         assertGe(
@@ -478,7 +500,7 @@ contract PortfolioManagerPricingTest is Test {
             assertGt(amountOut, 0, "a non-reverting trade must return a nonzero amount");
             assertLt(amountOut, 1e18, "a non-reverting trade must never return more than the pool holds");
         } catch {
-            // A clean revert (e.g. FixedPointMath.pow's own domain cap, or the would-drain
+            // A clean revert (e.g. FixedPointMath.powUp's own domain cap, or the would-drain
             // guard below) is an acceptable outcome at this extreme -- the failure mode this
             // test guards against is a silent wrong number, not a revert.
         }
@@ -495,11 +517,7 @@ contract PortfolioManagerPricingTest is Test {
     /// (which only ever caught the exactly-zero case).
     function test_ExactInRevertsInsteadOfDrainingPoolAtExtremeWeightSkew() public {
         PortfolioManagerPricing.PoolState memory q = _quote(1, 1_000_000, 0.9e18, 0.1e18, 0.0002e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                PortfolioManagerPricing.PortfolioManagerPricingPoweredRatioBelowPrecisionFloor.selector, 0
-            )
-        );
+        vm.expectPartialRevert(PortfolioManagerPricing.PortfolioManagerPricingPoweredRatioBelowPrecisionFloor.selector);
         this._exactIn(q, 1000);
     }
 

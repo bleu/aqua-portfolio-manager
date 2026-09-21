@@ -47,14 +47,7 @@ library OracleAdapter {
             OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness)
         );
 
-        uint8 feedDecimals = config.feed.decimals();
-        uint256 rawPrice = uint256(answer);
-        if (feedDecimals < 18) {
-            return rawPrice * 10 ** (18 - feedDecimals);
-        } else if (feedDecimals > 18) {
-            return rawPrice / 10 ** (feedDecimals - 18);
-        }
-        return rawPrice;
+        return FixedPointMath.scaleDown(uint256(answer), config.feed.decimals(), 18);
     }
 
     /// @notice `Σ (token_balance_j × oracle_price_j)` over a group's declared members
@@ -74,7 +67,7 @@ library OracleAdapter {
         for (uint256 i = 0; i < tokens.length; i++) {
             uint8 tokenDecimals = IERC20Metadata(tokens[i]).decimals();
             uint256 price = priceWad(feeds[i]);
-            totalValueWad += balances[i] * price / 10 ** tokenDecimals;
+            totalValueWad += FixedPointMath.mulDown(balances[i], price, FixedPointMath.scaleDown(1, 0, tokenDecimals));
         }
     }
 }

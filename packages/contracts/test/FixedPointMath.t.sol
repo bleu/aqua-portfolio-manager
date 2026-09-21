@@ -4,9 +4,7 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {FixedPointMath} from "../src/utils/FixedPointMath.sol";
 
-/// @notice `pow` is now a thin wrapper around PRBMath's `UD60x18.pow` (see FixedPointMath.sol's
-/// own doc comment) — these tests check `pow`'s black-box behavior (known values, monotonicity),
-/// not any particular algorithm's internals, since the algorithm itself is PRBMath's, not ours.
+/// @notice Checks directed bounds against independent integer identities and references.
 contract FixedPointMathTest is Test {
     uint256 constant WAD = FixedPointMath.WAD;
 
@@ -24,39 +22,39 @@ contract FixedPointMathTest is Test {
 
     function testFuzz_PowWithExponentWadReturnsBaseExactly(uint256 base) public pure {
         base = bound(base, 1, type(uint256).max);
-        assertEq(FixedPointMath.pow(base, WAD), base);
+        assertEq(FixedPointMath.powDown(base, WAD), base);
     }
 
     function testFuzz_PowWithBaseWadReturnsWadExactly(uint256 exponent) public pure {
-        assertEq(FixedPointMath.pow(WAD, exponent), WAD);
+        assertEq(FixedPointMath.powDown(WAD, exponent), WAD);
     }
 
     // ---- pow: known roots ----
 
     function test_PowSquareRootOfFour() public pure {
-        uint256 result = FixedPointMath.pow(4 * WAD, WAD / 2);
+        uint256 result = FixedPointMath.powDown(4 * WAD, WAD / 2);
         _assertApproxRelWad(result, 2 * WAD, REL_TOL);
     }
 
     function test_PowSquareRootOfNine() public pure {
-        uint256 result = FixedPointMath.pow(9 * WAD, WAD / 2);
+        uint256 result = FixedPointMath.powDown(9 * WAD, WAD / 2);
         _assertApproxRelWad(result, 3 * WAD, REL_TOL);
     }
 
     function test_PowCubeRootOfEight() public pure {
-        uint256 result = FixedPointMath.pow(8 * WAD, WAD / 3);
+        uint256 result = FixedPointMath.powDown(8 * WAD, WAD / 3);
         _assertApproxRelWad(result, 2 * WAD, REL_TOL);
     }
 
     function test_PowTwoSquared() public pure {
-        uint256 result = FixedPointMath.pow(2 * WAD, 2 * WAD);
+        uint256 result = FixedPointMath.powDown(2 * WAD, 2 * WAD);
         _assertApproxRelWad(result, 4 * WAD, REL_TOL);
     }
 
     function test_PowReciprocalExponent() public pure {
         // base^1 via a roundabout path: (base^0.5)^2 should match base^1 == base.
-        uint256 half = FixedPointMath.pow(5 * WAD, WAD / 2);
-        uint256 result = FixedPointMath.pow(half, 2 * WAD);
+        uint256 half = FixedPointMath.powDown(5 * WAD, WAD / 2);
+        uint256 result = FixedPointMath.powDown(half, 2 * WAD);
         _assertApproxRelWad(result, 5 * WAD, REL_TOL);
     }
 
@@ -71,8 +69,8 @@ contract FixedPointMathTest is Test {
         exponent = bound(exponent, 1e16, 10e18);
         vm.assume(baseHigh > baseLow);
 
-        uint256 resultLow = FixedPointMath.pow(baseLow, exponent);
-        uint256 resultHigh = FixedPointMath.pow(baseHigh, exponent);
+        uint256 resultLow = FixedPointMath.powDown(baseLow, exponent);
+        uint256 resultHigh = FixedPointMath.powDown(baseHigh, exponent);
         assertGe(resultHigh, resultLow, "pow must be non-decreasing in base, for base >= WAD");
     }
 
@@ -82,8 +80,8 @@ contract FixedPointMathTest is Test {
         exponent = bound(exponent, 1e16, 10e18);
         vm.assume(baseHigh > baseLow);
 
-        uint256 resultLow = FixedPointMath.pow(baseLow, exponent);
-        uint256 resultHigh = FixedPointMath.pow(baseHigh, exponent);
+        uint256 resultLow = FixedPointMath.powDown(baseLow, exponent);
+        uint256 resultHigh = FixedPointMath.powDown(baseHigh, exponent);
         assertGe(resultHigh, resultLow, "pow must be non-decreasing in base, for base <= WAD too");
     }
 
@@ -102,8 +100,8 @@ contract FixedPointMathTest is Test {
         // checking real monotonicity, not this one-point discontinuity.
         vm.assume(expLow != WAD && expHigh != WAD);
 
-        uint256 resultLow = FixedPointMath.pow(base, expLow);
-        uint256 resultHigh = FixedPointMath.pow(base, expHigh);
+        uint256 resultLow = FixedPointMath.powDown(base, expLow);
+        uint256 resultHigh = FixedPointMath.powDown(base, expHigh);
         assertGe(resultHigh, resultLow, "for base > WAD, pow must increase with exponent");
     }
 
@@ -115,8 +113,8 @@ contract FixedPointMathTest is Test {
         // Same exact-shortcut seam as the AboveOne variant above.
         vm.assume(expLow != WAD && expHigh != WAD);
 
-        uint256 resultLow = FixedPointMath.pow(base, expLow);
-        uint256 resultHigh = FixedPointMath.pow(base, expHigh);
+        uint256 resultLow = FixedPointMath.powDown(base, expLow);
+        uint256 resultHigh = FixedPointMath.powDown(base, expHigh);
         assertLe(resultHigh, resultLow, "for base < WAD, pow must decrease as exponent increases");
     }
 
@@ -130,14 +128,43 @@ contract FixedPointMathTest is Test {
         assertEq(FixedPointMath.powUp(type(uint256).max, WAD), type(uint256).max);
     }
 
-    function test_PowUpRejectsBaseBelowOne() public {
-        vm.expectRevert(FixedPointMath.FixedPointMathBaseBelowOne.selector);
-        this._powUp(WAD - 1, WAD / 2);
+    function test_PowersBelowOneBoundExactSquare() public pure {
+        uint256 base = 0.3e18;
+        uint256 expected = 0.09e18;
+        assertLe(FixedPointMath.powDown(base, 2 * WAD), expected);
+        assertGe(FixedPointMath.powUp(base, 2 * WAD), expected);
+    }
+
+    function test_PowersHandleZeroAndOne() public pure {
+        assertEq(FixedPointMath.powDown(0, 0), WAD);
+        assertEq(FixedPointMath.powUp(0, 0), WAD);
+        assertEq(FixedPointMath.powDown(0, WAD / 2), 0);
+        assertEq(FixedPointMath.powUp(0, WAD / 2), 0);
+        assertEq(FixedPointMath.powDown(WAD, type(uint256).max), WAD);
+        assertEq(FixedPointMath.powDown(type(uint256).max, 0), WAD);
+        assertEq(FixedPointMath.powDown(type(uint256).max, WAD), type(uint256).max);
     }
 
     function test_PowUpRejectsExponentOutsidePrbDomain() public {
         vm.expectPartialRevert(bytes4(keccak256("PRBMath_UD60x18_Exp2_InputTooBig(uint256)")));
         this._powUp(2 * WAD, 192 * WAD);
+        // A fractional result can fit while its reciprocal intermediate exceeds the domain.
+        vm.expectPartialRevert(bytes4(keccak256("PRBMath_UD60x18_Exp2_InputTooBig(uint256)")));
+        this._powUp(1, 4 * WAD);
+    }
+
+    function test_PowersBelowOneEncloseIndependentReferences() public pure {
+        // Floor/ceil references evaluated independently with 160-digit Decimal arithmetic.
+        _assertPowerBounds(WAD - 1, WAD / 2, WAD - 1, WAD);
+        _assertPowerBounds(WAD / 10, 3 * WAD / 2, 31622776601683793, 31622776601683794);
+        _assertPowerBounds(WAD / 2, WAD / 3, 793700525984099737, 793700525984099738);
+        _assertPowerBounds(1, WAD / 10, 15848931924611134, 15848931924611135);
+        _assertPowerBounds(1, 2 * WAD, 0, 1);
+    }
+
+    function _assertPowerBounds(uint256 base, uint256 exponent, uint256 floor, uint256 ceil) internal pure {
+        assertLe(FixedPointMath.powDown(base, exponent), floor);
+        assertGe(FixedPointMath.powUp(base, exponent), ceil);
     }
 
     function test_PowUpBoundsIndependentReferences() public pure {
@@ -159,9 +186,73 @@ contract FixedPointMathTest is Test {
 
     /// forge-config: default.fuzz.runs = 50000
     function testFuzz_PowUpSquareRootBoundsExactIntegerSquare(uint256 base) public pure {
-        base = bound(base, WAD, 1e36);
+        base = bound(base, 1, 1e36);
         uint256 root = FixedPointMath.powUp(base, WAD / 2);
         assertGe(root * root, base * WAD, "upper square root must not round below the true root");
+    }
+
+    /// forge-config: default.fuzz.runs = 50000
+    function testFuzz_PowDownSquareRootBoundsExactIntegerSquare(uint256 base) public pure {
+        base = bound(base, 1, 1e36);
+        uint256 root = FixedPointMath.powDown(base, WAD / 2);
+        assertLe(root * root, base * WAD, "lower square root must not exceed the true root");
+    }
+
+    /// forge-config: default.fuzz.runs = 50000
+    function testFuzz_PowerBoundsEncloseEachOther(uint256 base, uint256 exponent) public pure {
+        base = bound(base, 1e13, 1e23);
+        exponent = bound(exponent, 0, 10 * WAD);
+        uint256 lower = FixedPointMath.powDown(base, exponent);
+        uint256 upper = FixedPointMath.powUp(base, exponent);
+        assertLe(lower, upper);
+        assertLe(upper - lower, upper / 1e12 + 2, "power bounds should remain close in this domain");
+    }
+
+    function _scaleUp(uint256 value, uint8 from, uint8 to) external pure returns (uint256) {
+        return FixedPointMath.scaleUp(value, from, to);
+    }
+
+    function test_ScalingRoundsInTheNamedDirection() public pure {
+        assertEq(FixedPointMath.scaleDown(1_234_567, 6, 3), 1_234);
+        assertEq(FixedPointMath.scaleUp(1_234_567, 6, 3), 1_235);
+        assertEq(FixedPointMath.scaleDown(1_234, 3, 6), 1_234_000);
+        assertEq(FixedPointMath.scaleUp(1_234, 3, 6), 1_234_000);
+        assertEq(FixedPointMath.scaleUp(1_234_000, 6, 3), 1_234);
+        assertEq(FixedPointMath.scaleDown(type(uint256).max, 255, 255), type(uint256).max);
+        assertEq(FixedPointMath.scaleUp(0, 18, 6), 0);
+        assertEq(FixedPointMath.scaleDown(1, 0, 77), 1e77);
+    }
+
+    function test_ScalingRejectsUnrepresentableFactorsAndResults() public {
+        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathUnsupportedDecimalDifference.selector, 78));
+        this._scaleUp(1, 0, 78);
+        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathUnsupportedDecimalDifference.selector, 78));
+        this._scaleUp(1, 78, 0);
+        vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
+        this._scaleUp(2, 0, 77);
+    }
+
+    function testFuzz_ScalingBoundsAndRoundTrip(uint128 value, uint8 decimals) public pure {
+        decimals = uint8(bound(decimals, 0, 38));
+        uint256 lower = FixedPointMath.scaleDown(value, decimals, 0);
+        uint256 upper = FixedPointMath.scaleUp(value, decimals, 0);
+        assertLe(lower, upper);
+        assertLe(upper - lower, 1);
+        assertLe(FixedPointMath.scaleDown(lower, 0, decimals), value);
+        assertGe(FixedPointMath.scaleUp(upper, 0, decimals), value);
+        uint256 scaled = FixedPointMath.scaleUp(value, 0, decimals);
+        assertEq(FixedPointMath.scaleDown(scaled, decimals, 0), value);
+    }
+
+    function test_CustomScaleArithmeticUsesFullPrecision() public pure {
+        assertEq(FixedPointMath.mulDown(7, 5, 3), 11);
+        assertEq(FixedPointMath.mulUp(7, 5, 3), 12);
+        assertEq(FixedPointMath.divDown(7, 3, 5), 11);
+        assertEq(FixedPointMath.divUp(7, 3, 5), 12);
+        assertEq(FixedPointMath.mulDown(type(uint256).max, 2, 2), type(uint256).max);
+        assertEq(FixedPointMath.mulUp(type(uint256).max, 2, 2), type(uint256).max);
+        assertEq(FixedPointMath.divDown(type(uint256).max, 2, 2), type(uint256).max);
+        assertEq(FixedPointMath.divUp(type(uint256).max, 2, 2), type(uint256).max);
     }
 
     // ---- mulDown/mulUp/divDown/divUp: rounding direction ----
