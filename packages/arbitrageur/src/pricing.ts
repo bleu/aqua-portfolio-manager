@@ -63,10 +63,16 @@ export async function findBestOpportunity(params: {
   }
 
   const sizes = geometricSteps(minAmount, maxAmount, steps);
+  // Each size's quote is an independent read-only eth_call -- fetched concurrently rather than
+  // one at a time, since `steps` sequential RPC round trips per leg adds up fast across a basket
+  // with several legs.
+  const quotedOuts = await Promise.all(sizes.map(quote));
+
   let best: Opportunity | undefined;
 
-  for (const amountIn of sizes) {
-    const quotedOut = await quote(amountIn);
+  for (let i = 0; i < sizes.length; i++) {
+    const amountIn = sizes[i]!;
+    const quotedOut = quotedOuts[i]!;
     const fairOut = fairAmountOut(amountIn, priceInWad, decimalsIn, priceOutWad, decimalsOut);
     const bps = profitBps(quotedOut, fairOut);
 

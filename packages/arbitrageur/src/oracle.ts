@@ -18,9 +18,10 @@ export async function readOraclePriceWad(
   feed: Address,
   maxStalenessSeconds: number,
 ): Promise<bigint> {
-  const [decimals, roundData] = await Promise.all([
+  const [decimals, roundData, block] = await Promise.all([
     client.readContract({ address: feed, abi: aggregatorV3Abi, functionName: "decimals" }),
     client.readContract({ address: feed, abi: aggregatorV3Abi, functionName: "latestRoundData" }),
+    client.getBlock(),
   ]);
   const [, answer, , updatedAt] = roundData;
 
@@ -28,7 +29,6 @@ export async function readOraclePriceWad(
     throw new Error(`Oracle feed ${feed} returned a non-positive price: ${answer}`);
   }
 
-  const block = await client.getBlock();
   const staleness = block.timestamp - updatedAt;
   if (updatedAt > block.timestamp || staleness > BigInt(maxStalenessSeconds)) {
     throw new StaleOracleError(feed, updatedAt, maxStalenessSeconds);

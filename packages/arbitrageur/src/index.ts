@@ -35,29 +35,41 @@ async function findBestAcrossAllLegs(
   legs: Leg[],
   decimals: Map<string, number>,
 ): Promise<{ leg: Leg; opportunity: Opportunity } | undefined> {
+  // Each feed backs multiple legs (every token appears as feedIn in one direction and feedOut in
+  // the reverse, and can recur across several legs in a basket) -- read every distinct feed once
+  // per tick instead of once per leg-occurrence.
+  const uniqueFeeds = [...new Set(legs.flatMap((leg) => [leg.feedIn, leg.feedOut]))];
+  const priceEntries = await Promise.all(
+    uniqueFeeds.map(
+      async (feed) => [feed, await readOraclePriceWad(clients.publicClient, feed, ORACLE_MAX_STALENESS_SECONDS)] as const,
+    ),
+  );
+  const prices = new Map(priceEntries);
+
+  // Legs are independent read-only work (an oracle-price lookup plus a curve-quote search) --
+  // evaluated concurrently rather than one leg at a time.
+  const results = await Promise.all(
+    legs.map(async (leg) => {
+      const opportunity = await findBestOpportunity({
+        minAmount: config.minTradeAmount,
+        maxAmount: config.maxTradeAmount,
+        steps: config.searchSteps,
+        minProfitBps: config.minProfitBps,
+        priceInWad: prices.get(leg.feedIn)!,
+        decimalsIn: decimals.get(leg.tokenIn)!,
+        priceOutWad: prices.get(leg.feedOut)!,
+        decimalsOut: decimals.get(leg.tokenOut)!,
+        quote: (amountIn) =>
+          quoteExactIn(clients.publicClient, config.arbitrageurAddress, order, leg.tokenIn, leg.tokenOut, amountIn),
+      });
+      return opportunity ? { leg, opportunity } : undefined;
+    }),
+  );
+
   let best: { leg: Leg; opportunity: Opportunity } | undefined;
-
-  for (const leg of legs) {
-    const [priceInWad, priceOutWad] = await Promise.all([
-      readOraclePriceWad(clients.publicClient, leg.feedIn, ORACLE_MAX_STALENESS_SECONDS),
-      readOraclePriceWad(clients.publicClient, leg.feedOut, ORACLE_MAX_STALENESS_SECONDS),
-    ]);
-
-    const opportunity = await findBestOpportunity({
-      minAmount: config.minTradeAmount,
-      maxAmount: config.maxTradeAmount,
-      steps: config.searchSteps,
-      minProfitBps: config.minProfitBps,
-      priceInWad,
-      decimalsIn: decimals.get(leg.tokenIn)!,
-      priceOutWad,
-      decimalsOut: decimals.get(leg.tokenOut)!,
-      quote: (amountIn) =>
-        quoteExactIn(clients.publicClient, config.arbitrageurAddress, order, leg.tokenIn, leg.tokenOut, amountIn),
-    });
-
-    if (opportunity && (!best || opportunity.profitBps > best.opportunity.profitBps)) {
-      best = { leg, opportunity };
+  for (const result of results) {
+    if (result && (!best || result.opportunity.profitBps > best.opportunity.profitBps)) {
+      best = result;
     }
   }
 
