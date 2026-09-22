@@ -217,24 +217,28 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         deal(address(token), BALANCER_VAULT_BASE, amount);
     }
 
-    // ===== Tests =====
-
-    function test_FlashArbitrageRepaysLoanAndKeepsProfit() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+    /// @dev Shared by every test below: ships the strategy, quotes the real curve for `amountIn`
+    ///      USDT -> WBTC, and funds the Vault so the flash loan itself is never the bottleneck --
+    ///      each test only supplies what it's actually varying (see `_flashParams`).
+    function _setUpFlashArb(uint256 amountIn) internal returns (ISwapVM.Order memory order, uint256 quotedOut) {
+        order = _buildOrder(0);
         _shipOnly(order);
-
-        uint256 amountIn = 1_000e6; // 1,000 USDT
-        uint256 quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
+        quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
         assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped strategy");
-
-        // The mock Fynd route returns 5% more USDT than the flash loan owes -- the "arbitrage
-        // profit" this test is proving actually lands on the contract, sweepable by the owner.
-        uint256 owed = amountIn; // Balancer flash loans are 0% fee
-        uint256 fyndReturnAmount = (owed * 105) / 100;
-        deal(address(usdt), address(fyndRouter), fyndReturnAmount);
         _ensureVaultLiquidity(usdt, amountIn * 10);
+    }
 
-        Arbitrageur.FlashArbParams memory params = Arbitrageur.FlashArbParams({
+    /// @dev Funds the mock Fynd router with `fyndReturnAmount` USDT and builds the params for a
+    ///      trade where it pulls `fyndPulledAmount` of the curve's WBTC payout in exchange.
+    function _flashParams(
+        ISwapVM.Order memory order,
+        uint256 amountIn,
+        uint256 quotedOut,
+        uint256 fyndPulledAmount,
+        uint256 fyndReturnAmount
+    ) internal returns (Arbitrageur.FlashArbParams memory) {
+        deal(address(usdt), address(fyndRouter), fyndReturnAmount);
+        return Arbitrageur.FlashArbParams({
             order: order,
             tokenIn: address(usdt),
             tokenOut: address(wbtc),
@@ -242,9 +246,22 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             minCurveAmountOut: quotedOut,
             fyndTarget: address(fyndRouter),
             fyndSpender: address(fyndRouter),
-            fyndCalldata: abi.encodeCall(MockFyndRouter.swap, (wbtc, usdt, quotedOut, fyndReturnAmount)),
+            fyndCalldata: abi.encodeCall(MockFyndRouter.swap, (wbtc, usdt, fyndPulledAmount, fyndReturnAmount)),
             deadline: uint40(block.timestamp + 60)
         });
+    }
+
+    // ===== Tests =====
+
+    function test_FlashArbitrageRepaysLoanAndKeepsProfit() public {
+        uint256 amountIn = 1_000e6; // 1,000 USDT
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
+
+        // The mock Fynd route returns 5% more USDT than the flash loan owes -- the "arbitrage
+        // profit" this test is proving actually lands on the contract, sweepable by the owner.
+        uint256 owed = amountIn; // Balancer flash loans are 0% fee
+        uint256 fyndReturnAmount = (owed * 105) / 100;
+        Arbitrageur.FlashArbParams memory params = _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
 
         vm.prank(arbitrageurOwner);
         arbitrageur.executeFlashArbitrage(params);
@@ -258,30 +275,14 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     }
 
     function test_FlashArbitrageRevertsWhenFyndRouteReturnsInsufficientRepayment() public {
-        ISwapVM.Order memory order = _buildOrder(0);
-        _shipOnly(order);
-
         uint256 amountIn = 1_000e6;
-        uint256 quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
 
         // The mock Fynd route returns less than what's owed -- the flash loan, and with it the
         // whole transaction including the already-settled curve trade, must revert atomically.
         uint256 owed = amountIn;
         uint256 fyndReturnAmount = owed - 1;
-        deal(address(usdt), address(fyndRouter), fyndReturnAmount);
-        _ensureVaultLiquidity(usdt, amountIn * 10);
-
-        Arbitrageur.FlashArbParams memory params = Arbitrageur.FlashArbParams({
-            order: order,
-            tokenIn: address(usdt),
-            tokenOut: address(wbtc),
-            amountIn: amountIn,
-            minCurveAmountOut: quotedOut,
-            fyndTarget: address(fyndRouter),
-            fyndSpender: address(fyndRouter),
-            fyndCalldata: abi.encodeCall(MockFyndRouter.swap, (wbtc, usdt, quotedOut, fyndReturnAmount)),
-            deadline: uint40(block.timestamp + 60)
-        });
+        Arbitrageur.FlashArbParams memory params = _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
 
         vm.prank(arbitrageurOwner);
         vm.expectRevert(
@@ -295,30 +296,13 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     /// part of the approved `wbtc`, leaving the rest on the contract. The approval to `fyndSpender`
     /// must still end at zero rather than surviving as a standing, unbounded allowance.
     function test_FlashArbitrageResetsFyndApprovalEvenWhenNotFullySpent() public {
-        ISwapVM.Order memory order = _buildOrder(0);
-        _shipOnly(order);
-
         uint256 amountIn = 1_000e6;
-        uint256 quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
-        assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped strategy");
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
 
-        uint256 owed = amountIn;
         uint256 fyndPulledAmount = quotedOut / 2; // only spends half the approved curve payout
-        uint256 fyndReturnAmount = (owed * 105) / 100;
-        deal(address(usdt), address(fyndRouter), fyndReturnAmount);
-        _ensureVaultLiquidity(usdt, amountIn * 10);
-
-        Arbitrageur.FlashArbParams memory params = Arbitrageur.FlashArbParams({
-            order: order,
-            tokenIn: address(usdt),
-            tokenOut: address(wbtc),
-            amountIn: amountIn,
-            minCurveAmountOut: quotedOut,
-            fyndTarget: address(fyndRouter),
-            fyndSpender: address(fyndRouter),
-            fyndCalldata: abi.encodeCall(MockFyndRouter.swap, (wbtc, usdt, fyndPulledAmount, fyndReturnAmount)),
-            deadline: uint40(block.timestamp + 60)
-        });
+        uint256 fyndReturnAmount = (amountIn * 105) / 100;
+        Arbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, quotedOut, fyndPulledAmount, fyndReturnAmount);
 
         vm.prank(arbitrageurOwner);
         arbitrageur.executeFlashArbitrage(params);
