@@ -284,12 +284,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, 0);
     }
 
-    /// @notice Two groups, each at exactly MAX_MEMBERS_PER_GROUP members (5) -- passes every
-    /// per-axis check individually (group count and each group's own member count are both
-    /// within bounds) but the joint encoding is 463 bytes, over the wire format's 255-byte
-    /// capacity. Without build()'s own explicit length check, this would sail through here and
-    /// only fail one layer up in PortfolioManagerProgramBuilder with an opaque SafeCast overflow
-    /// instead of this descriptive error.
+    /// @notice Valid group/member counts can still exceed the 255-byte encoding limit.
     function test_BuildRevertsOnArgsTooLargeEvenWhenEachAxisIsWithinBounds() public {
         PortfolioManagerArgsCodec.Member[] memory members0 =
             new PortfolioManagerArgsCodec.Member[](PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP);
@@ -376,9 +371,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnHandCraftedZeroWeight() public {
-        // 2 groups, weights [0, WAD] -- sums to WAD, so only the per-weight check catches this,
-        // not the sum check. A zero weight here would otherwise divide by zero on every trade
-        // for TOKEN_A once PortfolioManagerPricing computes its weight ratio.
+        // Weights [0, WAD] pass the sum check but must fail the nonzero-weight check.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
             uint128(0),

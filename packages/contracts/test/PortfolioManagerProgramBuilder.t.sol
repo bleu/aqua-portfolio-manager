@@ -8,11 +8,7 @@ import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgr
 import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 
-/// @notice `build()`'s own wire-format output, asserted directly against VM.sol's runLoop
-/// format (`[opcode:1][argsLength:1][args]`) -- every other test exercises this only
-/// indirectly, via a full round-trip through the router (ship a strategy, confirm it prices
-/// correctly), which would still pass even if the opcode or length byte were wrong as long as
-/// VM.sol's own parser happened to tolerate it.
+/// @notice Check opcode and argument-length bytes directly against the SwapVM wire format.
 contract PortfolioManagerProgramBuilderTest is Test {
     function _groups() internal pure returns (PortfolioManagerArgsCodec.Group[] memory groups) {
         address[2] memory tokens = [address(0x1111), address(0x2222)];

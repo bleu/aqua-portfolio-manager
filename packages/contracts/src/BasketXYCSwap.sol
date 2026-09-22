@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-/// @dev PoC only — not the license this repo ships under (see ../../../LICENSE). This file only
-/// exists to answer a design question: what does swapVM need to price tokenIn -> tokenOut
-/// while also accounting for a third token's balance. Not part of any milestone deliverable.
+/// @dev Reference prototype only. Reads a third token's Aqua balance when pricing a two-token swap.
+///      This file retains its original license. See ../../../LICENSE for the project license.
 
 import {FixedPointMath} from "./utils/FixedPointMath.sol";
 import {Calldata} from "@1inch/solidity-utils/contracts/libraries/Calldata.sol";
@@ -24,12 +23,9 @@ library BasketXYCSwapArgsBuilder {
     }
 }
 
-/// @title BasketXYCSwap — PoC: xy=k where the "y" side is a basket of 2 tokens, not 1
-/// @notice The swap itself still only moves tokenIn and tokenOut, exactly like plain XYCSwap.
-///         The one change: before applying the xy=k formula, this reads a third token's Aqua
-///         balance (`basketToken`, e.g. token C, grouped with tokenOut) and adds it to
-///         tokenOut's balance before pricing. basketToken is read-only here — nothing about it
-///         is pulled, pushed, or otherwise moved by this instruction; only tokenIn/tokenOut move.
+/// @title BasketXYCSwap
+/// @notice Prices xy=k with a third token's raw Aqua balance added to the output reserve.
+/// @dev Only tokenIn and tokenOut move. This prototype assumes equal token values and performs no oracle conversion.
 contract BasketXYCSwap {
     using ContextLib for Context;
 
@@ -42,15 +38,12 @@ contract BasketXYCSwap {
         _AQUA = IAqua(aqua);
     }
 
-    /// @param args.basketToken | 20 bytes — third token, grouped with tokenOut, read but never moved
-    /// @dev Not declared `view`: Solidity won't implicitly widen a view-typed function-pointer
-    ///      array literal to the unqualified array type _opcodes() needs (see PoCOpcodes.sol).
+    /// @param args.basketToken The 20-byte address of the read-only token added to the output reserve.
+    /// @dev The opcode table requires a non-view function pointer.
     function _basketXycSwapXD(Context memory ctx, bytes calldata args) internal {
         address basketToken = BasketXYCSwapArgsBuilder.parse(args);
 
-        // The escape hatch: nothing in VM.sol's Context/SwapRegisters carries a third balance.
-        // An instruction that wants one just holds its own IAqua reference and reads it directly —
-        // the same pattern Fee.sol already uses to reach Aqua for its own purposes.
+        // Instructions can read balances outside the two-token Context through their own Aqua reference.
         (uint256 basketBalance,) = _AQUA.rawBalances(ctx.query.maker, address(this), ctx.query.orderHash, basketToken);
         uint256 effectiveBalanceOut = ctx.swap.balanceOut + basketBalance;
 

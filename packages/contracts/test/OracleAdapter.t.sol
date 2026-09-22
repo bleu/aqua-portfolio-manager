@@ -6,9 +6,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AggregatorV3Interface} from "../src/interfaces/AggregatorV3Interface.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 
-/// @dev Settable Chainlink-style mock -- `answer`/`updatedAt`/`decimals` are all adjustable
-///      per-test, unlike a real feed, so staleness and decimal-normalization can be exercised
-///      directly rather than waiting on real chain time.
+/// @dev Feed mock with configurable answer, timestamp, and decimals.
 contract MockAggregatorV3 is AggregatorV3Interface {
     int256 public answer;
     uint256 public updatedAt;

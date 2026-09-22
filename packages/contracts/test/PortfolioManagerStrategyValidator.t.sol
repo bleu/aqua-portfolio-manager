@@ -14,11 +14,7 @@ import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategy
 import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Confirms the validator actually closes the gap it exists for: a mismatch between
-/// PortfolioManagerArgsCodec's declared universe and IAqua.ship()'s own tokens array, in
-/// either direction, reverts. Deliberately a pure validation check only -- it never calls
-/// Aqua.ship() itself, so there's no ledger/settlement path to exercise here; see
-/// PortfolioManagerE2EBase.t.sol for the real Safe + MultiSendCallOnly flow this feeds into.
+/// @notice Tests validation separately from shipping. Safe batch integration is covered in the E2E suite.
 contract PortfolioManagerStrategyValidatorTest is Test {
     PortfolioManagerStrategyValidator internal validator;
     TokenMock internal tokenA;
@@ -45,9 +41,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         maker = vm.addr(0x1234);
     }
 
-    /// @dev `requireUniverseMatches` only cross-checks token membership, never prices anything,
-    ///      so a shared dummy feed address across every single-member group is fine for those
-    ///      tests -- `requireBalancedWithinTolerance` tests below use a real, priced feed.
+    /// @dev Universe checks do not read feeds. Deviation tests use priced feeds separately.
     address internal constant DUMMY_FEED = address(0xFEED);
 
     function _groups(address[] memory declaredTokens, uint256[] memory weights)
@@ -159,8 +153,6 @@ contract PortfolioManagerStrategyValidatorTest is Test {
     }
 
     function test_RevertsOnNonPortfolioManagerProgram() public {
-        // Opcode 99 doesn't exist on any router this validator knows about -- simulates a program
-        // this validator was never meant to validate, e.g. a different strategy entirely.
         bytes memory program = abi.encodePacked(uint8(99), uint8(0));
         ISwapVM.Order memory order = MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -196,9 +188,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     // ===== requireBalancedWithinTolerance (ADR-0012) =====
 
-    /// @dev 2 single-member groups (tokenA/feedA, tokenB/feedB), both $1.00/token, 50/50 target
-    ///      -- real pricing, unlike `_order`'s DUMMY_FEED groups above, since this check actually
-    ///      reads balances and oracle prices.
+    /// @dev Two single-member groups with unit prices and equal weights for balance checks.
     function _toleranceOrder(uint32 maxDeviationBps) internal view returns (ISwapVM.Order memory) {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
@@ -255,8 +245,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     function test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
-        // 10,000 / 110,000 = ~9.09% actual share vs. a 50% target -- ~82% relative deviation,
-        // e.g. a wallet funded off-target from the start, never through ship() at all.
+        // A 9.09% actual share against a 50% target gives about 82% relative deviation.
         uint256 balA = 10_000e18;
         uint256 balB = 100_000e18;
         tokenA.mint(maker, balA);
