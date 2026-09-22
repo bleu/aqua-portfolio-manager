@@ -33,4 +33,4 @@ The flag is never cleared.
 - Running both calls in one transaction does not enforce matching token lists. The caller must supply them correctly.
 - Each trade pays for a validator call and storage read. Storing the result in the router could reduce that cost.
 
-See [wallet setup](../guides/fresh-wallet-setup.md) and the [validator](../../packages/contracts/src/PortfolioManagerStrategyValidator.sol).
+See [wallet setup](../guides/fresh-wallet-setup.md), the [validator](../../packages/contracts/src/PortfolioManagerStrategyValidator.sol), [ADR-0011](0011-safe-wallet-with-basket-scope-guard.md), and [ADR-0012](0012-price-deviation-circuit-breaker.md).

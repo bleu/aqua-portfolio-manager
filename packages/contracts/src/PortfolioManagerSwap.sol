@@ -37,7 +37,9 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @param args Group configuration, LP fee, and deviation limit encoded by PortfolioManagerArgsCodec.
     /// @dev The opcode table requires a non-view function pointer.
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        // Reject unattested orders before decoding their arguments.
+        // Checked before decoding args to skip parse cost when unattested; the flag is
+        // monotonic (set once, never unset), so re-checking every swap is intentional, not a
+        // missed firstness optimization.
         require(
             STRATEGY_VALIDATOR.buildParamsAttested(ctx.query.orderHash),
             PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
