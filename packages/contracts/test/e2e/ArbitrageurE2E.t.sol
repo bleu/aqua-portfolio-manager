@@ -23,7 +23,7 @@ contract ArbitrageurE2ETest is PortfolioManagerE2EBase {
     function setUp() public override {
         super.setUp();
         arbitrageurOwner = vm.addr(OWNER_KEY);
-        arbitrageur = new Arbitrageur(address(router), arbitrageurOwner);
+        arbitrageur = new Arbitrageur(address(router), makeAddr("balancerVault"), arbitrageurOwner);
     }
 
     function test_QuoteThenExecuteMatchExactly() public {

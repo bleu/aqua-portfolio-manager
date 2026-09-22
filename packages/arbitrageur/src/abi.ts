@@ -40,6 +40,29 @@ export const arbitrageurAbi = [
     outputs: [{ name: "amountOut", type: "uint256" }],
   },
   {
+    type: "function",
+    name: "executeFlashArbitrage",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          orderTupleComponent,
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "minCurveAmountOut", type: "uint256" },
+          { name: "fyndTarget", type: "address" },
+          { name: "fyndSpender", type: "address" },
+          { name: "fyndCalldata", type: "bytes" },
+          { name: "deadline", type: "uint40" },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
     type: "event",
     name: "ArbitrageExecuted",
     inputs: [
@@ -48,6 +71,19 @@ export const arbitrageurAbi = [
       { name: "tokenOut", type: "address", indexed: true },
       { name: "amountIn", type: "uint256", indexed: false },
       { name: "amountOut", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "FlashArbitrageExecuted",
+    inputs: [
+      { name: "orderHash", type: "bytes32", indexed: true },
+      { name: "tokenIn", type: "address", indexed: true },
+      { name: "tokenOut", type: "address", indexed: true },
+      { name: "amountIn", type: "uint256", indexed: false },
+      { name: "curveAmountOut", type: "uint256", indexed: false },
+      { name: "repaid", type: "uint256", indexed: false },
+      { name: "profit", type: "uint256", indexed: false },
     ],
   },
 ] as const;

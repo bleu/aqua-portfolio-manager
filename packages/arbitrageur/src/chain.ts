@@ -87,6 +87,22 @@ export interface ExecuteResult {
   amountOut: bigint;
 }
 
+export interface FlashArbParams {
+  order: Order;
+  tokenIn: Address;
+  tokenOut: Address;
+  amountIn: bigint;
+  minCurveAmountOut: bigint;
+  fyndTarget: Address;
+  fyndSpender: Address;
+  fyndCalldata: Hex;
+  deadline: number;
+}
+
+export interface FlashExecuteResult {
+  txHash: Hex;
+}
+
 /// Submits the real `executeArbitrage` transaction and waits for it to be mined. Slippage and
 /// deadline enforcement both happen on-chain (see Arbitrageur.sol's own doc comments) -- this
 /// function does not re-validate either itself.
@@ -114,4 +130,29 @@ export async function executeArbitrage(
   await publicClient.waitForTransactionReceipt({ hash: txHash });
 
   return { txHash, amountOut: result };
+}
+
+/// Submits `executeFlashArbitrage` and waits for it to be mined -- unlike `executeArbitrage`,
+/// this never touches the owner EOA's own token balance or allowances: the traded token is
+/// borrowed and repaid entirely inside the one transaction, on-chain (see Arbitrageur.sol's own
+/// doc comments on `receiveFlashLoan`).
+export async function executeFlashArbitrage(
+  clients: ReturnType<typeof makeClients>,
+  arbitrageurAddress: Address,
+  params: FlashArbParams,
+): Promise<FlashExecuteResult> {
+  const { account, publicClient, walletClient } = clients;
+
+  const { request } = await publicClient.simulateContract({
+    address: arbitrageurAddress,
+    abi: arbitrageurAbi,
+    functionName: "executeFlashArbitrage",
+    args: [params],
+    account,
+  });
+
+  const txHash = await walletClient.writeContract(request);
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  return { txHash };
 }
