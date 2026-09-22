@@ -9,45 +9,25 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 import {OracleAdapter} from "./OracleAdapter.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
-/// @title PortfolioManagerArgsCodec — packed-bytes encoding of the Portfolio Manager's
-///        declared token groups, per-group target weight, oracle feeds, and protocol fee
-/// @notice Real multi-token oracle-valued groups (ADR-0003): each group has 1-5 members, and
-///         every member is priced through its own Chainlink-style feed via `OracleAdapter` --
-///         no single-token "skip the oracle" special case, so decimal normalization and price
-///         conversion apply uniformly regardless of group size. Weights are per-group (shared
-///         by every member), fully general (not required equal): `PRICING.md`'s formula
-///         already reduces correctly at equal weights, so there is nothing to special-case
-///         here for the common case. The universe itself is 2-4 groups (see `MIN_GROUPS`/
-///         `MAX_GROUPS`) -- a single group has nothing to rebalance against.
-/// @dev Lives entirely in the swapVM instruction's `args` — part of the immutable `strategy`
-///      payload hashed into `strategyHash` (see `IAqua.ship`), not contract storage.
+/// @title PortfolioManagerArgsCodec
+/// @notice Encodes token groups, target weights, feeds, the LP fee, and the deviation limit.
+/// @dev Configuration lives in immutable instruction arguments committed by the strategy hash.
+///      Every group member requires a feed. Group weights may differ.
 library PortfolioManagerArgsCodec {
     using Calldata for bytes;
 
-    /// @dev Matches swap-vm's own `Fee.sol` BPS convention (1e9 = 100%) so `feeBps` here reads
-    ///      the same way as everywhere else in this codebase, not a project-specific scale.
-    ///      `internal` rather than `private` so callers (tests, `PortfolioManagerSwap`) can
-    ///      reference it instead of duplicating the constant.
+    /// @dev Matches SwapVM's fee scale: 1e9 = 100%. One conventional basis point is 100_000.
     uint256 internal constant PM_BPS = 1e9;
 
     uint256 private constant WAD = FixedPointMath.WAD;
     /// @dev 16-byte weight + 1-byte member count precedes each group's members.
     uint256 private constant GROUP_HEADER_SIZE = 17;
-    /// @dev 20-byte token + 20-byte feed + 2-byte uint16 maxStaleness (seconds) per member.
-    ///      uint16 caps at ~18.2 hours -- swap-vm's own wire format (`VM.sol`'s `runLoop`)
-    ///      packs a program instruction's args length into a single `uint8`, hard-capping any
-    ///      one instruction's args at 255 bytes; a real multi-group, multi-member universe (e.g.
-    ///      5 members across 2 groups) can only fit under that cap with the narrower field. Still
-    ///      comfortably wider than any real Chainlink heartbeat.
+    /// @dev Each member uses 20 token bytes, 20 feed bytes, and 2 maxStaleness bytes (seconds).
+    ///      The uint16 age limit is 65,535 seconds. Compact entries help fit the 255-byte argument budget.
     uint256 private constant MEMBER_ENTRY_SIZE = 42;
 
-    /// @dev Business-rule bounds on universe shape -- much tighter than the wire format's own
-    ///      255-group/255-member uint8 capacity, keeping group/member count within what a taker
-    ///      can reason about at a glance. A single-group universe has nothing to rebalance
-    ///      against, hence the floor.
-    /// @dev These don't by themselves guarantee every combination fits the 255-byte `args`
-    ///      budget (e.g. MAX_GROUPS at MAX_MEMBERS_PER_GROUP each still overflows it) --
-    ///      `build()`'s own explicit length check enforces that separately.
+    /// @dev At least two groups are needed for cross-group pricing.
+    ///      Shape bounds do not guarantee the 255-byte argument limit. build() checks encoded length separately.
     uint256 internal constant MIN_GROUPS = 2;
     uint256 internal constant MAX_GROUPS = 4;
     uint256 internal constant MAX_MEMBERS_PER_GROUP = 5;
@@ -78,24 +58,18 @@ library PortfolioManagerArgsCodec {
     error PortfolioManagerMissingGroupHeader();
     error PortfolioManagerMissingMemberEntry();
     error PortfolioManagerMissingFeeBps();
-    /// @dev The per-axis bounds (MIN/MAX_GROUPS, MAX_MEMBERS_PER_GROUP) don't by themselves
-    ///      guarantee the encoded `args` fits the wire format's 255-byte capacity -- this is the
-    ///      actual, descriptive enforcement of that hard cap (see MIN_GROUPS's own comment).
+    /// @dev The complete encoding exceeds SwapVM's 255-byte instruction argument limit.
     error PortfolioManagerArgsTooLarge(uint256 length);
     error PortfolioManagerMissingMaxDeviationBps();
 
-    /// @notice Overload defaulting `maxDeviationBps` to 0 (the price-deviation circuit breaker
-    ///         disabled) -- existing callers that don't need it see no behavior change.
+    /// @notice Builds arguments with the deviation breaker disabled.
     function build(Group[] memory groups, uint32 feeBps) internal pure returns (bytes memory args) {
         return build(groups, feeBps, 0);
     }
 
-    /// @param groups  Declared groups (`MIN_GROUPS`-`MAX_GROUPS` of them): each a target weight
-    ///                (WAD-scaled; must sum to WAD across all groups) plus 1-`MAX_MEMBERS_PER_GROUP`
-    ///                members, each priced through its own feed.
-    /// @param feeBps  Protocol fee, BPS-scaled per `PM_BPS` (2bps default per ADR-0008)
-    /// @param maxDeviationBps  Price-deviation circuit breaker, `PM_BPS`-scaled -- 0 disables it.
-    ///                See `PortfolioManagerSwap`'s own doc comment on where and how it's checked.
+    /// @param groups Groups with WAD-scaled weights summing to WAD and per-member feeds.
+    /// @param feeBps LP curve fee, scaled by PM_BPS.
+    /// @param maxDeviationBps Deviation limit, scaled by PM_BPS. Zero disables both deviation checks.
     function build(Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps)
         internal
         pure
@@ -131,10 +105,7 @@ library PortfolioManagerArgsCodec {
         require(args.length <= type(uint8).max, PortfolioManagerArgsTooLarge(args.length));
     }
 
-    /// @dev Independently re-validates every invariant `build()` checks (group/member count
-    ///      bounds, weights sum to WAD, no zero weight, no empty group, no duplicate token, no
-    ///      zero feed) on every parse, not just at `build()` time — `args` is maker-supplied
-    ///      strategy calldata and can be hand-crafted to bypass `build()` entirely.
+    /// @dev Validates group structure, weights, token uniqueness, feeds, and fees in caller-supplied arguments.
     function parse(bytes calldata args)
         internal
         pure
@@ -182,15 +153,9 @@ library PortfolioManagerArgsCodec {
             uint32(bytes4(args.slice(offset, offset + 4, PortfolioManagerMissingMaxDeviationBps.selector)));
     }
 
-    /// @notice Decodes `args` the same way `parse()` does, but skips every structural check
-    ///         `parse()` re-derives (group/member bounds, weight sum, duplicate tokens, zero
-    ///         feed, fee range) — including the O(n²) duplicate-token scan, the single most
-    ///         expensive part of `parse()`. Safe ONLY when the caller has independently proven
-    ///         those invariants already hold for these exact bytes: `PortfolioManagerSwap`'s
-    ///         swap path is the sole intended caller, gated on
-    ///         `PortfolioManagerStrategyValidator.buildParamsAttested`, which already ran the
-    ///         full validating `parse()` against this same immutable order's `args` once, at
-    ///         `attestBuildParameters` time. Never call this against unattested/untrusted args.
+    /// @notice Decodes arguments without structural validation.
+    /// @dev Call only after these exact bytes pass parse(). PM requires validator attestation before this call.
+    ///      Never use for untrusted or unattested arguments.
     function decodeTrusted(bytes calldata args)
         internal
         pure
@@ -238,12 +203,8 @@ library PortfolioManagerArgsCodec {
         }
     }
 
-    /// @notice `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) --
-    ///         always goes through `OracleAdapter`, even for a single-member group, so decimal
-    ///         normalization and price conversion are uniform regardless of group size. Used by
-    ///         `PortfolioManagerStrategyValidator`'s ship-time deviation check, which compares
-    ///         every group's share of the same total, so all groups round the same direction
-    ///         rather than one up and one down as swap-time pricing does.
+    /// @notice Returns the oracle-valued group total with the requested rounding.
+    /// @dev Portfolio-share checks round all groups alike. Swap pricing rounds input up and output down.
     function groupValueWad(Group memory group, address maker, OracleAdapter.Rounding rounding)
         internal
         view

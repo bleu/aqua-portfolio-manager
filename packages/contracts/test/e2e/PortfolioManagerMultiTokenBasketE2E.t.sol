@@ -25,18 +25,8 @@ import {OracleAdapter} from "../../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
-/// @notice Real multi-token oracle-valued groups (ADR-0003/BLEUDEV-347), end to end against a
-/// real Base fork -- a "majors" group {WETH, WBTC} and a "stables" group {DAI, USDT, USDC}, each
-/// member priced through its own real Chainlink feed. `PortfolioManagerE2EBase.t.sol`'s
-/// single-group suite already covers protocol-fee and basic curve mechanics end to end; this
-/// file's job is specifically proving the multi-member group-valuation path
-/// (`OracleAdapter.groupValueWad`) works correctly against real balances and real live prices,
-/// not a mock.
-///
-/// Deliberately self-contained beyond `AquaE2EBase`'s shared Aqua/Safe infra (own Router/
-/// StrategyValidator/MultiSendCallOnly, not `PortfolioManagerE2EBase`) -- that base's PM-specific
-/// fields are hard-shaped around a 2-token, single-member-group universe; this fixture's 5-token,
-/// 2-group universe doesn't fit it.
+/// @notice Tests {WETH, WBTC} and {DAI, USDT, USDC} groups with Base balances and Chainlink feeds.
+/// @dev Uses its own PM fixture because PortfolioManagerE2EBase assumes two single-member groups.
 contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     uint256 internal constant MAJORS_WEIGHT = 0.5e18;
     uint256 internal constant STABLES_WEIGHT = 0.5e18;
@@ -162,10 +152,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         );
     }
 
-    /// @dev Batches `PortfolioManagerStrategyValidator.requireUniverseMatches` and
-    ///      `requireBalancedWithinTolerance` with the real `Aqua.ship` call via
-    ///      `MultiSendCallOnly` -- see `PortfolioManagerE2EBase.t.sol`'s identical note on why
-    ///      this doesn't route through the validator itself.
+    /// @dev Attest and ship atomically from the Safe.
     function _shipOnly(ISwapVM.Order memory order) internal returns (bytes32) {
         bool ok = _shipRaw(order, WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING, USDT_FUNDING, USDC_FUNDING);
         require(ok, "ship through multi-token PM Safe failed");
@@ -175,11 +162,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return strategyHash;
     }
 
-    /// @dev Funding amounts split out of `_shipOnly` (which always uses the fixture's own
-    ///      defaults) so a deviation-tolerance test can fund the wallet deliberately off-target.
-    ///      Deliberately returns the raw `execTransaction` success bool with no `require` --
-    ///      `vm.expectRevert` needs the original revert (e.g. a custom error from the tolerance
-    ///      check) to reach it directly, not get replaced by a generic string reason.
+    /// @dev Custom funding for deviation tests. Preserve the original execution result for revert assertions.
     function _shipRaw(
         ISwapVM.Order memory order,
         uint256 wethAmount,
@@ -193,12 +176,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return _execShipBatch(order, tokens, amounts);
     }
 
-    /// @dev Deals real balances and approves Aqua -- split out of `_shipRaw` so a revert-testing
-    ///      caller can arm `vm.expectRevert()` immediately before the single call that should
-    ///      revert (`_execShipBatch`), not before these several real, non-reverting external
-    ///      calls (`balanceOf`/`approve`), which would otherwise consume `expectRevert`'s "next
-    ///      call" slot instead -- same pitfall `test_StaleFeedEventuallyBlocksTrade` already
-    ///      documents for `deal()`.
+    /// @dev Fund and approve before arming expectRevert, which must target _execShipBatch.
     function _fundAndApprove(
         uint256 wethAmount,
         uint256 wbtcAmount,
@@ -213,12 +191,6 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         tokens[3] = address(usdt);
         tokens[4] = address(usdc);
 
-        // deal() only mutates a forge *script*'s own local simulation state, not the live node
-        // it broadcasts against -- Deploy.mock.multitoken.sol's own deal() calls never actually
-        // persist on chain (confirmed empirically: the safe's real balance is 0 immediately
-        // after that script runs). Real funding has to happen here, inside the test itself,
-        // same as PortfolioManagerE2EBase.t.sol's `_fundAndShip` already does for the
-        // single-group fixture.
         deal(address(weth), address(multiTokenSafe), wethAmount);
         deal(address(wbtc), address(multiTokenSafe), wbtcAmount);
         deal(address(dai), address(multiTokenSafe), daiAmount);
@@ -244,9 +216,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return _execShipBatch(order, tokens, amounts, true);
     }
 
-    /// @param attest Whether to include the `attestBuildParameters` leg -- `false` simulates a
-    ///        caller that skips the recommended multicall validation entirely and ships directly,
-    ///        the exact scenario the swap-time attestation gate exists to catch.
+    /// @param attest Include attestation. False tests callers that ship without validation.
     function _execShipBatch(ISwapVM.Order memory order, address[] memory tokens, uint256[] memory amounts, bool attest)
         internal
         returns (bool)
@@ -318,10 +288,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return taker.swap(order, tokenIn, tokenOut, amount, takerData);
     }
 
-    /// @dev Independently replicates `PortfolioManagerSwap._groupValueWad` (real balance ×
-    ///      real live price, normalized by the token's own decimals) so tests can assert an
-    ///      analytically-derived expected quote against the actual swap output, the same pattern
-    ///      `PortfolioManagerSwapMultiTokenGroups.t.sol`'s unit tests use.
+    /// @dev Compute group value from balances and feeds independently of the production aggregation helper.
     function _groupValueWad(PortfolioManagerArgsCodec.Member[] memory members, bool roundUp)
         internal
         view
@@ -341,9 +308,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         }
     }
 
-    /// @dev Same per-token conversion `_groupValueWad` does for a whole group, but for an
-    ///      arbitrary token amount -- used to put two different tokens' realized swap amounts on
-    ///      a common WAD-scaled USD footing for a rate comparison.
+    /// @dev Convert a token amount to WAD-scaled USD for comparisons across tokens.
     function _usdValueWad(address token, address feed, uint256 amount) internal view returns (uint256) {
         OracleAdapter.PriceFeed memory pf =
             OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feed), maxStaleness: maxStaleness});
@@ -354,17 +319,11 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
     // ===== Tests =====
 
-    // Each test below builds its order with a distinct feeBps (0/1/2/3, all negligible at
-    // PM_BPS scale) purely so it encodes to a distinct strategyHash -- on a real `--rpc-url`
-    // fork, state isn't reset between test functions the way the default in-memory backend
-    // does, so byte-identical orders across tests would collide on the same already-shipped
-    // Aqua ledger entry (same trick PortfolioManagerSkewWorseningE2E.t.sol's own reversed-
-    // universe order and PortfolioManagerShipE2E.t.sol's "LOW_TIER_FEE_BPS + 1" already use).
+    // Distinct fees give these test orders distinct strategy hashes.
 
     function test_ShipsTwoGroupStrategyAndLedgerReflectsIt() public {
         ISwapVM.Order memory order = _buildOrder(0);
-        // _shipOnly funds the wallet itself (see its own note on why) -- WETH_FUNDING is the
-        // known, fixed amount it deals, so there's no need to read the balance beforehand.
+
         bytes32 strategyHash = _shipOnly(order);
 
         (uint248 ledgerBalance, uint8 tokensCount) =
@@ -377,10 +336,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         ISwapVM.Order memory order = _buildOrder(1);
         _shipOnly(order);
 
-        // Trade direction: taker gives USDC (stables), receives WETH (majors) -- so balanceIn is
-        // the stables group's full sum, balanceOut is the majors group's full sum. Majors' real
-        // funding (20 WETH vs. 1 WBTC) is deliberately uneven, so a correct group-valued quote
-        // can only be reproduced by summing both members, not by reading WETH alone.
+        // USDC enters stables and WETH leaves majors. The output reserve includes WBTC too.
         uint256 correctBalanceIn = _groupValueWad(groups[1].members, true);
         uint256 correctBalanceOut = _groupValueWad(groups[0].members, false);
 
@@ -405,10 +361,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             feeWad: 0
         });
 
-        // PortfolioManagerPricing.exactIn expects amountIn in the SAME numeraire as
-        // balanceIn/balanceOut (oracle-VALUE-scaled WAD here, per ADR-0003) -- not USDC's own
-        // native 6-decimal units. Convert in, then convert the result back to WETH's own native
-        // units, mirroring exactly what PortfolioManagerSwap._portfolioManagerSwapXD itself does.
+        // Convert native USDC to value WAD before pricing, then convert output value to native WETH.
         uint256 usdcAmountInValueWad = _usdValueWad(address(usdc), usdcFeed, usdcAmountIn);
         uint256 expectedCorrectOutValueWad = PortfolioManagerPricing.exactIn(correctPoolState, usdcAmountInValueWad);
         uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongPoolState, usdcAmountInValueWad);
@@ -422,21 +375,14 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
         (, uint256 actualAmountOut) = _swapExactIn(order, address(usdc), address(weth), usdcAmountIn);
 
-        // assertApproxEqAbs, not assertEq: this test's own independent conversion (value WAD ->
-        // WETH native units as two separate divisions) and the production code's single-pass
-        // conversion round in the same direction but not always to the identical wei -- a dust-
-        // level (<0.001%) tolerance, not a real discrepancy.
+        // Allow conversion-rounding differences below 0.001% between the reference and production paths.
         assertApproxEqAbs(
             actualAmountOut,
             expectedCorrectOut,
             expectedCorrectOut / 1e5,
             "must price off majors' full WETH+WBTC oracle-valued sum"
         );
-        // A WETH-balance-only quote UNDERstates the majors group's real value (WBTC is real
-        // value ignored, not double-counted), which understates balanceOut and so understates
-        // amountOut too (amountOut scales with balanceOut at fixed weights/balanceIn) -- so the
-        // correct, WBTC-inclusive output must come out strictly LARGER than that quote, not
-        // smaller.
+        // Including WBTC increases the output reserve and therefore the quote.
         assertGt(
             actualAmountOut,
             expectedWrongOut,
@@ -444,14 +390,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         );
     }
 
-    /// @notice Unlike `test_SkewReducingBeatsSkewWorseningAtTheSameTradeSize` (which deliberately
-    /// resets state via `vm.snapshotState()` between its two trades to isolate a single-trade
-    /// comparison), this fires two same-direction trades back to back with no reset -- proving
-    /// the second one gets a strictly worse rate purely because the first trade's real balance
-    /// change (read fresh via `balanceOf`, ADR-0002) feeds into the second trade's quote. Neither
-    /// the pure-library fuzz suite (`PortfolioManagerPricing.t.sol`) nor any other E2E test here
-    /// exercises this: the fuzz tests call `exactIn` once per run against synthetic balances,
-    /// with no second call carrying the first's output back in as new state.
+    /// @notice Consecutive same-direction trades use updated balances and give a worse second rate.
     function test_SecondTradeInSameDirectionGetsWorseRateThanTheFirst() public {
         ISwapVM.Order memory order = _buildOrder(6);
         _shipOnly(order);
@@ -472,9 +411,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         ISwapVM.Order memory order = _buildOrder(2);
         _shipOnly(order);
 
-        // Donate extra DAI directly to the wallet (a real ERC20 balance change, not a PM trade,
-        // same "external skew" pattern PortfolioManagerSkewReducingE2E.t.sol uses) -- pushes the
-        // stables group's value above its 50% target share of the total portfolio.
+        // Donate DAI to make stables overweight.
         deal(address(dai), address(multiTokenSafe), dai.balanceOf(address(multiTokenSafe)) + 40_000e18);
 
         uint256 snapshot = vm.snapshotState();
@@ -489,9 +426,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         // gives USDC (stables), receives WETH (majors).
         (uint256 worseningIn, uint256 worseningOut) = _swapExactIn(order, address(usdc), address(weth), 300e6);
 
-        // The two trades swap in opposite directions between differently-valued tokens, so
-        // compare a common WAD-scaled "USD out per USD in" rate (using the same live oracle
-        // prices the curve itself used), not the raw output amounts directly.
+        // Compare USD output per USD input because the trades use different tokens and directions.
         uint256 reducingRateWad =
             _usdValueWad(address(usdc), usdcFeed, reducingOut) * 1e18 / _usdValueWad(address(weth), wethFeed, 0.05e18);
         uint256 worseningRateWad = _usdValueWad(address(weth), wethFeed, worseningOut) * 1e18
@@ -508,13 +443,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         ISwapVM.Order memory order = _buildOrder(3);
         _shipOnly(order);
 
-        // Real Chainlink feeds each update on their own independent cadence -- unlike the mock
-        // feeds PortfolioManagerSwapMultiTokenGroups.t.sol's unit tests use, there's no way to
-        // control exactly which declared member goes stale first here. Warping past the OLDEST
-        // member's own updatedAt + maxStaleness guarantees at least that one is stale; that
-        // member's own feed/timestamp is tracked so the exact revert can still be asserted
-        // (the "even a non-traded member's staleness blocks the trade" claim itself is already
-        // proven precisely, with full mock control, by that unit test).
+        // Expire the oldest feed and assert its exact error.
+        // Mock-based tests isolate the non-traded-member case.
         address[5] memory feeds = [wethFeed, wbtcFeed, daiFeed, usdtFeed, usdcFeed];
         uint256 oldestUpdatedAt = type(uint256).max;
         address oldestFeed;
@@ -526,14 +456,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             }
         }
 
-        // The fork's feed data is frozen at the fork block -- warping past the oldest member's
-        // own maxStaleness window is a real, live way to trigger staleness, not a mock.
         vm.warp(oldestUpdatedAt + maxStaleness + 1);
 
-        // Funds the taker and builds calldata BEFORE arming expectRevert, then calls
-        // taker.swap() directly (not through _swapExactIn) -- vm.expectRevert only tracks the
-        // very next call frame, and an intervening deal() between arming it and the real call
-        // (as _swapExactIn's own internal ordering does) consumes that slot instead.
+        // Fund and build calldata before expectRevert so swap is the next external call.
         uint256 amount = 300e6;
         deal(address(usdc), address(taker), amount * 2);
         bytes memory takerData = _exactInTakerData();
@@ -549,8 +474,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     // ===== Price-deviation circuit breaker (ADR-0012) =====
 
     function test_ShipSucceedsWithGenerousToleranceUnderNormalFunding() public {
-        // A wide 90% band -- not meant to be tight, just proving the new batch leg doesn't
-        // spuriously block a normal ship() under this fixture's real, live-priced funding.
+        // A wide limit checks that validation accepts the fixture's normal funding.
         ISwapVM.Order memory order = _buildOrder(4, 0.9e9);
         _shipOnly(order);
     }
@@ -558,10 +482,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     function test_ShipRevertsWhenWalletIsExtremelySkewedBeyondDeviationTolerance() public {
         ISwapVM.Order memory order = _buildOrder(5, 0.1e9); // 10% band
 
-        // Stables funded 1000x over -- regardless of live WETH/WBTC prices, a wallet holding
-        // ~99.9% of its value in one group against a 50/50 target is far outside any reasonable
-        // tolerance. Mirrors a wallet that was never balanced to begin with, or drained on the
-        // majors side by a direct Safe-owner withdrawal outside ship()/swap() entirely.
+        // Funding stables 1000x above normal produces excessive deviation from the 50/50 target.
         (address[] memory tokens, uint256[] memory amounts) =
             _fundAndApprove(WETH_FUNDING, WBTC_FUNDING, DAI_FUNDING * 1000, USDT_FUNDING * 1000, USDC_FUNDING * 1000);
 

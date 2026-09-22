@@ -1,21 +1,23 @@
-# Architecture Decision Records
+# Architecture decisions
 
-Lightweight ADRs (Nygard-style: Context / Decision / Consequences) for this project. Start a new one from [`0000-template.md`](0000-template.md); number sequentially, never renumber or delete a merged ADR — mark it **Superseded by ADR-XXXX** instead and let the new one explain why.
+Each architecture decision record (ADR) explains a design choice.
+Use [the template](0000-template.md) for new decisions and assign the next number.
+Keep merged ADR numbers and files. Mark replaced decisions as superseded and link to their replacements.
+Record the reason for a choice here. Put current behavior in the relevant reference document.
+Follow the [documentation style](../STYLE.md).
 
-Most of these decisions were made before this repo existed, during the grant proposal's design process. Each ADR here is the durable, code-repo-local record of one of those decisions, grounded against the Aqua/swapVM interfaces.
-
-| # | Title | Status |
+| ADR | Decision | Status |
 |---|---|---|
-| [0001](0001-license-under-aqua-source-not-mit.md) | License this repo's own code under Aqua-Source-1.1, not MIT | Accepted |
-| [0002](0002-dedicated-maker-wallet-as-portfolio-scope.md) | Dedicated maker wallet as portfolio scope, zero Aqua protocol changes | Accepted |
-| [0003](0003-oracle-valued-token-groups.md) | Oracle-valued token groups, not per-token targets | Accepted |
-| [0004](0004-constant-mean-weighted-curve-pricing.md) | Constant-mean weighted curve pricing, reimplemented independently | Accepted |
-| [0005](0005-chainlink-push-oracles.md) | Chainlink-style push oracles, bluechip-first | Accepted |
-| [0006](0006-exposure-smoothing.md) | Fee + gas-cost profitability gate for exposure guardrails (no tolerance band/rate cap, no EMA/TWAP) | Accepted (revised 2026-08-25) |
-| [0007](0007-donation-resistance-via-curve-invariant.md) | Donation resistance via curve invariant, not internal accounting | Accepted (round-trip proof complete) |
-| [0008](0008-success-metrics-tracking-error-and-cost.md) | Success = tracking error + cost of rebalancing, not fee/volume | Accepted |
-| [0009](0009-deploy-on-an-l2-at-launch.md) | Deploy on an L2 at launch, specific chain not locked in | Accepted |
-| [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | On-chain form: independent router, new swapVM instruction (not AquaApp, not merged into 1inch's router) | Accepted |
-| [0011](0011-safe-wallet-with-basket-scope-guard.md) | Safe-only maker wallet with a Basket Scope Guard, instead of bounding cross-strategy risk | Accepted |
-| [0012](0012-price-deviation-circuit-breaker.md) | Price-deviation circuit breaker for extreme off-target composition | Accepted |
-| [0013](0013-build-parameter-attestation-gate.md) | Build-parameter attestation gate — block trading unless ship-time validation ran on-chain | Accepted |
+| [0001](0001-license-under-aqua-source-not-mit.md) | Use Aqua-Source-1.1 | Accepted |
+| [0002](0002-dedicated-maker-wallet-as-portfolio-scope.md) | Use a dedicated maker wallet | Accepted |
+| [0003](0003-oracle-valued-token-groups.md) | Value exposure by token group | Accepted |
+| [0004](0004-constant-mean-weighted-curve-pricing.md) | Use a constant-mean weighted curve | Accepted |
+| [0005](0005-chainlink-push-oracles.md) | Use Chainlink-style push feeds | Accepted |
+| [0006](0006-exposure-smoothing.md) | Price current exposure without smoothing | Accepted |
+| [0007](0007-donation-resistance-via-curve-invariant.md) | Use the curve invariant for donation resistance | Accepted |
+| [0008](0008-success-metrics-tracking-error-and-cost.md) | Measure tracking error and rebalancing cost | Accepted |
+| [0009](0009-deploy-on-an-l2-at-launch.md) | Launch on an L2 | Accepted |
+| [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | Deploy an independent SwapVM router | Accepted |
+| [0011](0011-safe-wallet-with-basket-scope-guard.md) | Require a Safe with a Basket Scope Guard | Accepted |
+| [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Accepted |
+| [0013](0013-build-parameter-attestation-gate.md) | Require parameter attestation before trading | Accepted |

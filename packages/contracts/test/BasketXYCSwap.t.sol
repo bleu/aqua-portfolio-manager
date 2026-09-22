@@ -37,9 +37,7 @@ contract BasketXYCSwapTest is BasketXYCSwapTestBase {
         (, amountOut,) = router.swap(order, address(tokenA), address(tokenB), amountIn, takerData);
     }
 
-    /// @notice Two makers, identical A/B liquidity, different C. Same trade must price
-    /// differently, and must match the plain xy=k formula with (B + C) as the effective
-    /// balanceOut — proving the curve genuinely reads the basket, not just tokenOut.
+    /// @notice Compare equal A/B liquidity with different C balances against the B+C reserve formula.
     function test_priceIncludesBasketTokenBalance() public {
         ISwapVM.Order memory orderSmallC = _shipMaker(address(0x1111), 1_000e18, 1_000e18, 100e18);
         ISwapVM.Order memory orderLargeC = _shipMaker(address(0x2222), 1_000e18, 1_000e18, 10_000e18);
@@ -68,8 +66,6 @@ contract BasketXYCSwapTest is BasketXYCSwapTestBase {
         assertEq(tokenC.balanceOf(maker), cBalanceBefore, "token C must never move");
     }
 
-    /// @notice Sanity check against plain XYCSwap's own formula shape: with C's balance at
-    /// zero, this curve must reduce to exactly the 2-token xy=k case.
     function test_zeroBasketBalanceReducesToPlainXYCSwap() public {
         ISwapVM.Order memory order = _shipMaker(address(0x4444), 1_000e18, 1_000e18, 0);
         uint256 amountIn = 10e18;
@@ -80,9 +76,7 @@ contract BasketXYCSwapTest is BasketXYCSwapTestBase {
         assertEq(amountOut, expected, "zero basket balance must match plain xy=k");
     }
 
-    /// @notice Comparison against swap-vm's own plain XYCSwap (opcode 1), which has no notion of
-    /// a third token at all -- the basket-aware maker (also holding C) must price better than an
-    /// identically-funded plain-XYCSwap maker on the same A/B trade.
+    /// @notice Compare the basket curve with the independent XYCSwap opcode at identical A/B funding.
     function test_PricesBetterThanPlainXYCSwapWhichCannotSeeTokenC() public {
         address basketMaker = address(0x5555);
         address plainMaker = address(0x6666);

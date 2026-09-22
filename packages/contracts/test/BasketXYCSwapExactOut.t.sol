@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-/// @dev PoC only — see ../src/BasketXYCSwap.sol for what this is answering. Kept as its own
-///      contract/file rather than folded into BasketXYCSwap.t.sol — see BasketXYCSwapTestBase.sol
-///      for why.
+/// @dev Separate suite to avoid optimizer stack limits. See BasketXYCSwapTestBase.
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";

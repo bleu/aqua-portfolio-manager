@@ -24,12 +24,7 @@ import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategy
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
-/// against a real Aqua registry — not the individual instructions in isolation, which
-/// PortfolioManagerPricing.t.sol/PortfolioManagerArgsCodec.t.sol already cover. This file
-/// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
-/// per 1IP-103) actually behave as designed end to end, and is it actually mandatory — not just
-/// something PortfolioManagerProgramBuilder happens to include.
+/// @notice Tests fee collection and enforcement through SwapVM settlement against Aqua.
 contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant FEE_BPS_SCALE = 1e9;
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
@@ -61,9 +56,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
-        // $1.00 per token (18-decimal feed) so a group's oracle-valued sum equals its raw
-        // balance exactly, matching every DAO-fee/tiering assertion below (all derived from
-        // INITIAL_BALANCE / SWAP_AMOUNT as if they were the group's value directly).
+        // Unit prices and 18 decimals make value amounts equal native balances.
         feedA = new MockAggregatorV3(18, 1e18, block.timestamp);
         feedB = new MockAggregatorV3(18, 1e18, block.timestamp);
 
@@ -83,9 +76,7 @@ contract PortfolioManagerOpcodesTest is Test {
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        // The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours) -- generous on
-        // purpose within that ceiling, since this suite's own vm.warp usage (if any) is about
-        // ledger/fee mechanics, not oracle freshness.
+        // Keep feeds fresh so these tests isolate ledger and fee behavior.
         members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: 18 hours});
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
@@ -94,11 +85,7 @@ contract PortfolioManagerOpcodesTest is Test {
         return _orderForProgram(PortfolioManagerProgramBuilder.build(groups, lpFeeBps));
     }
 
-    /// @dev Deliberately does NOT call PortfolioManagerProgramBuilder — hand-packs the wire
-    ///      format directly (opcode 0, the curve, per VM.sol's runLoop) the way any third party
-    ///      who never heard of our builder still could, using only the LP-facing
-    ///      PortfolioManagerArgsCodec encoding (public, documented, nothing secret about it).
-    ///      Proves the protocol fee survives bypassing our own tooling entirely.
+    /// @dev Bypass the program builder to test fee enforcement in the opcode itself.
     function _buildOrderFromHandCraftedProgram(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
         bytes memory args = PortfolioManagerArgsCodec.build(groups, lpFeeBps);
         bytes memory program = abi.encodePacked(uint8(0), uint8(args.length), args);
@@ -130,10 +117,7 @@ contract PortfolioManagerOpcodesTest is Test {
         );
     }
 
-    /// @param tokenInLedgerAmount Aqua-ledger amount shipped for tokenA specifically — kept
-    ///        separate from the maker's real wallet balance (always `INITIAL_BALANCE`, since
-    ///        that's what the curve actually prices off, per ADR-0002) so a test can starve
-    ///        just the ledger `_AQUA.pull()` draws from without touching real exposure.
+    /// @param tokenInLedgerAmount Authorized tokenA amount, independent of the funded wallet balance.
     function _shipOrder(ISwapVM.Order memory order, uint256 tokenInLedgerAmount) internal returns (bytes32) {
         tokenA.mint(maker, INITIAL_BALANCE);
         tokenB.mint(maker, INITIAL_BALANCE);
@@ -216,15 +200,12 @@ contract PortfolioManagerOpcodesTest is Test {
             })
         );
 
-        // Exact-out grosses amountIn up by both the LP's own curve fee and the protocol fee on
-        // top -- mint generously past amountOut so the taker never runs short regardless of tier.
+        // Fund enough input to cover both LP and DAO fees for exact-out.
         tokenA.mint(address(taker), amountOut * 3);
         return taker.swap(order, address(tokenA), address(tokenB), amountOut, takerData);
     }
 
-    /// @dev Replicates PortfolioManagerSwap's own exact-out math (clean amountIn via the curve,
-    ///      then grossed up by daoBps/(FEE_BPS - daoBps)) so tests can assert an independently
-    ///      derived expected value instead of just "some nonzero fee landed".
+    /// @dev Compute expected exact-out fees from the curve input and DAO rate.
     function _expectedExactOutDaoAmount(uint32 lpFeeBps, uint256 amountOut) internal view returns (uint256) {
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: INITIAL_BALANCE,
@@ -475,16 +456,11 @@ contract PortfolioManagerOpcodesTest is Test {
         _shipOrder(feeOrder, INITIAL_BALANCE);
         (, uint256 amountOutWithLpFee) = _swapExactIn(feeOrder, SWAP_AMOUNT);
 
-        // Same starting balances (via the snapshot/revert) -- only the LP's own curve fee
-        // differs, so it alone must explain a strictly smaller quoted output. Confirms feeWad
-        // still reaches PortfolioManagerPricing correctly, unaffected by the protocol-fee pull
-        // running ahead of it in the program.
+        // Restore identical balances to isolate the effect of the LP fee.
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
     }
 
-    /// @notice A token never shipped to Aqua at all: `SwapVM`'s own `AQUA.safeBalances()` gate
-    /// rejects it before dispatch reaches this opcode. See `PortfolioManagerSwap.sol` for why
-    /// our own declared-universe check exists anyway.
+    /// @notice Aqua rejects unshipped tokens before PM dispatch.
     function test_RevertsWhenTakerRequestsTokenOutsideDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         bytes32 strategyHash = _shipOrder(order, INITIAL_BALANCE);
@@ -505,17 +481,9 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(outsideToken), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice The one case where our own declared-universe check is genuinely reachable, not
-    /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
-    /// never gave a weight to (a ship()/PortfolioManagerArgsCodec encoding mismatch, not a
-    /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
-    /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
-    /// @dev Attests with the *declared* 2-token set (matches, so attestation succeeds) but then
-    ///      ships a *different*, 3-token set directly -- `attestBuildParameters`'s own `tokens`
-    ///      argument isn't cryptographically bound to whatever a later, separate `ship()` call
-    ///      actually uses, so this is still a real, reachable scenario even with attestation
-    ///      required, as long as the two calls aren't the same atomic batch (the recommended flow
-    ///      always batches them together with the identical `tokens` array).
+    /// @notice Aqua permits a shipped token that the encoded PM universe does not declare.
+    /// @dev Attest two tokens, then ship three. Attestation does not bind ship()'s later token list.
+    ///      Aqua accepts the token, but PM's _resolve rejects it.
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -554,10 +522,6 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice The multicall validation that's supposed to run alongside `ship()`
-    /// (`PortfolioManagerStrategyValidator.attestBuildParameters`) is convention, not enforced by
-    /// `Aqua.ship()` itself -- this proves the swap opcode blocks trading on its own when that
-    /// convention was skipped, rather than trusting the caller.
     function test_RevertsWhenStrategyWasNeverAttested() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -590,11 +554,7 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice The central guarantee: the protocol fee is not merely a convention our own
-    /// program-builder happens to follow. A strategy shipped from program bytes that never
-    /// touched PortfolioManagerProgramBuilder -- built by hand, exactly as any third party
-    /// could -- still pays the DAO the moment it invokes our curve opcode, because the pull is
-    /// baked into PortfolioManagerSwap's own execution, not a separate, omittable instruction.
+    /// @notice Hand-packed programs still pay the DAO fee when they execute the PM curve opcode.
     function test_ProtocolFeeIsMandatoryEvenBypassingOurProgramBuilder() public {
         ISwapVM.Order memory order = _buildOrderFromHandCraftedProgram(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);

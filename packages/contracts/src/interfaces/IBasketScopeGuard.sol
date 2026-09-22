@@ -4,11 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 /// @title IBasketScopeGuard
-/// @notice External interface for `BasketScopeGuard`'s own surface — its inherited
-///         `checkTransaction`/`checkAfterExecution`/`checkModuleTransaction`/
-///         `checkAfterModuleExecution` functions are already declared by Safe's own `BaseGuard`/
-///         `Guard`/`IModuleGuard` interfaces, so they aren't redeclared here. See
-///         `BasketScopeGuard` for the full rationale.
+/// @notice PM-specific Guard interface. Safe interfaces declare the transaction and module hooks.
 interface IBasketScopeGuard {
     error TokenBasketLengthMismatch();
     error BasketIdZeroReserved();

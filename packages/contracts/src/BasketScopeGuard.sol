@@ -9,29 +9,10 @@ import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {IBasketScopeGuard} from "./interfaces/IBasketScopeGuard.sol";
 
 /// @title BasketScopeGuard
-/// @notice A Safe Transaction Guard (ADR-0011) installed on the LP's dedicated maker wallet.
-///         Every outgoing `AQUA.ship(app, strategy, tokens, amounts)` call is inspected before
-///         the Safe executes it: PM's own, exact strategy is allowed unconditionally — it is the
-///         trusted mechanism meant to price across groups; any other strategy must keep every
-///         token it declares inside a single group, and every token must belong to *some*
-///         declared group.
-/// @dev Trust is anchored to `keccak256(strategy)`, not to the router address passed as `app`.
-///      A swapVM router is a general-purpose opcode dispatcher — the same router can run PM's
-///      strategy and any other strategy built from the same opcode set, each with its own
-///      `strategyHash`. Checking `app` alone would trust every strategy that happens to share
-///      PM's router, not just PM itself (see ADR-0011).
-///
-///      Both the group-membership mapping and the trusted strategy hash are fixed at
-///      construction, with no setter anywhere in this contract — neither can be loosened later
-///      by whoever controls the Safe.
-///
-///      This Guard cannot see or undo `ship()` calls made before it was installed — a Solidity
-///      contract has no way to scan historical event logs. Onboarding a Safe with prior activity
-///      is an off-chain procedure (scanning `Shipped` events for that address before installing
-///      the Guard), not an on-chain gate: an on-chain attestation flag would only record that
-///      *someone* clicked "yes I checked," not that the check actually happened, so it added
-///      process theater without a real guarantee — the Safe's own signer threshold is already
-///      what has to be trusted for `setGuard` itself (see ADR-0011's Consequences).
+/// @notice Checks direct Aqua ship() calls from the Safe against a fixed strategy hash and group mapping.
+/// @dev The trusted PM hash may span groups. Other strategies must declare tokens from one group.
+///      Router identity alone is insufficient because a router can execute multiple strategies.
+///      Nested calls and prior strategies are outside this check. See docs/adr/0011-safe-wallet-with-basket-scope-guard.md.
 contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
     /// @inheritdoc IBasketScopeGuard
     address public immutable AQUA;
@@ -104,9 +85,7 @@ contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
     /// @dev see ITransactionGuard/IModuleGuard
     function checkAfterModuleExecution(bytes32, bool) external override {}
 
-    /// @dev The actual check, shared by both the normal multisig path and the module path.
-    ///      Reverts on a disallowed `ship()`; returns silently for everything else (any other
-    ///      target, any other Aqua function, or PM's own trusted strategy).
+    /// @dev Checks direct Aqua ship() calls. Other targets and selectors pass without inspection.
     function _check(address to, bytes memory data) internal view {
         if (to != AQUA) return;
         if (data.length < 4 || _selector(data) != IAqua.ship.selector) return;

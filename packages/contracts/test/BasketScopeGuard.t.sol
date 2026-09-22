@@ -262,10 +262,7 @@ contract BasketScopeGuardTest is Test {
         }
     }
 
-    /// @dev Random length (0..universe.length, inclusive of the empty-list edge case) and random
-    ///      order, with replacement -- a real `tokens` array could in principle repeat an entry,
-    ///      and order determines which token becomes `CrossBasketStrategyForbidden`'s reference
-    ///      basket (not the pass/fail outcome itself, which `_predictedOutcome` mirrors exactly).
+    /// @dev Sample with replacement, including empty lists. Token order changes the error reference token, not acceptance.
     function _randomTokenSubset(uint256 seed, address[] memory universe)
         private
         pure
@@ -293,10 +290,7 @@ contract BasketScopeGuardTest is Test {
         return true;
     }
 
-    // ---------------------------------------------------------------------
-    // Integration: a real deployed Safe, both the execTransaction path and
-    // the module path, both actually calling the real Aqua contract.
-    // ---------------------------------------------------------------------
+    // Safe transaction and module integration.
 
     function _deploySafeWithOwner(uint256 ownerPk) internal returns (Safe safe, address owner) {
         owner = vm.addr(ownerPk);
@@ -312,9 +306,7 @@ contract BasketScopeGuardTest is Test {
         safe = Safe(payable(address(factory.createProxyWithNonce(address(singleton), setupData, 0))));
     }
 
-    /// @dev Signs, but does NOT execute — so callers that need `vm.expectRevert()` to target
-    ///      the real `execTransaction` call (not one of the view calls used to build the
-    ///      signature) can sign first and call `execTransaction` directly right after.
+    /// @dev Sign before expectRevert so nonce and hash reads do not consume its next-call expectation.
     function _signFor(Safe safe, uint256 ownerPk, address to, bytes memory data)
         internal
         view
@@ -346,9 +338,6 @@ contract BasketScopeGuardTest is Test {
         tokens[1] = tokenC; // basket 2
         bytes memory shipData = _shipCalldata("attacker strategy", tokens);
 
-        // Sign BEFORE arming expectRevert, so the very next call is the one that must revert —
-        // getTransactionHash()/nonce() are view calls that would otherwise satisfy expectRevert's
-        // "next call" prematurely (they never revert, but they *are* the next external call).
         bytes memory signature = _signFor(safe, ownerPk, address(aqua), shipData);
 
         vm.expectRevert();

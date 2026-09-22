@@ -21,13 +21,7 @@ import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Real multi-token oracle-valued groups (ADR-0003), exercised through a
-/// real SwapVM.swap() call: behavior that's meaningless to test at a single-token-group scope --
-/// same-group rejection, a 2-member group's price reflecting its FULL oracle-valued sum (not
-/// just the token actually changing hands), and a stale feed on a non-traded group member still
-/// blocking the trade (ADR-0005: "every member fresh, not just the two changing hands").
-/// `PortfolioManagerOpcodes.t.sol` already covers the protocol-fee mechanics this file doesn't
-/// repeat; `OracleAdapter.t.sol` already covers `groupValueWad`'s own math in isolation.
+/// @notice Tests group valuation, member liquidity, and feed freshness through SwapVM swaps.
 contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
 
@@ -44,9 +38,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     address internal maker;
 
-    /// @dev group0 = {tokenA, tokenB} (2 members), group1 = {tokenC} (1 member) -- deliberately
-    ///      mixes a multi-member and a single-member group in the same universe, since both must
-    ///      resolve through the same uniform oracle path.
+    /// @dev Mix a two-member group with a single-member group to test uniform valuation.
     PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
@@ -59,9 +51,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         tokenB = new TokenMock("Token B", "TKB");
         tokenC = new TokenMock("Token C", "TKC");
 
-        // $1.00 per token (18-decimal feed) by default -- a group's oracle-valued sum then
-        // equals the plain sum of its members' balances, keeping the arithmetic in each test
-        // easy to reason about independently.
+        // Unit prices make the group value equal the sum of native balances.
         feedA = new MockAggregatorV3(18, 1e18, block.timestamp);
         feedB = new MockAggregatorV3(18, 1e18, block.timestamp);
         feedC = new MockAggregatorV3(18, 1e18, block.timestamp);
@@ -114,9 +104,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         );
     }
 
-    /// @param balA/balB/balC Real wallet balances (ADR-0002) -- also shipped 1:1 as the Aqua
-    ///        ledger amount for each token, since none of these tests exercise the ledger/wallet
-    ///        divergence PortfolioManagerOpcodes.t.sol's fee-skip tests already cover.
+    /// @param balA/balB/balC Real wallet balances, also used as Aqua ledger amounts.
     function _shipOrder(ISwapVM.Order memory order, uint256 balA, uint256 balB, uint256 balC) internal {
         tokenA.mint(maker, balA);
         tokenB.mint(maker, balB);
@@ -293,9 +281,6 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         bytes memory takerData = _exactInTakerData();
         tokenA.mint(address(taker), 1_000e18);
 
-        // tokenA and tokenB are both members of group0 -- the curve only prices cross-group
-        // pairs (ADR-0003), so this must revert rather than silently degenerate to a spot price
-        // of exactly 1.
         vm.expectRevert(
             abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapSameGroupSwap.selector, uint256(0))
         );
@@ -303,9 +288,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     }
 
     function test_MultiMemberGroupPricesOffFullGroupValueNotJustTheTradedToken() public {
-        // group0's members are funded unevenly (1,000 / 99,000) but sum to the same 100,000 as
-        // group1's single member -- a perfectly balanced 50/50 universe by GROUP value, even
-        // though tokenA alone holds only 1% of group0's real value.
+        // Equal group values despite uneven funding within group0.
         uint256 balA = 1_000e18;
         uint256 balB = 99_000e18;
         uint256 balC = 100_000e18;
@@ -323,10 +306,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(correctPoolState, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "must price off group0's full 2-member sum");
 
-        // Wrong expectation (what a regression to single-token-only pricing would compute):
-        // balanceOut = tokenA's own raw balance alone, ignoring tokenB entirely. With balA this
-        // small relative to amountIn, that pool looks far more skewed/thin, so it would yield a
-        // strictly worse (smaller) output than the correct group-valued quote above.
+        // Omitting tokenB understates the output reserve and therefore the quote.
         PortfolioManagerPricing.PoolState memory wrongPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: balC, balanceOut: balA, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
         });
@@ -337,9 +317,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     }
 
     function test_StaleFeedOnNonTradedGroupMemberBlocksTrade() public {
-        // Default forge-std block.timestamp starts near 0 -- warp forward first so `- 2 hours`
-        // below can't underflow, then refresh every feed except feedB (the one under test) so
-        // only feedB's own staleness is what's actually being exercised here.
+        // Advance time to avoid subtraction underflow, then make only feedB stale.
         vm.warp(365 days);
         feedA.setAnswer(1e18, block.timestamp);
         feedC.setAnswer(1e18, block.timestamp);
@@ -347,9 +325,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         ISwapVM.Order memory order = _buildOrder(0);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
 
-        // tokenB's own feed goes stale -- tokenB is a member of group0 but is NOT one of the two
-        // tokens actually changing hands in the trade below (tokenC -> tokenA). Per ADR-0005,
-        // every declared member's feed must be fresh, not just the traded pair's.
+        // A stale non-traded member must still block the group's trade.
         uint256 staleUpdatedAt = block.timestamp - 2 hours;
         feedB.setAnswer(1e18, staleUpdatedAt);
 
@@ -364,11 +340,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
     }
 
-    /// @notice Deterministic reproduction of PortfolioManagerSwapInsufficientMemberBalance,
-    /// rather than relying on the fuzz test below to land on it by chance: tokenA holds 1 wei
-    /// while tokenB (same group, same $1 price -- no depeg needed to trigger this) holds
-    /// 1,000,000 tokens, so group0's value is almost entirely tokenB's. A trade sized off that
-    /// value asks for far more raw tokenA than the 1 wei that actually exists.
+    /// @notice Group value can support a quote while tokenA has only one wei available.
     function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance() public {
         ISwapVM.Order memory order = _buildOrder(0);
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
@@ -376,11 +348,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), 1_000_000e18);
 
-        // Independently computed expected `requested`, the same way
-        // test_MultiMemberGroupPricesOffFullGroupValueNotJustTheTradedToken does: both tokens are
-        // still pegged at $1 here (this reproduction doesn't need a real depeg, just a raw
-        // balance far below a group's value share), so group0's value is exactly balA + balB and
-        // the value-to-tokenA-raw-units conversion is 1:1.
+        // Unit prices make the expected group value balA + balB, with a 1:1 conversion to tokenA units.
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: 1_000_000e18,
             balanceOut: 1 + 1_000_000e18,
@@ -401,11 +369,6 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
     }
 
-    /// @notice Exact-out counterpart to `test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance`
-    /// -- the new check sits after the shared exactIn/exactOut branch (`PortfolioManagerSwap.sol`),
-    /// so it must catch this on both entry points, not just exactIn. Same fixture: tokenA holds 1
-    /// wei, tokenB holds 1,000,000e18. Unlike exactIn, `amountOut` here is the taker's own direct
-    /// input, so the expected revert value is just the requested amount, not a formula result.
     function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalanceExactOut() public {
         ISwapVM.Order memory order = _buildOrder(0);
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
@@ -424,12 +387,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
     }
 
-    /// @notice The two checks are independent: a within-group raw-balance imbalance can trip
-    /// `InsufficientMemberBalance` even while the deviation breaker is armed and the group-level
-    /// spot price is within tolerance, since spot price only sees each group's aggregate value,
-    /// not how that value splits across its members. Same fixture as
-    /// `test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance`, but with `maxDeviationBps`
-    /// set instead of disabled.
+    /// @notice A pair can pass the group deviation check but lack enough units of the output member.
     function test_InsufficientMemberBalanceStillFiresWithDeviationCheckArmedAndWithinTolerance() public {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18); // group0 ~= group1 in value -> ~0% deviation
@@ -463,9 +421,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, at target
 
-        // A direct balance change outside ship()/swap() entirely (e.g. the Safe owner's own
-        // withdrawal, or here, a donation) -- group0 (tokenA+tokenB) balloons to 1,000,000e18
-        // while group1 stays at 100,000e18, far past the 10% band around the 50/50 target.
+        // An external balance change pushes group0 well beyond the 10% deviation limit.
         tokenA.mint(maker, 900_000e18);
 
         bytes memory takerData = _exactInTakerData();
@@ -485,8 +441,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18
 
-        // Only a mild 5% skew -- group0 grows to 105,000e18, group1 stays at 100,000e18, still
-        // inside the 10% band, so the trade must price exactly as it would with the check absent.
+        // A 5% skew stays within the 10% limit.
         tokenA.mint(maker, 5_000e18);
 
         uint256 amountIn = 500e18;
@@ -541,9 +496,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         balA = bound(balA, 1e18, 1_000_000e18);
         balB = bound(balB, 1e18, 1_000_000e18);
         balC = bound(balC, 1e18, 1_000_000e18);
-        // A realistic depeg range: anywhere from a 90% haircut to a 10x blowup, independently
-        // for each of group0's two members -- e.g. tokenA depegs to $0.10 while tokenB holds
-        // near $1, or both drift in opposite directions.
+        // Vary member prices independently from $0.10 to $10.
         priceA = bound(priceA, 0.1e18, 10e18);
         priceB = bound(priceB, 0.1e18, 10e18);
         feedA.setAnswer(int256(priceA), block.timestamp);
@@ -575,8 +528,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         }
     }
 
-    /// @dev `try` requires an external call -- `_swapExactIn` is internal, so this thin wrapper
-    ///      is what the fuzz test above actually calls via `this._externalSwapExactIn(...)`.
+    /// @dev External entrypoint required by the fuzz test's try/catch.
     function _externalSwapExactIn(ISwapVM.Order memory order, address tokenIn, address tokenOut, uint256 amount)
         external
         returns (uint256, uint256)
@@ -584,8 +536,6 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         return _swapExactIn(order, tokenIn, tokenOut, amount);
     }
 
-    /// @dev The two legitimate ways a round-trip leg can revert without violating the invariant
-    ///      this fuzz test checks -- see the test's own doc comment for why each is acceptable.
     function _assertAcceptableRoundTripRevert(bytes memory reason) private pure {
         bytes4 selector = bytes4(reason);
         assertTrue(

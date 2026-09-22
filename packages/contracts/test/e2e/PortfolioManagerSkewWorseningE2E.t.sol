@@ -9,24 +9,12 @@ import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCod
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
-/// @notice Trades that move the wallet's exposure away from its declared 50/50
-/// target — confirm the curve's own price impact penalizes this direction, matching
-/// PRICING.md's prediction, against the actually deployed router.
 contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     /// @dev See PortfolioManagerSkewReducingE2E.t.sol's identical constant note.
     uint256 internal constant SKEW_AMOUNT = 20_000e18;
     uint256 internal constant TRADE_AMOUNT = 100e18;
 
-    /// @dev Declares the universe in reverse group order from `_buildOrder`'s (still 50/50, so
-    ///      functionally identical -- `_groupIndexOf` matches by address, not position). Needed
-    ///      so this test's `feeBps = 0` order encodes to different bytes than
-    ///      PortfolioManagerSkewReducingE2E's own `feeBps = 0` order: `strategyHash` is
-    ///      `keccak256(abi.encode(order))` alone, and forge doesn't snapshot/revert state
-    ///      between test *contracts* on a live `--rpc-url` run any more than it does between
-    ///      test functions (the same gotcha `PortfolioManagerShipE2E.t.sol`'s
-    ///      `LOW_TIER_FEE_BPS + 1` trick works around) -- two contracts shipping the
-    ///      byte-identical strategy through the same `pmSafe` would make whichever ships second
-    ///      revert on Aqua's own immutability check.
+    /// @dev Reverse group order to produce a distinct hash while preserving the equal-weight configuration.
     function _buildOrderWithReversedUniverse() internal view returns (ISwapVM.Order memory) {
         PortfolioManagerArgsCodec.Group[] memory reversedGroups = new PortfolioManagerArgsCodec.Group[](2);
         reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE);
@@ -58,9 +46,7 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     }
 
     function test_SkewWorseningTradeGetsPenalizedRate() public {
-        // feeBps = 0 isolates the curve's own price-impact penalty from any fee distortion.
-        // Full ledger on both sides -- this test isn't exercising the fee-skip ledger-starving
-        // scenario.
+        // Disable fees to isolate price impact.
         ISwapVM.Order memory order = _buildOrderWithReversedUniverse();
         _fundAndShip(order, INITIAL_BALANCE);
 
@@ -72,8 +58,6 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
         // tokenB -- pushing the wallet further from 50/50, the opposite correction direction.
         (uint256 amountIn, uint256 amountOut) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
 
-        // At perfect 50/50 with equal weights the fair rate is 1:1 (no fee here to distort it);
-        // worsening an existing skew must fall short of that, per PRICING.md's own prediction.
         assertLt(amountOut, amountIn, "a skew-worsening trade must receive less than the fair 1:1 rate");
     }
 }

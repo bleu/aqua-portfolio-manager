@@ -8,32 +8,20 @@ import {Aqua} from "aqua/Aqua.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 
-/// @title AquaE2EBase — shared real-chain fixture every E2E test forks and deploys against
-/// @notice Forks Base directly (`vm.createSelectFork`) and deploys the pieces every E2E fixture
-///         needs regardless of what it's actually testing: the real Aqua registry, a deployer
-///         EOA, and a fresh Safe singleton + factory to spin up dedicated maker wallets from
-///         (ADR-0002). No external Anvil, no deploy script, no `deployments/local.json` -- the
-///         whole fixture lives in the test run itself (Foundry Book: tests should be
-///         self-contained and reproducible via `vm.createSelectFork`, not an external deployment
-///         pipeline).
-/// @dev Local tests and CI default to the same verified Base snapshot so oracle freshness
-///      does not depend on when the suite runs. Time-dependent tests advance the fork clock
-///      explicitly with vm.warp. Override BASE_RPC_BLOCK for another snapshot, or set it to 0
-///      to exercise live state. BASE_RPC_URL can override the public endpoint.
+/// @title AquaE2EBase
+/// @notice Forks Base's Aqua registry and deploys Safe infrastructure for each fixture.
+/// @dev Defaults to a pinned snapshot with fresh feeds. Time-dependent tests use vm.warp.
+///      Override BASE_RPC_URL or BASE_RPC_BLOCK as needed. Block zero selects live state.
 abstract contract AquaE2EBase is Test {
     string private constant DEFAULT_BASE_RPC_URL = "https://mainnet.base.org";
 
     /// @dev Pinned Base snapshot with fresh oracle feeds. Update after successful Live Base checks.
     uint256 internal constant DEFAULT_BASE_RPC_BLOCK = 51_609_641;
 
-    /// @dev Aqua's real registry address — deterministic, same on every supported chain
-    ///      (Ethereum, Base, Optimism, Arbitrum, ... — see `lib/aqua/README.md`'s deployment
-    ///      table).
+    /// @dev Aqua registry address on Base.
     address internal constant AQUA_MAINNET = 0x499943E74FB0cE105688beeE8Ef2ABec5D936d31;
 
-    /// @dev A fixed, well-known test-only private key — never a real key. Every fixture's Safe
-    ///      is owned solely by this address, purely so `_selfApprovedSignature`'s `v == 1`
-    ///      pre-approved-hash trick works without needing a real ECDSA signature anywhere.
+    /// @dev Public test-only key. Owns fixture Safes and permits pre-approved-hash signatures.
     uint256 internal constant DEFAULT_DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
     Aqua internal aqua;
@@ -56,9 +44,7 @@ abstract contract AquaE2EBase is Test {
         safeFactory = new SafeProxyFactory();
     }
 
-    /// @dev A fresh Safe proxy owned solely by `deployer`, threshold 1. `saltNonce` must be
-    ///      distinct per fixture within the same test run (each concrete E2E family picks its
-    ///      own) so their proxy addresses never collide.
+    /// @dev Deploy a threshold-one Safe owned by deployer. Use a distinct saltNonce per fixture.
     function _newSafe(uint256 saltNonce) internal returns (Safe) {
         address[] memory owners = new address[](1);
         owners[0] = deployer;
@@ -68,10 +54,7 @@ abstract contract AquaE2EBase is Test {
         return Safe(payable(address(safeFactory.createProxyWithNonce(address(safeSingleton), setupData, saltNonce))));
     }
 
-    /// @dev Safe's `checkNSignatures` treats `v == 1` as a pre-approved hash (owner address
-    ///      packed into `r`) and passes immediately when the executor IS that owner -- no real
-    ///      ECDSA signature needed. `deployer` is every fixture's Safe's sole owner, and every
-    ///      caller pranks as `deployer` first.
+    /// @dev Safe accepts v == 1 when the executor is the owner encoded in r. Callers prank as deployer.
     function _selfApprovedSignature() internal view returns (bytes memory) {
         return abi.encodePacked(bytes32(uint256(uint160(deployer))), bytes32(0), uint8(1));
     }
