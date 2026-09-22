@@ -43,3 +43,6 @@ The Guard restricts declarations on the calls it sees. It does not extend the cu
 - [Wallet setup](../guides/fresh-wallet-setup.md): installation and signer checks.
 - [ADR-0003](0003-oracle-valued-token-groups.md): group valuation.
 - [Invariant proof](../DONATION-RESISTANCE-PROOF.md): mathematical scope.
+- [Zodiac Scope](https://github.com/gnosisguild/zodiac-guard-scope) and [Roles](https://github.com/gnosisguild/zodiac): call-scoping precedents.
+- [Milionis et al.](https://arxiv.org/abs/2208.06046) and [Balancer Managed Pools](https://balancer.gitbook.io/balancer-v2/products/balancer-pools/managed-pools): research behind rejected reward and circuit-breaker alternatives.
+- Historical Code4rena module-guard concern: the exact audit citation still needs verification.

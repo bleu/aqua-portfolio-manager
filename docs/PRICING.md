@@ -64,7 +64,9 @@ The DAO fee is separate from the LP curve fee.
 - Above `1_225_000`: divide by six.
 
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
-The threshold implements 0.1225%, the approximate boundary cited by 1IP-103.
+The threshold implements 0.1225%, the approximate boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979).
+Pending: confirm the exact boundary against 1inch's deployed constant.
+Bleu's operator compensation remains unresolved and separate from the DAO fee.
 
 For exact-in, the curve prices input after the DAO cut.
 For exact-out, the instruction adds the DAO fee after computing the curve's required input.

@@ -33,6 +33,7 @@ Our router is an Aqua app through its settlement calls.
 - The router uses SwapVM's per-order lock rather than `AquaApp`'s modifier.
 - Deploying independently does not ensure Pathfinder discovery.
 - **Integration record, 2026-09-09:** 1inch confirmed that it must manually include the router. Inclusion depends on a frozen mainnet router address.
+- That review recorded no self-hosted or fork-testable equivalent of closed-source Pathfinder. Routing validation requires 1inch coordination.
 - A future shared-router integration requires explicit coordination with 1inch.
 - The license obligations in [ADR-0001](0001-license-under-aqua-source-not-mit.md) also apply to this design.
 
