@@ -35,6 +35,19 @@ describe("parseFyndQuoteResponse", () => {
   it("throws FyndQuoteError when amountOut is missing", () => {
     expect(() => parseFyndQuoteResponse({ transaction: { to: ROUTER, data: "0x00" } })).toThrow(FyndQuoteError);
   });
+
+  it("throws FyndQuoteError when transaction.to or spender is not a well-formed address", () => {
+    expect(() =>
+      parseFyndQuoteResponse({ transaction: { to: "not-an-address", data: "0x00" }, amountOut: "1" }),
+    ).toThrow(FyndQuoteError);
+    expect(() =>
+      parseFyndQuoteResponse({
+        transaction: { to: ROUTER, data: "0x00" },
+        spender: "not-an-address",
+        amountOut: "1",
+      }),
+    ).toThrow(FyndQuoteError);
+  });
 });
 
 describe("getFyndSwapCalldata", () => {
@@ -59,6 +72,7 @@ describe("getFyndSwapCalldata", () => {
       amountIn: 1000n,
       sender: SENDER,
       slippageBps: 50n,
+      timeoutMs: 5_000,
     });
 
     expect(quote).toEqual({ target: ROUTER, spender: ROUTER, calldata: "0xdead", expectedAmountOut: 999n });
@@ -89,6 +103,7 @@ describe("getFyndSwapCalldata", () => {
         amountIn: 1000n,
         sender: SENDER,
         slippageBps: 50n,
+        timeoutMs: 5_000,
       }),
     ).rejects.toThrow(FyndQuoteError);
   });

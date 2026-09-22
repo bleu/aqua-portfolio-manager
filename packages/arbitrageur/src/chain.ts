@@ -21,6 +21,8 @@ export async function tokenDecimals(client: PublicClient, token: Address): Promi
 /// allowance is insufficient. A plain `approve(amount)`, not `approve(max)` -- this server only
 /// ever needs an allowance for the specific trade size it's about to execute, and re-approving
 /// per trade avoids leaving a standing unlimited allowance on a long-running EOA.
+/// Only needed for the self-funded `executeArbitrage` path below -- the main loop (`index.ts`)
+/// runs exclusively via the flash-loan path now, which never touches the owner's own balance.
 export async function ensureAllowance(
   clients: ReturnType<typeof makeClients>,
   token: Address,
