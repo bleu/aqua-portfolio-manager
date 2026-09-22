@@ -90,14 +90,19 @@ async function tick(config: Config, clients: ReturnType<typeof makeClients>, leg
   // The return leg: sell the curve's tokenOut proceeds back into tokenIn (the borrowed token),
   // via whatever route Fynd finds. `sender` is the Arbitrageur contract itself -- it's the
   // account that will actually hold and spend tokenOut mid-flash-loan, not this server's EOA.
+  // Sized off the actual expected curve output, not `minCurveAmountOut` -- that's a slippage
+  // floor for the curve leg's own on-chain check, not how much this leg should trade; sizing
+  // the Fynd request off the floor would leave the gap between it and the real payout stranded
+  // on the contract every time the curve leg doesn't actually slip.
   const fyndQuote = await getFyndSwapCalldata({
     fyndUrl: config.fyndUrl,
     chain: config.fyndChain,
     tokenIn: leg.tokenOut,
     tokenOut: leg.tokenIn,
-    amountIn: minCurveAmountOut,
+    amountIn: opportunity.quotedOut,
     sender: config.arbitrageurAddress,
     slippageBps: config.fyndSlippageBps,
+    timeoutMs: config.deadlineBufferSeconds * 1000,
   });
 
   const result = await executeFlashArbitrage(clients, config.arbitrageurAddress, {

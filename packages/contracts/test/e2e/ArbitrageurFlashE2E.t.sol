@@ -44,7 +44,7 @@ contract MockFyndRouter {
 /// (no fork needed there) -- same split `ArbitrageurE2E.t.sol` already uses.
 contract ArbitrageurFlashE2ETest is AquaE2EBase {
     /// @dev Real Balancer V2 Vault -- same address on every EVM chain it's deployed to, Base
-    ///      included (confirmed live: https://basescan.org/address/0xba12222222228d8ba445958a75a0704d566bf2c8).
+    ///      included: https://basescan.org/address/0xba12222222228d8ba445958a75a0704d566bf2c8
     address internal constant BALANCER_VAULT_BASE = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
 
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
@@ -288,5 +288,42 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             abi.encodeWithSelector(Arbitrageur.ArbitrageurInsufficientRepayment.selector, owed, fyndReturnAmount)
         );
         arbitrageur.executeFlashArbitrage(params);
+    }
+
+    /// @notice The off-chain-built Fynd calldata isn't guaranteed to spend every unit of the
+    /// curve's actual payout (e.g. it was sized off a slightly stale quote) -- this pulls only
+    /// part of the approved `wbtc`, leaving the rest on the contract. The approval to `fyndSpender`
+    /// must still end at zero rather than surviving as a standing, unbounded allowance.
+    function test_FlashArbitrageResetsFyndApprovalEvenWhenNotFullySpent() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOnly(order);
+
+        uint256 amountIn = 1_000e6;
+        uint256 quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
+        assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped strategy");
+
+        uint256 owed = amountIn;
+        uint256 fyndPulledAmount = quotedOut / 2; // only spends half the approved curve payout
+        uint256 fyndReturnAmount = (owed * 105) / 100;
+        deal(address(usdt), address(fyndRouter), fyndReturnAmount);
+        _ensureVaultLiquidity(usdt, amountIn * 10);
+
+        Arbitrageur.FlashArbParams memory params = Arbitrageur.FlashArbParams({
+            order: order,
+            tokenIn: address(usdt),
+            tokenOut: address(wbtc),
+            amountIn: amountIn,
+            minCurveAmountOut: quotedOut,
+            fyndTarget: address(fyndRouter),
+            fyndSpender: address(fyndRouter),
+            fyndCalldata: abi.encodeCall(MockFyndRouter.swap, (wbtc, usdt, fyndPulledAmount, fyndReturnAmount)),
+            deadline: uint40(block.timestamp + 60)
+        });
+
+        vm.prank(arbitrageurOwner);
+        arbitrageur.executeFlashArbitrage(params);
+
+        assertEq(wbtc.allowance(address(arbitrageur), address(fyndRouter)), 0, "leftover wbtc allowance must be reset");
+        assertEq(wbtc.balanceOf(address(arbitrageur)), quotedOut - fyndPulledAmount, "unspent wbtc remains on contract");
     }
 }

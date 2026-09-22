@@ -22,22 +22,22 @@ import {IBalancerVault, IFlashLoanRecipient} from "./interfaces/IBalancerVault.s
 ///      `TakerTraitsLib.build`'s packed, bit-shifted encoding (`lib/swap-vm/src/libs/TakerTraits.sol`)
 ///      is built once here, in Solidity, reusing the same library the rest of this codebase
 ///      already relies on, rather than hand-replicated off-chain with no test coverage.
-/// @dev Holds no standing token balance between calls: `executeArbitrage` pulls exactly
-///      `amountIn` from the owner immediately before swapping, and `tokenOut` settles directly
-///      to the owner (`to: msg.sender`). `executeFlashArbitrage` borrows `amountIn` from
-///      Balancer instead of pulling it from the owner -- see that function's own doc comment.
-///      `sweep` recovers anything stranded here by mistake, including flash-arbitrage profit.
+/// @dev `executeArbitrage` holds no standing balance between calls: it pulls exactly `amountIn`
+///      from the owner immediately before swapping, and `tokenOut` settles directly to the owner
+///      (`to: msg.sender`). `executeFlashArbitrage` borrows `amountIn` from Balancer instead of
+///      pulling it from the owner -- see that function's own doc comment -- and, by design,
+///      leaves any profit sitting on this contract afterward; `sweep` is how that profit (and
+///      anything stranded here by mistake) gets collected.
 contract Arbitrageur is Ownable, IFlashLoanRecipient {
     using SafeERC20 for IERC20;
 
     ISwapVM public immutable ROUTER;
     IBalancerVault public immutable BALANCER_VAULT;
 
-    /// @dev Everything `receiveFlashLoan` needs to run both legs of a flash arbitrage, threaded
-    ///      through as Balancer's opaque `userData` since the callback's own signature is fixed
-    ///      by `IFlashLoanRecipient`. `fyndTarget`/`fyndSpender` are kept separate rather than
-    ///      assumed equal -- an aggregator's calldata often targets one contract (a router) while
-    ///      a different one (e.g. a Permit2-style allowance holder) needs the approval.
+    /// @dev Threaded through `receiveFlashLoan` as Balancer's opaque `userData`, since the
+    ///      callback's own signature is fixed by `IFlashLoanRecipient`. `fyndTarget`/`fyndSpender`
+    ///      are kept separate since an aggregator's calldata may target one contract while a
+    ///      different one (e.g. a Permit2-style allowance holder) needs the approval.
     struct FlashArbParams {
         ISwapVM.Order order;
         address tokenIn;
@@ -117,11 +117,12 @@ contract Arbitrageur is Ownable, IFlashLoanRecipient {
     }
 
     /// @notice Same trade `executeArbitrage` runs, except `amountIn` of `tokenIn` is borrowed
-    ///         from Balancer's Vault (0% fee) instead of pulled from the owner -- the owner never
-    ///         needs to hold or approve `tokenIn` at all. `params.fyndCalldata`, built off-chain
-    ///         by `packages/arbitrageur` against a running Fynd instance, converts the curve's
-    ///         `tokenOut` proceeds back into `tokenIn` on the open market so the loan can be
-    ///         repaid within the same transaction -- see `receiveFlashLoan`.
+    ///         from Balancer's Vault (0% fee as of this writing -- see `IBalancerVault.sol`)
+    ///         instead of pulled from the owner -- the owner never needs to hold or approve
+    ///         `tokenIn` at all. `params.fyndCalldata`, built off-chain by `packages/arbitrageur`
+    ///         against a running Fynd instance, converts the curve's `tokenOut` proceeds back
+    ///         into `tokenIn` on the open market so the loan can be repaid within the same
+    ///         transaction -- see `receiveFlashLoan`.
     function executeFlashArbitrage(FlashArbParams calldata params) external onlyOwner {
         IERC20[] memory tokens = new IERC20[](1);
         tokens[0] = IERC20(params.tokenIn);
@@ -135,9 +136,9 @@ contract Arbitrageur is Ownable, IFlashLoanRecipient {
     ///         consequence of `executeFlashArbitrage`'s own call into `BALANCER_VAULT.flashLoan`,
     ///         so `msg.sender == BALANCER_VAULT` is the entire access-control story here.
     /// @dev The safety property that actually protects borrowed principal isn't the slippage
-    ///      checks below -- it's that step 3 must leave this contract holding at least `owed`
-    ///      `tokenIn`, or the whole transaction (including the curve trade in step 1) reverts.
-    ///      A worse-than-expected Fynd route costs gas on a failed attempt, never principal.
+    ///      checks below -- it's that the repayment check must find at least `owed` `tokenIn` on
+    ///      this contract, or the whole transaction (including the curve trade) reverts. A
+    ///      worse-than-expected Fynd route costs gas on a failed attempt, never principal.
     function receiveFlashLoan(
         IERC20[] memory, /* tokens */
         uint256[] memory amounts,
@@ -163,6 +164,10 @@ contract Arbitrageur is Ownable, IFlashLoanRecipient {
         IERC20(p.tokenOut).forceApprove(p.fyndSpender, curveAmountOut);
         (bool ok, bytes memory ret) = p.fyndTarget.call(p.fyndCalldata);
         require(ok, ArbitrageurFyndCallFailed(ret));
+        // The off-chain-built calldata isn't guaranteed to spend the full approval (e.g. the
+        // curve leg settled for slightly more than the off-chain quote expected) -- reset
+        // regardless of how much was actually spent so no allowance to `fyndSpender` survives.
+        IERC20(p.tokenOut).forceApprove(p.fyndSpender, 0);
 
         // 3. Repay the loan -- a direct transfer to the Vault, not an approve.
         uint256 owed = amounts[0] + feeAmounts[0];
