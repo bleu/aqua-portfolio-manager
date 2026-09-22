@@ -1,193 +1,87 @@
 # Architecture
 
-**Status: Milestone 1 complete.** The strategy ships as a new swapVM instruction, deployed via an independent router we own (inheriting `SwapVM` with our own opcode set) — not a pure `AquaApp`, not a hybrid, and not merged into 1inch's own `AquaSwapVMRouter`. See [`adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md`](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) for the full decision and reasoning. The frontier comparison is done now — see [Milestone 1](#milestone-1) below for the current result, not restated here since it's exactly the kind of thing that changes as assumptions get corrected. The round-trip/donation-resistance proof is done ([ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)); the cross-strategy manipulation gap it doesn't cover is closed structurally, not proven, by a Safe wallet requirement and a Basket Scope Guard, now built and tested ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)).
+Portfolio Manager (PM) prices cross-group trades against a dedicated Safe wallet's real token balances.
+The LP declares the token universe, group weights, feeds, and fees in an immutable strategy.
+Takers choose when to trade. PM does not initiate rebalances.
 
-Every other design choice reflected in the diagrams below has its own ADR in [`adr/`](adr/README.md) — see the component notes for links.
-
-**Why an independent router, not `AquaApp` and not merged into 1inch's own router.** Reading the actual `lib/swap-vm` source is what settled this:
-
-- **A swapVM instruction isn't something a strategy author can add unilaterally.** The opcode table (`AquaOpcodes._opcodes()` in `lib/swap-vm/src/opcodes/AquaOpcodes.sol`) is a fixed-size array of internal function pointers baked into whichever router contract deploys it — currently `AquaSwapVMRouter`, holding 1inch's own opcode set (`XYCSwap`, `XYCConcentrate`, `Decay`, `Fee`, `PeggedSwap`, `Extruction` — no weighted/constant-mean curve). Adding our own opcode to *that* router means 1inch merging and redeploying it. Deploying *our own* router (inheriting `SwapVM` with a custom opcode set) is technically possible but pulls in the entire `SwapVM.sol` plumbing (EIP-712 order signing, taker-traits parsing, WETH unwrap, maker hooks/callbacks) as part of our own deployed, audited surface — most of it irrelevant to a single-strategy portfolio manager.
-- **Instructions can hold persistent storage** — `Invalidators.sol` proves this (per-maker, per-order mappings, gated by `!ctx.vm.isStaticContext` so `quote()` calls don't mutate state). The earlier assumption that swapVM instructions are necessarily stateless/pure (true of `XYCSwap._xycSwapXD`, which is `pure`) doesn't generalize — the framework supports exactly the kind of persistent EMA/smoothing state [ADR-0006](adr/0006-exposure-smoothing.md) needs. This removes one presumed blocker, but not the router-deployment problem above.
-- **A real "hybrid" is narrower than it first sounds.** `SwapVM.swap()`/`quote()` are full external entrypoints built around taker-initiated calls with their own order/signature semantics — an external `AquaApp` can't cheaply "call into" the deployed router for just the pricing math; the instruction functions (like `_xycSwapXD`) are `internal`, reachable only by inheriting the instruction contract directly. That's really the `AquaApp` path with an optional pure-math import — not meaningfully different from ADR-0010's first option, since swapVM ships no weighted curve to import in the first place.
-
-This is what decided it: merging into 1inch's own router carries a cooperation/timeline dependency neither of the other two paths do, and the PoC already proves the own-router path works for the multi-token-balance-read question. The M1 simulation's gas-cost sweeps and tracking-error/cost frontier weren't the basis for this decision either — see [Milestone 1](#milestone-1) below for that result, now complete. See [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) for the full record.
-
-## System context (L1)
+## Components
 
 ```mermaid
-%%{init: {"flowchart": {"defaultRenderer": "elk"}} }%%
-flowchart TD
-    LP(["<b>LP</b><br/>Owns the capital,<br/>declares group targets"])
-    Taker(["<b>Taker / Solver</b><br/>Executes swaps via 1inch"])
-    OtherStrategy(["<b>Any other strategy</b><br/>the LP also runs<br/>(different app/strategyHash)"])
-
-    subgraph BleuScope["Built under this grant"]
-        LPApp["<b>LP App</b><br/>Declare universe,<br/>set targets, monitor"]
-        Dashboard["<b>Dashboard</b><br/>Protocol-wide<br/>monitoring"]
-        Indexer["<b>Indexer</b><br/>Shipped/Pushed/Docked,<br/>every app, not just PM's"]
-        Router["<b>Router</b><br/>(our deployment)<br/>quote()/swap() entrypoints,<br/>runs the maker's program,<br/>settles the trade"]
-        SwapVMLib["<i>SwapVM</i><br/>(1inch's engine —<br/>inherited source,<br/>not a separate<br/>deployment, ADR-0010)"]
-        Strategy["<b>Portfolio Manager<br/>Instruction</b><br/>= our opcode, one entry<br/>in the Router's opcode<br/>table, run by SwapVM's<br/>dispatch loop<br/>Pricing + exposure<br/>reading"]
-    end
-
-    subgraph WalletScope["Dedicated Maker Wallet — Safe only (ADR-0011)"]
-        Wallet[("<b>Safe</b><br/>universe tokens only")]
-        Guard{{"<b>Basket Scope Guard</b><br/>allows PM's exact strategy hash;<br/>anyone else must stay<br/>inside one group"}}
-    end
-
-    subgraph AquaCore["Aqua (1inch protocol, unmodified)"]
-        Aqua["<b>Aqua Core</b><br/>per-(maker,app,strategyHash)<br/>ledger + real settlement<br/>(ship/dock/pull/push)"]
-    end
-
-    Chainlink["<b>Chainlink</b><br/>Price oracle<br/>(push feeds)"]
-    Routing["<b>1inch Routing</b><br/>Picks the best<br/>venue per swap"]
-    DAO["<b>1inch DAO Treasury</b><br/>Receives 1IP-103's tiered<br/>protocol fee (1/4 or 1/6<br/>of the LP's own fee)"]
-
-    LP -->|"declares universe,<br/>targets, config"| LPApp
-    LPApp -.->|"monitors Swapped<br/>events"| Router
-    LP -->|"controls (signs txs for)"| Wallet
-
-    LPApp -->|"prepares ship(app=Router, ...)<br/>tx for PM"| Wallet
-    OtherStrategy -.->|"also tries to ship()<br/>from the same wallet"| Wallet
-    Wallet -->|"every outgoing call<br/>checked by"| Guard
-    Guard -->|"ship() allowed:<br/>PM's exact hash, or a<br/>single-group strategy"| Aqua
-    Guard -.->|"reverts: cross-group or<br/>outside-universe token"| OtherStrategy
-
-    Taker -->|"wants to swap TokenA for TokenB"| Routing
-    Routing -->|"calls quote() then<br/>swap()"| Router
-
-    Router -.->|"compiled from<br/>(inherits)"| SwapVMLib
-    Router -->|"reads this router's<br/>authorized balance<br/>(safeBalances)"| Aqua
-    Router -->|"dispatches opcode:<br/>runs the program"| Strategy
-    Strategy -->|"reads real balance<br/>(balanceOf, ADR-0002)"| Wallet
-    Strategy -->|"reads current price"| Chainlink
-    Strategy -->|"returns computed<br/>amountIn/amountOut"| Router
-
-    Router <-->|"collects tokenIn /<br/>pays out tokenOut"| Taker
-    Router -->|"push(tokenIn),<br/>pull(tokenOut)"| Aqua
-    Aqua -->|"transferFrom — the actual<br/>ERC20 move, maker's<br/>approval required"| Wallet
-
-    Router -.->|"tiered, best-effort<br/>Aqua pull (1IP-103)"| DAO
-
-    Aqua -.->|"Shipped/Pushed/Docked<br/>(every app, not just ours)"| Indexer
-    Dashboard -.->|"queries"| Indexer
-
-    classDef actor fill:#f1f5f9,stroke:#64748b,color:#0f172a
-    classDef bleu fill:#2563eb,stroke:#1e40af,color:#ffffff,font-weight:bold
-    classDef wallet fill:#d97706,stroke:#b45309,color:#ffffff,font-weight:bold
-    classDef guard fill:#dc2626,stroke:#991b1b,color:#ffffff,font-weight:bold
-    classDef aqua fill:#16a34a,stroke:#15803d,color:#ffffff,font-weight:bold
-    classDef external fill:#e2e8f0,stroke:#64748b,color:#0f172a
-    classDef vendored fill:#eef2ff,stroke:#4338ca,color:#312e81,stroke-dasharray: 3 3
-
-    class LP,Taker,OtherStrategy actor
-    class LPApp,Dashboard,Indexer,Router,Strategy bleu
-    class SwapVMLib vendored
-    class Wallet wallet
-    class Guard guard
-    class Aqua aqua
-    class Chainlink,Routing,DAO external
-
-    style BleuScope fill:#eff6ff,stroke:#1e40af,stroke-dasharray: 5 5
-    style AquaCore fill:#f0fdf4,stroke:#15803d,stroke-dasharray: 5 5
-    style WalletScope fill:#fff7ed,stroke:#b45309,stroke-dasharray: 5 5
+flowchart LR
+    LP[LP] --> Safe[Dedicated Safe]
+    Guard[Basket Scope Guard] -. checks direct ship calls .-> Safe
+    Safe -->|ship / dock| Aqua[Aqua registry]
+    Taker[Taker] -->|quote / swap| Router[PM router]
+    Validator[Strategy validator] -->|attestation| Router
+    Router --> Instruction[PM instruction]
+    Instruction -->|balanceOf| Safe
+    Instruction -->|prices| Feeds[Chainlink feeds]
+    Router -->|pull / push| Aqua
+    Aqua -->|token settlement| Safe
+    Aqua -->|events| Indexer[Indexer]
 ```
 
-**What this grant builds** (blue boxes): the pricing instruction, the router that hosts it (ADR-0010 — our own, not 1inch's shared `AquaSwapVMRouter`), the LP-facing web app, the indexer that feeds visibility into wallet strategy state, and the protocol-wide monitoring dashboard. Everything else — Aqua core, the SwapVM base contract our router inherits, Chainlink, 1inch's own routing — already exists; we only integrate against it.
+| Component | Responsibility |
+|---|---|
+| `PortfolioManagerRouter` | Inherits SwapVM entrypoints, order handling, settlement, and the per-order reentrancy lock. |
+| `PortfolioManagerSwap` | Reads group values, checks attestation and deviation, prices trades, and attempts the DAO fee transfer. |
+| `PortfolioManagerArgsCodec` | Encodes and validates the immutable group configuration. |
+| `OracleAdapter` | Checks feed freshness and converts balances to a common value unit. |
+| `PortfolioManagerPricing` | Applies the weighted-curve formulas with conservative rounding. |
+| `PortfolioManagerStrategyValidator` | Checks the declared universe and initial portfolio composition, then records attestation. |
+| `BasketScopeGuard` | Restricts direct Aqua `ship()` calls from the Safe by strategy hash and token group. |
+| Indexer | Tracks strategies across all Aqua apps. See its [README](../packages/indexer/README.md). |
 
-**The Router vs. the Instruction — a distinction earlier revisions of this diagram collapsed.** The Router is the contract a taker calls (`quote()`/`swap()`); it's also the `app` address Aqua's ledger is keyed on at `ship()` time — "app" here is just Aqua's generic term for whoever ships a strategy, **not** the same thing as the named `AquaApp` base contract (see [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)'s clarification; our Router is an app to Aqua, but doesn't inherit `AquaApp.sol`). The Router reads `AQUA.safeBalances(maker, address(this), strategyHash, ...)` — scoped to itself as `app` — runs the maker's program, and settles by calling `AQUA.pull()` / `AQUA.push()`. Aqua does the actual `IERC20.transferFrom` on settlement, moving real tokens directly between the Safe and the taker (`pull`) or between the Router and the Safe (`push`) — this requires the Safe to have approved Aqua for every universe token, an onboarding step not yet written up anywhere (owed alongside the migration checklist [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) already flags). The Instruction is just the one opcode in the Router's table our pricing logic occupies, invoked mid-program. `AQUA.pull()` is keyed by `msg.sender`, i.e. by Router address — only the Router that shipped a given `strategyHash` can ever pull for it, which is exactly why [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) anchors trust to the strategy hash and not to the Router's address (a Router can be `msg.sender` for many different strategies, not just PM's).
+Contract sources are in [packages/contracts/src](../packages/contracts/src/).
+The LP app and monitoring dashboard remain part of the planned grant scope.
 
-**The dedicated maker wallet** (orange) is the load-bearing design choice: a fresh **Safe** — not an EOA, see [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) — the LP creates and funds only with universe tokens. Every strategy shipped from it settles into it, so its real, on-chain, `balanceOf`-readable balance already *is* the true net exposure — no new accounting primitive needed, and zero protocol changes (see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for why this reads `balanceOf` directly and not `AQUA.safeBalances()`, which is a same-strategy-only ledger, not a wallet-wide reading).
+## Balances and configuration
 
-**The Basket Scope Guard** (red) is what makes that safe to share with other strategies at all. It's a Safe Transaction Guard, not part of the strategy contract itself — installed on the wallet, it inspects every `ship()` call before the Safe makes it. PM's own, exact strategy hash is always allowed (it's the trusted mechanism meant to price across groups); anything else must stay within a single declared group, and can't touch a token outside the universe at all. See [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md) and [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md) for the mechanism and its real limits (module-transaction coverage, pre-existing strategies, guard removal).
+Pricing uses each declared token's `balanceOf(maker)` so it reflects settlement across the wallet's strategies.
+Every group member uses its own oracle feed, including members of single-token groups.
+All feeds must use the same quote currency.
 
-**The Indexer** is what gives visibility into what the Guard can't prevent or see: it only governs `ship()` calls made *after* it's installed on a given wallet, and has no view into strategies shipped through other apps entirely. The Indexer reads `Shipped`/`Pushed`/`Docked` directly off Aqua Core — across **every app**, not scoped to our own Router — into one `Strategy` entity per `(maker, app, strategyHash)`, tracking which tokens a strategy declared at ship time and whether it's still active. A general-purpose registry, not a decision-making or alerting system: an earlier revision also auto-flagged wallets holding both an active PM strategy and an active non-PM one, verified working, then removed as premature complexity — the same underlying query (`Strategy` filtered by maker and active state) still answers "does this wallet already have something active" for any future consumer, including the onboarding pre-existing-strategy check this was originally scoped to unblock. See [`thoughts/indexer-architecture.md`](../thoughts/indexer-architecture.md) for the full design.
+Aqua's `safeBalances` and `rawBalances` read its per-`(maker, app, strategyHash)` ledger.
+That ledger authorizes settlement amounts. It does not measure wallet-wide exposure.
+The router is the `app` address for PM strategies.
 
-## Contract internals (L2)
+The strategy hash commits to the encoded order and its configuration.
+Changing the configuration requires a new strategy.
+The Guard's trusted hash and group mapping are immutable, so changes to them also require a new Guard.
+See [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) and [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md).
 
-```mermaid
-%%{init: {"flowchart": {"defaultRenderer": "elk"}} }%%
-flowchart TD
-    Taker["Taker / 1inch Routing"]
-    Aqua["<b>Aqua Core</b><br/>ledger + settlement<br/>(pull/push do the<br/>real transferFrom)"]
-    Wallet[("Dedicated Maker Wallet<br/>(Safe, ADR-0011)")]
-    Chainlink["Chainlink<br/>(price feeds)"]
+## Trade flow
 
-    subgraph RouterBox["Router (SwapVM base + our opcode table, ADR-0010)"]
-        Entrypoints["<b>quote() / swap()</b><br/>builds Context,<br/>runs runLoop(),<br/>settles via Aqua"]
+1. SwapVM checks the order and starts the PM instruction.
+2. PM requires an attestation for the order hash before decoding its arguments.
+3. PM resolves the traded tokens to different declared groups.
+4. PM reads both groups' real balances and oracle prices.
+5. If enabled, the circuit breaker checks the pair's current price deviation.
+6. PM converts the traded amount to value units and computes the quote.
+7. PM converts the result to native token units and checks the output token's available balance.
+8. During execution, PM attempts the DAO fee transfer. Quotes skip this transfer.
+9. SwapVM settles through Aqua's `pull()` and `push()` calls.
 
-        subgraph Strategy["Portfolio Manager Instruction — one opcode, immutable once shipped"]
-            Config["<b>Universe/Group Config</b><br/>tokens, groups, target<br/>weights<br/><i>(part of the Strategy struct,<br/>locked at ship())</i>"]
+The Safe must approve Aqua to transfer each declared token.
+See [wallet setup](guides/fresh-wallet-setup.md) and [pricing](PRICING.md) for the procedure and formulas.
 
-            Smoothing["<b>Exposure Guardrails</b><br/>fee + gas-cost gate<br/><i>(real economics, not a<br/>hand-picked band — no<br/>moving average)</i>"]
+## Security boundaries
 
-            OracleAdapter["<b>Oracle Adapter</b><br/>reads Chainlink,<br/>normalizes decimals,<br/>checks staleness"]
+- **Current balances:** pricing has no moving average. The simulation's fee-and-gas profitability gate models taker behavior, not an on-chain scheduler.
+- **Oracles:** a stale or non-positive price reverts the trade. Every feed in either traded group must pass.
+- **Attestation:** validates the encoded configuration. It does not bind a later `ship()` call's token array or guarantee that wallet balances remain unchanged.
+- **Guard coverage:** the Guard checks direct Aqua `ship()` calls. It does not inspect calls nested inside a batch or other contract.
+- **Wallet control:** owners can withdraw tokens or remove the Guard. Prior strategies and arbitrary-call modules require separate onboarding checks.
+- **Circuit breaker:** an enabled breaker can block a skewed pair until an external action restores it. See [ADR-0012](adr/0012-price-deviation-circuit-breaker.md).
+- **Invariant:** the [proof](DONATION-RESISTANCE-PROOF.md) concerns the curve's own trades and donations under its stated assumptions. It is not a guarantee about arbitrary wallet activity.
+- **Protocol fee:** the transfer is part of the curve opcode, but collection is best-effort. A failed transfer emits `ProtocolFeeSkipped` and does not revert the swap.
 
-            PricingEngine["<b>Pricing Engine</b><br/>constant-mean curve<br/>(Balancer-style, reimplemented)<br/>price impact via<br/>curve invariant<br/><i>+ 1IP-103's protocol-fee pull,<br/>baked into this same opcode —<br/>mandatory, not a separate,<br/>omittable instruction</i>"]
+## Integration and evidence
 
-            Invariant["<b>Curve invariant</b><br/>(not a separate module -<br/>guaranteed by the<br/>Pricing Engine's math)<br/>every closed round-trip ends<br/>in the pool's favor -><br/>a donation becomes a gift,<br/>never a profit"]
-        end
-    end
+The independent router requires manual inclusion by 1inch for Pathfinder routing, as recorded in [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md).
+Deployment alone does not provide routing traffic.
 
-    DAO["1inch DAO Treasury"]
-
-    Taker -->|"calls"| Entrypoints
-    Entrypoints -->|"dispatches this opcode<br/>(runLoop)"| PricingEngine
-    PricingEngine -->|"reads real balance<br/>(balanceOf)"| Wallet
-    PricingEngine -->|"resolves declared<br/>weight, gates<br/>undeclared tokens"| Config
-    Wallet --> Smoothing
-    Smoothing -->|"current<br/>group weight"| PricingEngine
-    OracleAdapter --> Chainlink
-    OracleAdapter -->|"price per token"| PricingEngine
-    PricingEngine -->|"relies on"| Invariant
-    PricingEngine -->|"returns computed<br/>amountIn/amountOut"| Entrypoints
-    Entrypoints -->|"push(tokenIn),<br/>pull(tokenOut)"| Aqua
-    Aqua -->|"transferFrom —<br/>the actual move"| Wallet
-    PricingEngine -.->|"tiered, best-effort<br/>Aqua pull (1IP-103)"| DAO
-
-    classDef aqua fill:#16a34a,stroke:#15803d,color:#ffffff,font-weight:bold
-    classDef wallet fill:#d97706,stroke:#b45309,color:#ffffff,font-weight:bold
-    classDef external fill:#e2e8f0,stroke:#64748b,color:#0f172a
-    classDef config fill:#7c3aed,stroke:#5b21b6,color:#ffffff,font-weight:bold
-    classDef logic fill:#6366f1,stroke:#4338ca,color:#ffffff,font-weight:bold
-    classDef invariant fill:#fce7f3,stroke:#be185d,color:#0f172a,stroke-dasharray: 3 3
-    classDef router fill:#1d4ed8,stroke:#1e3a8a,color:#ffffff,font-weight:bold
-
-    class Aqua aqua
-    class Wallet wallet
-    class Chainlink,DAO,Taker external
-    class Config config
-    class Smoothing,OracleAdapter,PricingEngine logic
-    class Invariant invariant
-    class Entrypoints router
-
-    style RouterBox fill:#eff6ff,stroke:#1e3a8a,stroke-dasharray: 5 5
-    style Strategy fill:#eef2ff,stroke:#1e40af,stroke-dasharray: 3 3
-```
-
-### Component notes, grounded against the real Aqua interfaces
-
-- **Universe/Group Config** — part of the `strategy` bytes payload passed to [`IAqua.ship()`](../lib/aqua/src/interfaces/IAqua.sol), hashed into the immutable `strategyHash`. There is no update path; changing a parameter means shipping a new strategy and docking the old one via [`IAqua.dock()`](../lib/aqua/src/interfaces/IAqua.sol). See [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) and [ADR-0003](adr/0003-oracle-valued-token-groups.md).
-- **Ship-time Validation (`PortfolioManagerStrategyValidator`)** — not part of the router/opcode pipeline this diagram depicts (it's a separate helper contract the caller batches alongside the real `ship()` call via Safe's `MultiSendCallOnly`, not something `ship()` itself invokes), but the only place two things get checked before a strategy goes live: `requireUniverseMatches` cross-checks the Config's declared tokens against `ship()`'s own `tokens` array (they're never otherwise compared, since `ship()` succeeds regardless of a mismatch), and `requireBalancedWithinTolerance` ([ADR-0012](adr/0012-price-deviation-circuit-breaker.md)) rejects shipping onto a wallet that's already off-target beyond `maxDeviationBps`, checked once across the whole portfolio since it's a one-time cost, not per-trade. Neither check leaves a trace on its own — `attestBuildParameters` ([ADR-0013](adr/0013-build-parameter-attestation-gate.md)) runs both and records `buildParamsAttested[strategyHash] = true`, which the Pricing Engine (below) refuses to trade without, closing the gap where `Aqua.ship()` itself never enforces that this validation ran at all.
-- **Exposure Guardrails** — a fee + gas-cost profitability gate on the *current* real reading, no moving average, no separate hand-picked dead-zone or cooldown (a real sweep found neither reduces cost once correction is gated on real economics). Donation resistance doesn't depend on these — that's fully closed by the curve invariant alone (see Invariant below). Cross-strategy resistance also doesn't depend on these — it's not this contract's job at all: it's closed structurally, at the wallet level, by the Basket Scope Guard ( [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md), see the L1 diagram above). These guardrails exist only to reduce unnecessary rebalancing churn and cost. See [ADR-0006](adr/0006-exposure-smoothing.md).
-- **Oracle Adapter** — Chainlink-style push feeds only, not a pull oracle (Pyth was considered and rejected specifically because the taker could choose which still-valid price to post — see [ADR-0005](adr/0005-chainlink-push-oracles.md)). Two jobs, both per-feed: check each read's `updatedAt` against a configured max-staleness threshold and **revert the whole trade** if any group member involved fails that check (no fallback price, no degraded execution — see ADR-0005's Decision); and convert each member's balance through its own price and sum into the one value the Pricing Engine treats as `B_i` or `B_o` (ADR-0003) — applied uniformly to every group, including a single-member one, not just multi-token groups. Implemented in production: `OracleAdapter.sol` (`priceWad`/`groupValueWad`), wired into `PortfolioManagerSwap.sol`, validated end to end against real Base mainnet tokens and real Chainlink feeds (`PortfolioManagerMultiTokenBasketE2E.t.sol`). The reference PoC (`BasketXYCSwap.sol`) still doesn't implement this conversion — it adds a basket token's raw balance with no price applied, correct only by coincidence when every group member is worth the same; it remains a sketch, not the production path. The simulation model (`simulation/src/aqua_sim/basket.py`) has its own corrected, price-converting version.
-- **Pricing Engine** — the constant-mean weighted curve, i.e. Balancer's weighted-pool formula (the 80/20 BAL/WETH pool is the best-known public example of this exact math with unequal weights), *reimplemented from scratch*. See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for why the formula is fine to reuse but Balancer's GPL-licensed Solidity is not. Full formula: [`PRICING.md`](PRICING.md). Reads the wallet's real balance directly via plain `balanceOf(token)`, **not** `AQUA.rawBalances`/`safeBalances` (those are the same per-`(maker, app, strategyHash)` ledger, scoped to this one strategy only — not a wallet-wide reading; see [ADR-0002](adr/0002-dedicated-maker-wallet-as-portfolio-scope.md) for the full correction) — the `balanceOf` read itself is unconditional; it's the weight lookup right after that reverts if the token isn't one **the LP declared** in the Config (accidental transfer, deliberate donation, or a `ship()`/Config encoding mismatch). Every group's member `balanceOf` reads feed the Oracle Adapter below, which converts and sums them into the one oracle-valued group total that `PRICING.md` and [ADR-0003](adr/0003-oracle-valued-token-groups.md) call `B_i`/`B_o` — uniformly, even for a single-member group, not only when a group happens to hold more than one token. An optional, opt-in deviation circuit breaker (`maxDeviationBps`, [ADR-0012](adr/0012-price-deviation-circuit-breaker.md)) blocks a trade outright if the pair's pre-trade `spotPrice` has already drifted too far from target — closing a gap the Basket Scope Guard doesn't cover: a direct Safe-owner withdrawal, outside `ship()`/`swap()` entirely. Before any of that, the very first check on every swap is `buildParamsAttested[strategyHash]` ([ADR-0013](adr/0013-build-parameter-attestation-gate.md)) — a strategy that was shipped without ever running the Ship-time Validation below can't be traded at all.
-- **Curve invariant** — not its own contract or function, a *property* the Pricing Engine's math must satisfy: any closed round-trip trade ends slightly in the strategy's favor. That property is what turns a "donation attack" (transferring tokens into the wallet to skew the reading) into an irreversible gift rather than an extractable profit — proven, not just asserted (see [`DONATION-RESISTANCE-PROOF.md`](DONATION-RESISTANCE-PROOF.md) and [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md)). This proof covers PM's own trades and pure donations — it does **not**, by itself, cover a *different* strategy trading against the same wallet (that's a two-sided balance change, not a donation, and [`thoughts/cross-strategy-manipulation.md`](../thoughts/cross-strategy-manipulation.md) found a concrete exploit through exactly that gap). What makes the invariant's precondition hold for cross-strategy activity too is the Basket Scope Guard ([ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md)), not this proof.
-- **Protocol Fee** — not a fixed rate: per [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979) (1inch's governance-approved Aqua protocol fee), the 1inch DAO Treasury takes **1/4 of the LP's own `feeBps` at or below an ≈0.1225% threshold, 1/6 above it** (the proposal itself hedges that boundary as "≈," the geometric midpoint of 0.05% and 0.30% — worth confirming against 1inch's actual deployed constant if the exact wei-level boundary ever matters) — a slice of whatever the LP configured, not an independent number, and not split with Bleu or any other operator (the proposal is explicit that 100% goes to the DAO, with operator compensation "deferred to a separate governance proposal"). **Mandatory, not a separate chainable instruction**: the best-effort `IAqua.pull()` to the DAO's disclosed treasury address (`0x7951c7ef839e26F63DA87a42C9a87986507f1c07`) is issued directly from inside the Pricing Engine opcode's own execution, not composed as a distinct program instruction the way `_aquaProtocolFeeAmountInXD` normally would be — `Aqua.ship()` is permissionless, so a separately-chained fee instruction would only be paid by strategies built through our own tooling; anyone could hand-craft program bytes that invoke only the curve opcode and skip a separate fee instruction entirely. Baking the pull into the curve opcode itself closes that gap: any program that actually invokes this opcode to produce a trade pays the fee, regardless of what built its bytes (verified directly by a forge test that hand-packs program bytes bypassing our own builder). Still reuses swap-vm's `Fee` contract's `_AQUA` reference, `BPS` constant, and `ProtocolFeeSkipped` event by inheritance — only the pull's *call site* moved, not its best-effort/no-revert behavior, which is the same one 1inch's own router relies on: a maker who can't cover the pull just doesn't pay it that trade, the swap still completes, and the shortfall is reported via `ProtocolFeeSkipped`. Computing the pull before finishing the curve's own pricing means the curve prices off `amountIn` net of the protocol cut, so `DONATION-RESISTANCE-PROOF.md`'s existing invariant proof needs no change to account for it. Bleu's own compensation is not part of this mechanism and is tracked as a separate, unresolved item, not implemented speculatively.
-- **Reentrancy** — handled by `SwapVM.sol` itself, not `AquaApp`'s `nonReentrantStrategy` modifier: a per-`orderHash` transient lock (`_reentrancyGuards[orderHash]`) taken before the instruction runs and released after. Since the strategy is a swapVM instruction on our own router (ADR-0010), this guard is inherited from the base framework, not something the instruction itself has to implement.
-
-## Milestone 1
-
-- **Formal proof** of the round-trip/donation-resistance invariant — done: any closed round-trip ends at or above where it started, proven algebraically and independent of how the pre-trade balance arose (the strategy's own trades or a donation), then checked against the implementation across 200,000 random trades. See [`DONATION-RESISTANCE-PROOF.md`](DONATION-RESISTANCE-PROOF.md), [ADR-0007](adr/0007-donation-resistance-via-curve-invariant.md), and [`test_curve.py`](../simulation/tests/test_curve.py).
-- **Cross-strategy manipulation** (a different strategy on the same wallet skewing the balance PM prices against) — closed structurally, not proven mathematically: see [ADR-0011](adr/0011-safe-wallet-with-basket-scope-guard.md). The Guard contract is now written, compiled, and tested — [`proofs-of-concept/basket-scope/`](../proofs-of-concept/basket-scope/), standalone, 12/12 tests passing including integration tests against a real deployed Safe — no longer the sketch in [`thoughts/basket-scope-guard-design.md`](../thoughts/basket-scope-guard-design.md). Still open: an external audit, and the onboarding flow's one-time pre-existing-strategy check it depends on.
-- **Concrete parameter values** — resolved, but the resolution is "there are none to pick." `fee` is fixed by [ADR-0008](adr/0008-success-metrics-tracking-error-and-cost.md) (2 bps); a tolerance band and rate cap were tried and swept against a realistic gas cost, found to not reduce cost at all (fee savings from correcting less often get cancelled out by more value leaking to the market while the pool sits stale), and dropped. The mechanism corrects whenever doing so is profitable net of fee + gas — a real gas-cost placeholder (based on current observed L2 transaction costs, not this specific contract), not a hand-tuned percentage. See [ADR-0006](adr/0006-exposure-smoothing.md).
-- **Licensing** — see [`LICENSING-RISK.md`](LICENSING-RISK.md) and [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md). This affects what "open source" actually means for this repo's own contracts, independent of the mechanism design.
-- **Routing discoverability — confirmed with 1inch (2026-09-09), not a formality.** Deploying our own Router (ADR-0010) makes shipping unilateral, but Pathfinder does not auto-discover independently-deployed `SwapVM` routers — confirmed directly with 1inch: **they will have to manually include our router.** Not automatic via scanning `Shipped` events or any other on-chain signal, and Pathfinder itself is closed-source infrastructure with no self-hosted or forked-mainnet-testable equivalent, so this could only ever be resolved by asking directly, not by building or testing anything ourselves. Getting the manual inclusion actually done is tracked separately, gated on a frozen mainnet router address. See [ADR-0010](adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md)'s Consequences section for the full record.
-
-### Simulation results
-
-Nine notebooks (`simulation/notebooks/`), each with real assertions checked in code, not just printed claims. Results aren't restated here — per review, a second copy of notebook findings in this document is exactly the kind of thing that goes stale independently as the underlying code and assumptions get corrected, which happened more than once already in this project's history. See [`simulation/README.md`](../simulation/README.md) for what each notebook covers and its current result, and each notebook's own summary for the full detail.
-
-**Scope not covered, regardless of the specific numbers on any given day:** performance under live trading, real gas costs (every notebook uses a placeholder based on current observed L2 transaction costs, not this specific contract's actual gas usage), multi-token group routing beyond the two-token pair every notebook models, and real aggregator routing behavior (compared against quoted prices directly, not live 1inch routing decisions). Closing that gap is M2 (forked mainnet, real transactions — Aqua has no testnet deployment, see the M2 milestone's own description) and M4 (mainnet, real capital and unpredictable traders) — this milestone doesn't substitute for either.
-
-See [`adr/README.md`](adr/README.md) for the full decision log, including chain choice ([ADR-0009](adr/0009-deploy-on-an-l2-at-launch.md)) and the group/pricing/oracle decisions behind the diagrams above.
+[Contract tests](../packages/contracts/README.md) cover local execution and a Base fork.
+[Simulation notebooks](../simulation/README.md) use synthetic prices and assumed gas costs.
+They do not establish live trading performance, actual contract gas costs, or aggregator routing behavior.
+See the [roadmap](ROADMAP.md) for grant status and the [ADR index](adr/README.md) for design rationale.

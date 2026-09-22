@@ -1,36 +1,36 @@
-# Licensing risk — read before assuming this project is "MIT, open source"
+# Licensing risk
 
-Found 2026-08-11 while scaffolding this repo, reading the license file shipped in `lib/aqua/LICENSES/Aqua-Source-1.1.txt` (not previously documented anywhere in the grant proposal). Not yet reviewed by counsel. Flagging clearly here rather than defaulting this repo's `LICENSE` to MIT.
+Repository assessment recorded on 2026-08-11. Counsel has not reviewed it.
+The shipped [license texts](../LICENSES/) control the terms.
 
-## The core fact
+## Source obligations
 
-Aqua and swapVM are **not** permissively licensed. Both ship under a custom Degensoft Ltd license (`Aqua-Source-1.1`, `SwapVM-1.1` — same family, same terms). Full text in [`LICENSES/`](../LICENSES/).
+Aqua and SwapVM use custom Degensoft licenses.
+Section 3 of Aqua-Source-1.1 requires modifications to use the same license, with attribution, marked changes, and reproducible build instructions.
+Its definition of modification includes linking and instruction sets in the same virtual machine.
 
-## Two separate obligations, not one
+Our router inherits SwapVM, which compiles licensed source into the deployed bytecode.
+The repository therefore uses Aqua-Source-1.1 under [ADR-0001](adr/0001-license-under-aqua-source-not-mit.md).
+The grant's original MIT wording needs correction.
 
-### 1. Copyleft on our own code (unconditional — applies even with zero revenue)
+## Commercial thresholds
 
-§3.1 of Aqua-Source-1.1: if you "Modify" the Licensed Work, you must publish your own resulting source under *the same license*, with attribution, marked changes, and reproducible build instructions. §1.7 defines "Modification" broadly: "any change to, or work based on or incorporating, the Licensed Work, including static/dynamic linking... instruction sets executing in the same virtual machine/address space, or artifacts shipped/deployed together as one product."
+Section 5.2 requires a Commercial License when either threshold is exceeded:
 
-Our strategy contract inherits `abstract contract AquaApp` — that's compiled into our bytecode, not an external call to a separately deployed instance. That's about as clear a case of "based on or incorporating" as exists; §3.3's carve-out ("independent code that simply calls, interfaces with, or is distributed alongside the Licensed Work") is written for callers, not for something that inherits the base contract.
+- Charged Fees above US$100,000 in a rolling 12-month period.
+- Liquidity Under Control above US$10,000,000 at any time.
 
-**Practical consequence: this repo's own contracts should ship under `LicenseRef-Degensoft-Aqua-Source-1.1`, not MIT.** That's why `LICENSE` at the repo root is the Aqua license text, not an MIT template. This isn't necessarily bad news — Milestones 2-4 already plan to open-source everything anyway — but the grant's public-facing language ("MIT, open source") is imprecise about *which* license, and should say Aqua-Source-1.1 specifically once this is confirmed, not "MIT."
+The grant's recorded six-month base case is US$30 million under management, above the liquidity threshold.
 
-### 2. Commercial-use trigger (conditional on scale — currently under a revocable waiver)
+Section 5.3 waives enforcement for specified Volume Activities.
+This strategy may qualify, but the waiver is not a license and creates no reliance rights.
+Degensoft can revoke it and require compliance or cessation within ten days of notice.
 
-§5.2 requires a paid Commercial License from Degensoft (confidential, negotiated terms) once either:
-- Charged Fees exceed **US$100,000** in any rolling 12 months, or
-- "Liquidity Under Control" (LUC) exceeds **US$10,000,000** at any time.
+## Follow-up
 
-The grant application's own base-case projection (Post-Launch Targets) assumes **$30M under management** six months after mainnet — three times the LUC trigger, on the base case, not the upside scenario.
+1. Obtain counsel review of the source obligations and waiver applicability.
+2. Correct the grant's license description.
+3. Record waiver revocation as a project risk.
+4. Discuss commercial licensing with the project contact and budget for negotiation if required.
 
-§5.3 currently waives enforcement for "Volume Activities" (routing, arbitrage, market-making — including charging fees, including with third-party capital), which is plausibly what this strategy is. **But the waiver is explicitly not a license, creates no reliance rights, and is revocable by Degensoft at any time in its sole discretion** — 10 days to comply or stop, after notice. This is the actual business risk: the project's entire "no commercial license needed" framing rests on an informal, revocable accommodation from a specific counterparty (Degensoft), not on the license's own permanent terms.
-
-## What this changes, concretely
-
-1. **`LICENSE`** in this repo is Aqua-Source-1.1, not MIT (done, see root).
-2. **The grant application's "MIT" language should be corrected** to name the license specifically — not done yet, flagging here for whoever owns the application text next.
-3. **The revocable §5.3 waiver needs its own risk-register entry** in the grant proposal's threat model, alongside a decision on whether to budget for a possible Degensoft Commercial License negotiation if the base-case $30M LUC projection is taken seriously. Not added there yet — this file is where the finding lives until someone moves it.
-4. **Worth a direct question to Tanner** (the 1inch contact who already confirmed the weighted-math scope question) given the base case crosses the LUC trigger by design, not as an edge case.
-
-Not a blocker to writing code or continuing Milestone 1 design work — just something the person running this project should know before repeating "MIT, open source" in any external communication.
+[Third-party notices](../THIRD_PARTY_NOTICES.md) records dependency licenses.

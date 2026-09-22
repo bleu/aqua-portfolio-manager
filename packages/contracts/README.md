@@ -1,36 +1,37 @@
 # Contracts
 
-Foundry package for this grant's on-chain code. Consolidates what were two standalone
-Milestone 1 PoCs (`basket-scope`, `swapvm-multi-token`) into one real package, now that M2
-implementation work is starting.
+Foundry package for the PM router, pricing instruction, validator, and Safe Guard.
+See [architecture](../../docs/ARCHITECTURE.md) for responsibilities and [pricing](../../docs/PRICING.md) for formulas.
 
-- `src/BasketScopeGuard.sol` — the Safe Transaction Guard from
-  [ADR-0011](../../docs/adr/0011-safe-wallet-with-basket-scope-guard.md): closes cross-strategy
-  manipulation structurally by confining any strategy other than PM's own to a single declared
-  group. `test/BasketScopeGuard.t.sol` covers it both as unit tests and as integration tests
-  against a real deployed `Safe` + `SafeProxyFactory`.
-- `src/BasketXYCSwap.sol`, `src/PoCOpcodes.sol`, `src/PoCRouter.sol` — the swapVM instruction
-  and independent router from [ADR-0010](../../docs/adr/0010-on-chain-form-aquaapp-vs-swapvm-instruction.md):
-  prices against a multi-token basket by reading a third token's Aqua balance directly, not
-  just the two tokens `Context` describes. `test/BasketXYCSwap.t.sol` covers this end-to-end
-  against a real `AquaRouter`.
+`BasketXYCSwap`, `PoCOpcodes`, and `PoCRouter` are reference prototypes.
+`BasketXYCSwap` adds raw Aqua ledger balances without oracle valuation. It is not the production pricing path.
 
-## Running
+## Build and test
 
-```bash
+Run from this directory:
+
+```sh
 git submodule update --init --recursive -- lib
 forge build
 forge test
+forge fmt --check
 ```
 
-## E2E tests (real Base fork)
+Run local tests without RPC access:
 
-`test/e2e/` forks Base directly (`vm.createSelectFork`, reading `BASE_RPC_URL` via `vm.envOr`)
-and deploys every contract it needs — router, strategy factory, Safe infra, test fixtures —
-inline in its own `setUp()`, against Aqua's *real* deployed registry on that fork. No separate
-deploy step, no external Anvil process: plain `forge test` above already runs these for real, so
-M2 work gets validated against real protocol state, not a clean-room chain.
-
-```bash
-cp .env.example .env   # set BASE_RPC_URL to avoid the public endpoint's rate limits
+```sh
+forge test --no-match-path 'test/e2e/*'
 ```
+
+## Base fork tests
+
+Tests in `test/e2e/` use the deployed Aqua registry on a pinned Base fork.
+Each fixture deploys its own router, validator, and Safe infrastructure.
+
+```sh
+cp .env.example .env
+```
+
+Set `BASE_RPC_URL` in `.env` to use your own endpoint.
+`BASE_RPC_BLOCK` overrides the pinned snapshot. Set it to `0` to test live state.
+The default snapshot is defined in [AquaE2EBase](test/e2e/base/AquaE2EBase.t.sol).
