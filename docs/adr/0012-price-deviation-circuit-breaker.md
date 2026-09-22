@@ -6,7 +6,7 @@
 
 Owners can withdraw tokens without an Aqua `ship()` call.
 The Guard does not prevent this, and the curve accepts any supported nonzero starting reserves.
-A badly skewed wallet can therefore remain tradable.
+A wallet far from its target mix can therefore remain tradable.
 
 ## Decision
 
@@ -17,7 +17,7 @@ Zero disables both checks. Nonzero values enable:
 - **During validation:** check every group's relative deviation from its target share of portfolio value.
 
 Both use current balances and the same configured threshold in `PM_BPS` units.
-They measure different quantities and are not equally strict for arbitrary weights or group counts.
+They measure different quantities and are not equally strict for every choice of weights or number of groups.
 See [pricing](../PRICING.md) for the formulas.
 
 ## Alternatives considered
@@ -29,10 +29,10 @@ See [pricing](../PRICING.md) for the formulas.
 ## Consequences
 
 - A blocked pair cannot correct itself through PM. Deposits, other external balance changes, or replacement of the strategy are needed.
-- The check does not constrain the post-trade state.
+- The check does not limit how far from target the pair can end up after the trade.
 - Shipping validation must run explicitly. Aqua does not invoke it. [ADR-0013](0013-build-parameter-attestation-gate.md) requires recorded attestation before trading.
-- The parameter adds four bytes to the instruction's 255-byte argument budget.
+- The parameter uses four bytes of the 255-byte limit on instruction settings.
 - Zero skips the deviation calculations. Nonzero checks add oracle and balance reads during validation.
-- The mismatch between the two deviation metrics remains an open design question.
+- The difference between the two ways of measuring deviation remains an open design question.
 
-This is an extreme-state breaker. [ADR-0006](0006-exposure-smoothing.md) separately rejected small-deviation bands intended to reduce correction frequency.
+This check blocks trading when the starting balance mix is too far from target. [ADR-0006](0006-exposure-smoothing.md) separately rejected small-deviation bands intended to reduce correction frequency.

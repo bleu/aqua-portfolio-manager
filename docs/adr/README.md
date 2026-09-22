@@ -1,5 +1,6 @@
 # Architecture decisions
 
+Each architecture decision record (ADR) explains a design choice.
 Use [the template](0000-template.md) for new decisions and assign the next number.
 Keep merged ADR numbers and files. Mark replaced decisions as superseded and link to their replacements.
 Record the reason for a choice here. Put current behavior in the relevant reference document.

@@ -1,6 +1,7 @@
 # Curve invariant and donation resistance
 
-This derivation covers PM's curve trades and pure donations in real arithmetic.
+This proof covers Portfolio Manager (PM) trades and donations that add tokens without taking any out.
+It uses real-number arithmetic without implementation rounding.
 It does not prove preservation of market value under arbitrary wallet activity or oracle changes.
 See [pricing](PRICING.md) for units and implementation rounding.
 
@@ -17,7 +18,7 @@ A failed DAO transfer leaves additional value in the wallet rather than reducing
 
 ## Claim
 
-For each exact-in trade:
+The invariant `V` combines reserves and weights. Each exact-in trade must leave it unchanged or increase it:
 
 ```text
 V = B_i^w_i * B_o^w_o
@@ -49,16 +50,16 @@ Since `A_i_eff <= A_i`, the ratio is at least one.
 Since `w_i > 0`, its power is also at least one.
 Thus `V_after >= V_before`, with strict inequality for positive input and a positive fee.
 
-Exact-out is the algebraic inverse of the same formula, so the substitution also applies to it.
+Solving the same formula for input gives exact-out pricing, so the proof also applies to it.
 
 ## Trades and donations
 
 A sequence of supported curve trades cannot decrease `V` under these assumptions.
-A positive donation increases a reserve without an output leg, so it increases `V` too.
+A positive donation increases a reserve without taking tokens out, so it increases `V` too.
 
 Returning every reserve to its starting value would return `V` to its starting value.
 That is impossible after any strict increase if subsequent operations cannot decrease `V`.
-Likewise, ending with every reserve no greater, and at least one smaller, would contradict the monotonicity of `V`.
+Likewise, ending with every reserve no greater, and at least one smaller, would contradict the rule that `V` cannot decrease.
 These statements concern reserve changes, not profit from external price changes or trading venues.
 
 ## Limits
@@ -71,7 +72,9 @@ A within-group trade can still change the group's oracle-valued total.
 Group membership alone therefore does not establish the invariant assumption for all cross-strategy activity.
 Direct withdrawals and changing oracle valuations also fall outside this derivation.
 
-The proof requires current reserves. An EMA or TWAP would introduce a different pricing variable and require a separate argument.
+The proof requires current reserves.
+An exponential moving average (EMA) or time-weighted average (TWAP) would use past balances in pricing.
+That would require a separate proof.
 Taker profitability and correction frequency do not enter this per-trade proof.
 
 [Pricing tests](../packages/contracts/test/PortfolioManagerPricing.t.sol) check fixed-point behavior, including independent integer invariants for selected weight ratios.

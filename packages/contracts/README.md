@@ -4,7 +4,7 @@ Foundry package for the PM router, pricing instruction, validator, and Safe Guar
 See [architecture](../../docs/ARCHITECTURE.md) for responsibilities and [pricing](../../docs/PRICING.md) for formulas.
 
 `BasketXYCSwap`, `PoCOpcodes`, and `PoCRouter` are reference prototypes.
-`BasketXYCSwap` adds raw Aqua ledger balances without oracle valuation. It is not the production pricing path.
+`BasketXYCSwap` adds raw Aqua ledger balances without converting them through price feeds. It is not the production pricing path.
 
 ## Build and test
 
@@ -25,8 +25,8 @@ forge test --no-match-path 'test/e2e/*'
 
 ## Base fork tests
 
-Tests in `test/e2e/` use the deployed Aqua registry on a pinned Base fork.
-Each fixture deploys its own router, validator, and Safe infrastructure.
+Tests in `test/e2e/` use the deployed Aqua registry on a local copy of Base at a fixed block.
+Each test setup deploys its own router, validator, and Safe infrastructure.
 
 ```sh
 cp .env.example .env

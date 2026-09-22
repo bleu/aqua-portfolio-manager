@@ -1,23 +1,26 @@
 # Pricing
 
-PM independently implements the constant-mean weighted-pool formula from Martinelli and Mushegian's 2019 Balancer whitepaper.
+Portfolio Manager (PM) sets trade prices using a weighted formula and the chosen group shares.
+It independently implements the constant-mean weighted-pool formula from Martinelli and Mushegian's 2019 Balancer whitepaper.
 See [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for the decision and [third-party notices](../THIRD_PARTY_NOTICES.md) for licensing.
 
 ## Units and inputs
 
 | Symbol | Meaning |
 |---|---|
-| `B_i`, `B_o` | Current oracle-valued totals of the input and output groups. |
-| `w_i`, `w_o` | Target group weights. All declared group weights sum to one. |
+| `B_i`, `B_o` | Current values of the input and output groups, calculated from price feeds. |
+| `w_i`, `w_o` | Target shares (weights) of the token groups. All group weights sum to one. |
 | `A_i`, `A_o` | Traded amounts in the same value unit as the group totals. |
-| `f` | LP curve fee as a fraction of input. The simulation default is 2 bps. |
+| `f` | Liquidity provider's (LP's) fee as a fraction of input. The simulation default is 2 basis points (bps), or 0.02%. |
 
-A group total is `Σ (member balance × member price)`, with decimal conversion to a common WAD-scaled quote currency.
+A group total is `Σ (member balance × member price)`, expressed in one currency, such as USD.
+Values use WAD scaling: `1e18` represents one unit. Conversion accounts for each token's and feed's decimal places.
 This applies to every group, including single-token groups.
-Balances come from the maker wallet's `balanceOf`, without smoothing.
+Balances come from the maker wallet's `balanceOf`, without averaging past balances.
 
-`PortfolioManagerSwap` converts native token amounts to value units before calling the pricing library and converts the result back afterward.
-Weights and fees are fixed in the shipped strategy.
+`PortfolioManagerSwap` converts amounts from each token's own units to value units before calling the pricing library.
+It converts the result back afterward.
+Weights and fees cannot change after the strategy is registered with Aqua (`ship()`).
 
 ## Spot price
 
@@ -25,12 +28,12 @@ Weights and fees are fixed in the shipped strategy.
 SP(i→o) = (B_i / w_i) / (B_o / w_o)
 ```
 
-This is input value per unit of output value, before fees.
+The spot price is the input value per unit of output value for a very small trade, before fees.
 It equals one when the two groups match their relative target weights.
 
 ## Exact-in
 
-Given input `A_i`, compute output `A_o`:
+Exact-in fixes how much the trader pays. Given input `A_i`, compute output `A_o`:
 
 ```text
 A_i_eff = A_i * (1 - f)
@@ -44,7 +47,7 @@ An upper power bound reduces the output because the formula subtracts the power 
 
 ## Exact-out
 
-Given output `A_o`, compute gross input `A_i`:
+Exact-out fixes how much the trader receives. Given output `A_o`, compute input `A_i`, including the LP fee:
 
 ```text
 A_i_eff = B_i * ((B_o / (B_o - A_o))^(w_o / w_i) - 1)
@@ -57,7 +60,7 @@ Require `A_o < B_o`. Zero output requires zero input.
 
 ## Protocol fee
 
-The DAO fee is separate from the LP curve fee.
+The protocol fee goes to the 1inch DAO treasury. It is separate from the LP curve fee.
 [PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) derives its rate from `feeBps`:
 
 - At or below `1_225_000`: divide by four.
@@ -66,23 +69,23 @@ The DAO fee is separate from the LP curve fee.
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
 The threshold implements 0.1225%, the approximate boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979).
 Pending: confirm the exact boundary against 1inch's deployed constant.
-Bleu's operator compensation remains unresolved and separate from the DAO fee.
+Payment for Bleu's work as operator remains undecided and separate from the DAO fee.
 
 For exact-in, the curve prices input after the DAO cut.
 For exact-out, the instruction adds the DAO fee after computing the curve's required input.
-The transfer to the DAO is best-effort. Failure emits `ProtocolFeeSkipped`, and the swap continues.
+The contract attempts the DAO transfer without requiring it to succeed. Failure emits `ProtocolFeeSkipped`, and the swap continues.
 Quotes compute the amounts but skip the transfer.
 
 ## Rounding and limits
 
 - Group reserves and feed normalization round up for input and down for output.
 - Token/value conversions round down for exact-in and up for exact-out.
-- Zero reserves revert. Trades cannot drain the full output reserve.
+- Zero reserves cause the trade to fail. Trades cannot drain the full output reserve.
 - Exact-in requires `poweredRatio >= WAD / 1e9`, except when the exponent equals `WAD`.
-- Unsupported arithmetic or exponent ranges revert. See [FixedPointMath](../packages/contracts/src/utils/FixedPointMath.sol) for power bounds.
+- Calculations outside the supported number or exponent ranges cause the trade to fail. See [FixedPointMath](../packages/contracts/src/utils/FixedPointMath.sol) for power bounds.
 - Equal weights reduce the formula to `xy=k`. Intermediate WAD rounding can produce more conservative quotes.
-- The output token's own balance must cover the output, even when its group has enough aggregate value.
-- A stale feed in either traded group reverts the trade, including a feed for a member that does not move.
+- The output token's own balance must cover the output, even when its group has enough total value.
+- A price feed that is too old in either traded group causes the trade to fail, including a feed for a member that does not move.
 
 ## Deviation checks
 
@@ -91,9 +94,9 @@ Quotes compute the amounts but skip the transfer.
 - Before a swap, PM checks `abs(SP - WAD) * PM_BPS / WAD` for the traded pair.
 - During validation, the validator checks each group's relative deviation from its target share of total portfolio value.
 
-These checks use the same threshold but different metrics. They are not equivalent for general weights or group counts.
+These checks use the same threshold but different measurements. They are not equivalent for general weights or group counts.
 A failed pre-trade check blocks corrective trades too.
 See [ADR-0012](adr/0012-price-deviation-circuit-breaker.md) for recovery and tradeoffs.
 
-The [invariant proof](DONATION-RESISTANCE-PROOF.md) uses real arithmetic.
+The [invariant proof](DONATION-RESISTANCE-PROOF.md) uses real-number arithmetic without implementation rounding.
 The rounding rules implement conservative quotes for the supplied balances, weights, and fee.

@@ -5,8 +5,8 @@
 ## Context
 
 PM needs a weighted curve and access to multiple token balances.
-A SwapVM instruction can read external balances and hold persistent state.
-However, its opcode must exist in the deployed router's fixed opcode table.
+A SwapVM instruction can read external balances and store data between calls.
+Each instruction has a code (opcode) that must exist in the router's fixed instruction list.
 A maker's program can sequence existing opcodes but cannot add one.
 
 ## Decision
@@ -19,9 +19,9 @@ The decision favored independent deployment and preceded a full comparison of de
 
 | Option | Reason not selected |
 |---|---|
-| Custom `AquaApp` | Requires bespoke entrypoints and settlement integration instead of the SwapVM order interface. |
+| Custom `AquaApp` | Requires custom public functions and token-transfer handling instead of the SwapVM order interface. |
 | Add PM to 1inch's router | Requires 1inch to merge and redeploy the opcode table. Remains a possible future path. |
-| Hybrid `AquaApp` and deployed SwapVM | Instruction functions are internal. External `quote()` and `swap()` require full orders and settlement semantics. |
+| Hybrid `AquaApp` and deployed SwapVM | Instruction functions are internal. External `quote()` and `swap()` require complete orders and their token-transfer rules. |
 | Off-chain keeper/controller | Can ship, dock, or trade but does not supply the grant's intended on-chain pricing mechanism. |
 
 Aqua's `app` is a ledger address, not a requirement to inherit `AquaApp`.
@@ -29,11 +29,11 @@ Our router is an Aqua app through its settlement calls.
 
 ## Consequences
 
-- Our deployed audit surface includes SwapVM's signatures, taker traits, callbacks, token handling, and reentrancy lock.
+- The audit must cover inherited SwapVM code: signatures, trader options, calls to other contracts, token transfers, and protection against nested execution.
 - The router uses SwapVM's per-order lock rather than `AquaApp`'s modifier.
 - Deploying independently does not ensure Pathfinder discovery.
-- **Integration record, 2026-09-09:** 1inch confirmed that it must manually include the router. Inclusion depends on a frozen mainnet router address.
-- That review recorded no self-hosted or fork-testable equivalent of closed-source Pathfinder. Routing validation requires 1inch coordination.
+- **Integration record, 2026-09-09:** 1inch confirmed that it must manually include the router. Inclusion depends on a final mainnet router address.
+- That review recorded no way to run closed-source Pathfinder locally or test it against a copy of mainnet. Checking routing requires working with 1inch.
 - A future shared-router integration requires explicit coordination with 1inch.
 - The license obligations in [ADR-0001](0001-license-under-aqua-source-not-mit.md) also apply to this design.
 

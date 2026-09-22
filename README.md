@@ -1,10 +1,11 @@
 # Aqua Portfolio Manager
 
-A portfolio rebalancing strategy for [1inch Aqua](https://github.com/1inch/aqua).
-It prices trades against the real balances of a dedicated Safe wallet and the LP's target weights for token groups.
-Takers execute the trades. The strategy does not schedule rebalances.
+A strategy that helps keep a portfolio near its chosen asset mix, built on [1inch Aqua](https://github.com/1inch/aqua).
+Liquidity providers (LPs) choose target shares for groups of tokens held in a dedicated Safe wallet.
+Portfolio Manager (PM) sets trade prices using those targets and the wallet's actual balances.
+Traders, called takers, execute the trades. The strategy does not schedule them.
 
-The implementation uses a weighted-curve instruction on an independent SwapVM router.
+The pricing formula runs as an instruction in our own SwapVM router, the contract that receives trade requests.
 See the [roadmap](docs/ROADMAP.md) for milestone status.
 
 ## Development
@@ -19,7 +20,8 @@ forge test
 forge fmt --check
 ```
 
-The E2E tests use a pinned Base fork. Set `BASE_RPC_URL` in `.env` to use your own RPC endpoint.
+End-to-end (E2E) tests run against a local copy of Base at a fixed block.
+Set `BASE_RPC_URL` in `.env` to use your own blockchain data service (RPC endpoint).
 
 ## Documentation
 
@@ -27,7 +29,7 @@ The E2E tests use a pinned Base fork. Set `BASE_RPC_URL` in `.env` to use your o
 - [Pricing](docs/PRICING.md): formulas, units, fees, and rounding.
 - [Decision records](docs/adr/README.md): design choices and tradeoffs.
 - [Writing style](docs/STYLE.md): rules for docs and code comments.
-- [Wallet setup](docs/guides/fresh-wallet-setup.md): funding, approvals, and shipping.
+- [Wallet setup](docs/guides/fresh-wallet-setup.md): funding, approvals, and registering strategies.
 - [Contracts](packages/contracts/README.md), [indexer](packages/indexer/README.md), and [simulation](simulation/README.md): package instructions.
 
 ## License

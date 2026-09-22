@@ -7,6 +7,9 @@ Its dictionary coverage is advisory, so do not claim certified STE compliance.
 - Give each subject one primary document. Link to it instead of repeating the explanation.
 - Use one instruction per sentence and one topic per paragraph.
 - Limit instructions to 20 words and descriptions to 25 words per sentence where precision permits.
+- Prefer everyday words: use "check" for "validate" and "token list" for "token universe" when the meaning is unchanged.
+- Explain necessary technical terms and abbreviations on first use. Keep code identifiers and mathematical terms exact.
+- Prefer clear wording over the shortest wording.
 - Use active voice and consistent terms. Preserve identifiers, units, conditions, and requirement strength.
 - Keep a scenario when it changes an action, result, or security boundary.
 

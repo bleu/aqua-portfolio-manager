@@ -1,19 +1,20 @@
 # Economic simulation
 
-Python models of the [pricing formulas](../docs/PRICING.md), used to explore portfolio behavior with synthetic prices.
-`BasketWorld` runs PM, competing strategies, and noise traders against shared balances.
+Python models of the [pricing formulas](../docs/PRICING.md), used to explore portfolio behavior with generated prices.
+`BasketWorld` runs Portfolio Manager (PM), competing strategies, and traders that buy or sell at random against shared balances.
 The contracts define on-chain behavior.
 
-Prices use GBM or jump-diffusion with configured parameters. They are not fitted to historical or live market data.
-Gas costs are assumptions, not measurements of the deployed contracts.
+Price models include geometric Brownian motion (GBM), which takes random percentage steps, and jump-diffusion, which adds sudden jumps.
+Their settings are not fitted to historical or live market data.
+Transaction costs (gas) are assumptions, not measurements of the deployed contracts.
 
 ## Notebooks
 
 | Notebook | Question |
 |---|---|
 | [01_pm_alone](notebooks/01_pm_alone.ipynb) | How closely does PM track targets without competing strategies? |
-| [02_basket_with_without_pm](notebooks/02_basket_with_without_pm.ipynb) | How does PM affect value under mean reversion and a forced WETH uptrend? |
-| [03_cross_basket_no_pm](notebooks/03_cross_basket_no_pm.ipynb) | How does PM compare with unconstrained strategies across token pairs? |
+| [02_basket_with_without_pm](notebooks/02_basket_with_without_pm.ipynb) | How does PM affect value when prices return toward an average or WETH keeps rising? |
+| [03_cross_basket_no_pm](notebooks/03_cross_basket_no_pm.ipynb) | How does PM compare with strategies allowed to trade any token pair across groups? |
 
 Each notebook contains its parameters, assertions, and results.
 Guard enforcement is tested in the [contracts package](../packages/contracts/README.md).

@@ -18,4 +18,4 @@ Keep the full license in [LICENSE](../../LICENSE) and dependency details in [thi
 - Preserve attribution, marked changes, and reproducible build instructions required by the license.
 - Keep Balancer's GPL source as reference material only. Do not import it into the contracts.
 - Correct the grant's MIT wording.
-- Resolve commercial thresholds and the revocable waiver separately. See [licensing risk](../LICENSING-RISK.md), which still requires counsel review.
+- Handle commercial licensing separately, including its thresholds and the waiver that Degensoft can revoke. See [licensing risk](../LICENSING-RISK.md), which still requires review by a lawyer.
