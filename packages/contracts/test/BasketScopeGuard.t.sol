@@ -211,19 +211,11 @@ contract BasketScopeGuardTest is Test {
     // Fuzz: cross-strategy invariant under randomized inputs
     // ---------------------------------------------------------------------
 
-    /// @notice ADR-0011's structural guarantee, generalized: PM's own attested strategy may
-    /// freely cross basket boundaries; every other strategy sharing the same wallet must stay
-    /// confined to a single basket. `_check` is stateless (immutable `basketOf`/
-    /// `TRUSTED_PM_STRATEGY_HASH`, no setter) -- there's no cross-call ordering to exercise, so
-    /// looping here buys broad input-space coverage (randomized PM/non-PM mix, token subsets,
-    /// lengths) per fuzz run, beyond the hand-picked scenarios
-    /// `test_AllowsPmStrategyEvenAcrossBaskets`/`test_RevertsOnCrossBasketStrategy`/
-    /// `test_AllowsSingleBasketStrategy` above already cover individually.
-    /// @dev Deliberately does not predict pass/fail before calling: the safety property is
-    ///      one-way (never wrongly *allow* a cross-basket non-PM strategy), so a false-negative
-    ///      revert isn't a bug worth predicting -- only a false-positive pass is. `_isSafe` is
-    ///      only ever invoked on the non-revert path, and stays independent of `_check`'s own
-    ///      branch structure by construction (it's never asked to reproduce a revert decision).
+    /// @notice Fuzzes randomized PM/non-PM strategy mixes, token subsets, and lengths against
+    /// `_check`'s stateless invariant, beyond the hand-picked scenarios above.
+    /// @dev Checks only the allow path: the property is one-way (never wrongly allow a
+    ///      cross-basket strategy), so a revert needs no prediction. `_isSafe` stays independent
+    ///      of `_check`'s own branch structure by construction.
     function testFuzz_CrossStrategyInvariantHoldsUnderRandomizedTradeSequences(uint256 seed) public {
         address[] memory universe = new address[](5);
         universe[0] = tokenA; // basket 1
@@ -250,8 +242,7 @@ contract BasketScopeGuardTest is Test {
         }
     }
 
-    /// @dev Random length (0..universe.length, inclusive of the empty-list edge case) and random
-    ///      order, with replacement -- a real `tokens` array could in principle repeat an entry.
+    /// @dev Sample with replacement, including empty lists. Token order changes the error reference token, not acceptance.
     function _randomTokenSubset(uint256 seed, address[] memory universe)
         private
         pure
@@ -293,10 +284,7 @@ contract BasketScopeGuardTest is Test {
         return distinctCount == 1;
     }
 
-    // ---------------------------------------------------------------------
-    // Integration: a real deployed Safe, both the execTransaction path and
-    // the module path, both actually calling the real Aqua contract.
-    // ---------------------------------------------------------------------
+    // Safe transaction and module integration.
 
     function _deploySafeWithOwner(uint256 ownerPk) internal returns (Safe safe, address owner) {
         owner = vm.addr(ownerPk);
@@ -312,9 +300,7 @@ contract BasketScopeGuardTest is Test {
         safe = Safe(payable(address(factory.createProxyWithNonce(address(singleton), setupData, 0))));
     }
 
-    /// @dev Signs, but does NOT execute — so callers that need `vm.expectRevert()` to target
-    ///      the real `execTransaction` call (not one of the view calls used to build the
-    ///      signature) can sign first and call `execTransaction` directly right after.
+    /// @dev Sign before expectRevert so nonce and hash reads do not consume its next-call expectation.
     function _signFor(Safe safe, uint256 ownerPk, address to, bytes memory data)
         internal
         view
@@ -346,9 +332,6 @@ contract BasketScopeGuardTest is Test {
         tokens[1] = tokenC; // basket 2
         bytes memory shipData = _shipCalldata("attacker strategy", tokens);
 
-        // Sign BEFORE arming expectRevert, so the very next call is the one that must revert —
-        // getTransactionHash()/nonce() are view calls that would otherwise satisfy expectRevert's
-        // "next call" prematurely (they never revert, but they *are* the next external call).
         bytes memory signature = _signFor(safe, ownerPk, address(aqua), shipData);
 
         vm.expectRevert();

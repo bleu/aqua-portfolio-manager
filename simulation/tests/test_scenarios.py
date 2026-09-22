@@ -65,9 +65,7 @@ class BasketWithWithoutPmScenarioTest(unittest.TestCase):
 
 
 class CrossBasketNoPmScenarioTest(unittest.TestCase):
-    """No PM registered -- no Guard, so an unconstrained, fully-connected set of ordinary
-    competing strategies CAN move every token, including WETH, unlike
-    basket_with_without_pm.py's "without PM" arm (one competitor confined to one pair)."""
+    """Unconstrained pairwise competitors with PM absent."""
 
     def test_no_trades_blocked_without_pm(self) -> None:
         world = cross_basket_no_pm.build_world(seed=1)

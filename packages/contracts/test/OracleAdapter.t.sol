@@ -6,9 +6,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AggregatorV3Interface} from "../src/interfaces/AggregatorV3Interface.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 
-/// @dev Settable Chainlink-style mock -- `answer`/`updatedAt`/`decimals` are all adjustable
-///      per-test, unlike a real feed, so staleness and decimal-normalization can be exercised
-///      directly rather than waiting on real chain time.
+/// @dev Feed mock with configurable answer, timestamp, and decimals.
 contract MockAggregatorV3 is AggregatorV3Interface {
     int256 public answer;
     uint256 public updatedAt;
@@ -54,8 +52,12 @@ contract ERC20MockWithDecimals is ERC20 {
 contract OracleAdapterTest is Test {
     // See FixedPointMath.t.sol for why internal library calls need an external wrapper for
     // `vm.expectRevert` to intercept the revert at the right call depth.
-    function _priceWad(OracleAdapter.PriceFeed memory config) external view returns (uint256) {
-        return OracleAdapter.priceWad(config);
+    function _priceWad(OracleAdapter.PriceFeed memory config, OracleAdapter.Rounding rounding)
+        external
+        view
+        returns (uint256)
+    {
+        return OracleAdapter.priceWad(config, rounding);
     }
 
     function _groupValueWad(address[] memory tokens, uint256[] memory balances, OracleAdapter.PriceFeed[] memory feeds)
@@ -63,7 +65,7 @@ contract OracleAdapterTest is Test {
         view
         returns (uint256)
     {
-        return OracleAdapter.groupValueWad(tokens, balances, feeds);
+        return OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
     }
 
     function _feed(MockAggregatorV3 mock, uint256 maxStaleness) internal pure returns (OracleAdapter.PriceFeed memory) {
@@ -73,24 +75,21 @@ contract OracleAdapterTest is Test {
     function test_NormalizesEightDecimalFeedToWad() public {
         vm.warp(1_000_000);
         MockAggregatorV3 mock = new MockAggregatorV3(8, 2000e8, block.timestamp); // $2000.00000000
-        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours));
+        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
         assertEq(price, 2000e18);
     }
 
     function test_PassesThroughEighteenDecimalFeedUnchanged() public {
         vm.warp(1_000_000);
         MockAggregatorV3 mock = new MockAggregatorV3(18, 1e18, block.timestamp);
-        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours));
+        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
         assertEq(price, 1e18);
     }
 
     function test_ScalesDownFeedWithMoreThan18Decimals() public {
         vm.warp(1_000_000);
-        // Chainlink feeds cap at 18 decimals (8 for most USD pairs, 18 for ETH-denominated
-        // ones) -- this branch guards a case no real feed hits, but priceWad's own
-        // if/else if/else chain still has it, so it needs coverage.
         MockAggregatorV3 mock = new MockAggregatorV3(24, 2000e24, block.timestamp); // $2000, 24 decimals
-        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours));
+        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
         assertEq(price, 2000e18);
     }
 
@@ -103,13 +102,13 @@ contract OracleAdapterTest is Test {
                 OracleAdapter.OracleAdapterStalePrice.selector, address(mock), block.timestamp - 2 hours, 1 hours
             )
         );
-        this._priceWad(_feed(mock, 1 hours));
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
     }
 
     function test_AcceptsPriceExactlyAtStalenessThreshold() public {
         vm.warp(1_000_000);
         MockAggregatorV3 mock = new MockAggregatorV3(8, 2000e8, block.timestamp - 1 hours);
-        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours));
+        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
         assertEq(price, 2000e18);
     }
 
@@ -120,7 +119,7 @@ contract OracleAdapterTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(0))
         );
-        this._priceWad(_feed(mock, 1 hours));
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
     }
 
     function test_RevertsOnNegativePrice() public {
@@ -130,7 +129,7 @@ contract OracleAdapterTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(-1))
         );
-        this._priceWad(_feed(mock, 1 hours));
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
     }
 
     function test_GroupValueSumsAcrossDifferentTokenAndFeedDecimals() public {
@@ -152,8 +151,85 @@ contract OracleAdapterTest is Test {
         feeds[0] = _feed(usdcFeed, 1 hours);
         feeds[1] = _feed(usdtFeed, 1 hours);
 
-        uint256 totalValue = OracleAdapter.groupValueWad(tokens, balances, feeds);
+        uint256 totalValue = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
         assertEq(totalValue, 20_000e18);
+    }
+
+    function test_GroupValueUsesFullPrecisionBalanceConversion() public {
+        ERC20MockWithDecimals token = new ERC20MockWithDecimals(18);
+        MockAggregatorV3 mock = new MockAggregatorV3(18, 1e18, block.timestamp);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(token);
+        uint256[] memory balances = new uint256[](1);
+        balances[0] = 1e60;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](1);
+        feeds[0] = _feed(mock, 1 hours);
+
+        // The unscaled product 1e60 * 1e18 overflows, but its normalized value fits.
+        assertEq(OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down), 1e60);
+        assertEq(OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Up), 1e60);
+    }
+
+    function testFuzz_GroupValueBoundsMixedDecimals(uint256 balanceA, uint256 balanceB) public {
+        balanceA = bound(balanceA, 1, 1e24);
+        balanceB = bound(balanceB, 1, 1e24);
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(new ERC20MockWithDecimals(18));
+        tokens[1] = address(new ERC20MockWithDecimals(24));
+        uint256[] memory balances = new uint256[](2);
+        balances[0] = balanceA;
+        balances[1] = balanceB;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](2);
+        feeds[0] = _feed(new MockAggregatorV3(18, 0.5e18, block.timestamp), 1 hours);
+        feeds[1] = _feed(new MockAggregatorV3(8, 0.75e8, block.timestamp), 1 hours);
+
+        uint256 lower = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
+        uint256 upper = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Up);
+        // Compare exact rational values at a common denominator, without rounded helpers.
+        uint256 numerator = balanceA * 0.5e18 * 1e6 + balanceB * 0.75e18;
+        assertLe(lower * 1e24, numerator);
+        assertGe(upper * 1e24, numerator);
+        assertLe(upper - lower, 2);
+    }
+
+    function test_FeedNormalizationRoundsInRequestedDirection() public {
+        MockAggregatorV3 mock = new MockAggregatorV3(24, 1_999_999, block.timestamp);
+        assertEq(OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down), 1);
+        assertEq(OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Up), 2);
+    }
+
+    function test_RevertsWhenPositivePriceNormalizesToZero() public {
+        MockAggregatorV3 mock = new MockAggregatorV3(24, 999_999, block.timestamp);
+        bytes memory expected =
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(999_999));
+        vm.expectRevert(expected);
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
+        vm.expectRevert(expected);
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Up);
+    }
+
+    function testFuzz_HighDecimalFeedBoundsPriceAndGroupValue(uint256 rawAnswer, uint256 balance) public {
+        rawAnswer = bound(rawAnswer, 1e6, 1e24);
+        balance = bound(balance, 1, 1e24);
+        MockAggregatorV3 mock = new MockAggregatorV3(24, int256(rawAnswer), block.timestamp);
+        OracleAdapter.PriceFeed memory feed = _feed(mock, 1 hours);
+        uint256 priceDown = OracleAdapter.priceWad(feed, OracleAdapter.Rounding.Down);
+        uint256 priceUp = OracleAdapter.priceWad(feed, OracleAdapter.Rounding.Up);
+        assertLe(priceDown * 1e6, rawAnswer);
+        assertGe(priceUp * 1e6, rawAnswer);
+        assertLe(priceUp - priceDown, 1);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(new ERC20MockWithDecimals(24));
+        uint256[] memory balances = new uint256[](1);
+        balances[0] = balance;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](1);
+        feeds[0] = feed;
+        uint256 lower = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
+        uint256 upper = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Up);
+        // Raw feed and token units give the exact value balance * answer / 1e30.
+        assertLe(lower * 1e30, balance * rawAnswer);
+        assertGe(upper * 1e30, balance * rawAnswer);
     }
 
     function test_GroupValueRevertsIfAnyMemberFeedIsStale() public {

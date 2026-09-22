@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-/// @dev Real opcode table, successor to PoCOpcodes.sol. Mirrors PoCOpcodes.sol's minimal shape:
-/// a single real instruction (the weighted-curve swap). The protocol fee is not a separate
-/// opcode entry — it's baked directly into PortfolioManagerSwap's own execution, so it can't be
-/// omitted by a hand-crafted program that never uses our own program-builder.
+/// @dev Registers the weighted-curve instruction. Its protocol fee transfer is part of that instruction.
 
 import {Context} from "swap-vm/libs/VM.sol";
 import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 
 /// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerRouter`.
 abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap {
-    constructor(address aqua) PortfolioManagerSwap(aqua) {}
+    constructor(address aqua, address strategyValidator) PortfolioManagerSwap(aqua, strategyValidator) {}
 
     function _notInstruction(
         Context memory,

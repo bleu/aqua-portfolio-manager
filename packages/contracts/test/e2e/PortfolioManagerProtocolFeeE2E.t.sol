@@ -12,10 +12,7 @@ import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant TRADE_AMOUNT = 1_000e18;
 
-    /// @dev Distinct from `LOW_TIER_FEE_BPS`/`LOW_TIER_FEE_BPS + 1` (already used by
-    ///      `PortfolioManagerShipE2E.t.sol`'s two ships) so this suite's order -- otherwise
-    ///      identical `pmSafe`/universe/weights -- doesn't collide on `strategyHash` with
-    ///      theirs; see `PortfolioManagerSkewWorseningE2E.t.sol`'s note on the same hazard.
+    /// @dev Distinct fee gives this order a distinct strategy hash.
     uint32 internal constant FEE_TEST_BPS = LOW_TIER_FEE_BPS + 2;
 
     function test_ProtocolFeeLandsInRealDaoTreasury() public {

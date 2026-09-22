@@ -1,12 +1,4 @@
-"""A competing strategy specialized for near-pegged pairs (e.g. USDC/USDT) — Curve-style
-StableSwap (`stableswap.py`) instead of the plain constant-product `xyc.py` used for
-unrelated-asset pairs. Not PM's own strategy: `GroupBoundaryGuard` never exempts it, same
-confinement as `XYCCompetitorStrategy`.
-
-Used by `scenarios/basket_with_without_pm.py`'s stables competitor (`COMPETITOR_ID`) — a
-plain constant-product pool is a poor fit for two tokens meant to trade near parity, real
-slippage even for small trades near the peg.
-"""
+"""Profit-seeking StableSwap competitor for near-pegged pairs. Subject to the world's group restrictions."""
 
 from __future__ import annotations
 
@@ -21,11 +13,7 @@ _MAX_TRADE_FRACTION = 0.9  # never propose draining more than this fraction of o
 
 
 def _size_correction_trade(state: StableSwapState, target_rate: float, fee: float) -> float:
-    """StableSwap has no closed-form "target balance for a given price" solve like
-    `xyc.py`'s `sqrt(k * rate)` shortcut — bisects on `amount_in` instead, the same
-    tolerance-driven approach a real arbitrageur uses against a curve with no closed
-    form. Pool rate is monotonically increasing in `amount_in`, so bisection is exact.
-    """
+    """Bisect input size to approach the target price within the solver tolerance."""
     lo = 0.0
     hi = state.balance_in * _MAX_TRADE_FRACTION
 
@@ -47,16 +35,10 @@ def _size_correction_trade(state: StableSwapState, target_rate: float, fee: floa
 
 @dataclass
 class StableSwapCompetitorStrategy:
-    """Quotes and trades one fixed near-pegged pair on its own StableSwap pool.
+    """Price a fixed pair from private StableSwap reserves.
 
-    Prices and sizes off `virtual_balance_a`/`virtual_balance_b` — its own private reserve
-    pair, seeded at construction and updated only by this instance's own trades — never
-    the shared wallet's real balance, same rationale as `XYCCompetitorStrategy` (see its
-    docstring for the full reasoning: independent pools don't share reserves, PM is the
-    one strategy meant to run on the wallet's real balance, settlement is unchanged).
-    `amplification=100` and `fee=0.0004` (4bps) match Curve's typical parameters for a
-    deep stablecoin pool.
-    """
+    Update private reserves from this strategy's own decisions, independently of other strategies.
+    Settlement uses the shared wallet. See XYCCompetitorStrategy for the reserve distinction."""
 
     id: str
     token_a: str

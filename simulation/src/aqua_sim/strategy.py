@@ -1,13 +1,4 @@
-"""The `Strategy` protocol every trading agent in `basket_world.py` implements, and the
-`Trade` value object strategies use to describe what they want to do.
-
-Every agent that can move a token balance in the shared basket world — the Portfolio
-Manager, a competing swapVM strategy (`xyc.py`-based or otherwise), or organic background
-flow — is just a different `Strategy` implementation plugged into the same simulation
-loop, not a special-cased code path. This is deliberate: `BasketWorld` never needs to know
-*how* a strategy decided to trade, only that it produced a `Trade` (or didn't), which the
-world then validates against the group-boundary rule (ADR-0011) and applies.
-"""
+"""Trading-agent protocol and proposed trades for BasketWorld validation and settlement."""
 
 from __future__ import annotations
 
@@ -20,19 +11,11 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Trade:
-    """One strategy's proposed (or already-applied) exact-in trade.
+    """An exact-in trade proposed by a strategy.
 
-    `token_in`/`amount_in` is what the *wallet* receives, `token_out`/`amount_out` is
-    what it pays out — same convention as `curve.py`'s `CurveState`/`apply_exact_in`
-    (`balance_in` increases, `balance_out` decreases). A pool that's overweight in some
-    token sheds it via a trade where that token is `token_out`, not `token_in`.
-
-    `strategy_id` identifies who proposed it — `GroupBoundaryGuard` uses this to grant
-    the one exemption ADR-0011 allows (PM's own strategy may cross a group boundary;
-    nothing else may). `amount_out` is filled in by the strategy's own pricing math
-    before the trade is offered to `BasketWorld.apply` — the world never re-derives it,
-    only validates and moves balances.
-    """
+    The wallet receives token_in/amount_in and pays token_out/amount_out.
+    strategy_id identifies the proposer for group checks and value attribution.
+    The strategy computes amount_out. BasketWorld validates and applies it without repricing."""
 
     strategy_id: str
     token_in: str
@@ -51,9 +34,5 @@ class Strategy(Protocol):
     id: str
 
     def decide_trade(self, world: "BasketWorldView") -> Trade | None:
-        """Looks at the current world state and returns a `Trade` it wants to make, or
-        `None` if nothing is worth doing this step. Pure decision — must not mutate
-        `world` or any balance; `BasketWorld.apply` is the only thing allowed to do
-        that, after checking the group-boundary rule.
-        """
+        """Return a proposed Trade or None. Do not mutate the supplied world or balances. BasketWorld validates and settles trades."""
         ...

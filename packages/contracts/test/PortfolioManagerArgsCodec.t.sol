@@ -34,6 +34,14 @@ contract PortfolioManagerArgsCodecTest is Test {
         return PortfolioManagerArgsCodec.parse(args);
     }
 
+    function _callDecodeTrusted(bytes calldata args)
+        external
+        pure
+        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32)
+    {
+        return PortfolioManagerArgsCodec.decodeTrusted(args);
+    }
+
     function _singleMemberGroup(uint256 weight, address token, address feed)
         private
         pure
@@ -143,6 +151,64 @@ contract PortfolioManagerArgsCodecTest is Test {
         assertEq(parsedFeeBps, feeBps);
     }
 
+    // ---- decodeTrusted: agrees with parse() on valid args, skips no data ----
+
+    function test_BuildThenDecodeTrustedMatchesParseOnMultiTokenGroup() public view {
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
+        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: STALENESS});
+        members[1] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: STALENESS * 2});
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.6e18, members: members});
+        groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
+
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5, 5e7);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+            this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps) =
+            this._callDecodeTrusted(args);
+
+        assertEq(decoded.length, parsed.length);
+        for (uint256 i = 0; i < parsed.length; i++) {
+            assertEq(decoded[i].weight, parsed[i].weight);
+            assertEq(decoded[i].members.length, parsed[i].members.length);
+            for (uint256 j = 0; j < parsed[i].members.length; j++) {
+                assertEq(decoded[i].members[j].token, parsed[i].members[j].token);
+                assertEq(decoded[i].members[j].feed, parsed[i].members[j].feed);
+                assertEq(decoded[i].members[j].maxStaleness, parsed[i].members[j].maxStaleness);
+            }
+        }
+        assertEq(decodedFeeBps, parsedFeeBps);
+        assertEq(decodedMaxDeviationBps, parsedMaxDeviationBps);
+    }
+
+    function testFuzz_DecodeTrustedMatchesParse(uint8 seed, uint32 feeBps, uint32 maxDeviationBps) public view {
+        feeBps = uint32(bound(feeBps, 0, PortfolioManagerArgsCodec.PM_BPS));
+        uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
+        uint256 remaining = WAD;
+        for (uint256 i = 0; i < n; i++) {
+            uint256 weight = i == n - 1 ? remaining : remaining / (n - i);
+            remaining -= weight;
+            groups[i] = _singleMemberGroup(weight, address(uint160(0x1000 + i)), address(uint160(0x2000 + i)));
+        }
+
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+            this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps) =
+            this._callDecodeTrusted(args);
+
+        assertEq(decoded.length, parsed.length);
+        for (uint256 i = 0; i < n; i++) {
+            assertEq(decoded[i].weight, parsed[i].weight);
+            assertEq(decoded[i].members[0].token, parsed[i].members[0].token);
+        }
+        assertEq(decodedFeeBps, parsedFeeBps);
+        assertEq(decodedMaxDeviationBps, parsedMaxDeviationBps);
+    }
+
     // ---- build: validation ----
 
     function test_BuildRevertsOnEmptyUniverse() public {
@@ -218,12 +284,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, 0);
     }
 
-    /// @notice Two groups, each at exactly MAX_MEMBERS_PER_GROUP members (5) -- passes every
-    /// per-axis check individually (group count and each group's own member count are both
-    /// within bounds) but the joint encoding is 463 bytes, over the wire format's 255-byte
-    /// capacity. Without build()'s own explicit length check, this would sail through here and
-    /// only fail one layer up in PortfolioManagerProgramBuilder with an opaque SafeCast overflow
-    /// instead of this descriptive error.
+    /// @notice Valid group/member counts can still exceed the 255-byte encoding limit.
     function test_BuildRevertsOnArgsTooLargeEvenWhenEachAxisIsWithinBounds() public {
         PortfolioManagerArgsCodec.Member[] memory members0 =
             new PortfolioManagerArgsCodec.Member[](PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP);
@@ -310,9 +371,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnHandCraftedZeroWeight() public {
-        // 2 groups, weights [0, WAD] -- sums to WAD, so only the per-weight check catches this,
-        // not the sum check. A zero weight here would otherwise divide by zero on every trade
-        // for TOKEN_A once PortfolioManagerPricing computes its weight ratio.
+        // Weights [0, WAD] pass the sum check but must fail the nonzero-weight check.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
             uint128(0),

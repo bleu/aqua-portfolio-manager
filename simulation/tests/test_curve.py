@@ -1,9 +1,4 @@
-"""Regression tests for the pricing curve, extracted from notebook 01's assertions.
-
-Notebook 01 (`01_pricing_curve.ipynb`) keeps the narrative/plots; these are the same
-checks, moved here so they run without a kernel and so the notebook is scenario
-analysis, not the only place this math gets verified.
-"""
+"""Regression checks for weighted-curve pricing and invariants."""
 
 from __future__ import annotations
 

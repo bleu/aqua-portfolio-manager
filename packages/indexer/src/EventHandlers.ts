@@ -23,12 +23,9 @@ indexer.onEvent({ contract: "Aqua", event: "Shipped" }, async ({ event, context 
 indexer.onEvent({ contract: "Aqua", event: "Pushed" }, async ({ event, context }) => {
   const id = strategyId(event.params.maker, event.params.app, event.params.strategyHash);
   const strategy = await context.Strategy.get(id);
-  // A Pushed event for a strategy we have no Shipped record for is expected once start_block
-  // is set later than that strategy's ship() -- ignore rather than fail, this handler only
-  // enriches an existing row, it never creates one.
+  // Ignore pushes for strategies shipped before the indexed range.
   if (strategy === undefined) return;
-  // Pushed also fires on every later trade's pull/push cycle -- only the batch emitted in the
-  // exact same transaction as this strategy's own Shipped event is its declared token universe.
+  // Only pushes in the shipping transaction declare the token universe.
   if (strategy.shippedAtTxHash !== event.transaction.hash) return;
   if (strategy.tokens.includes(event.params.token)) return;
   context.Strategy.set({ ...strategy, tokens: [...strategy.tokens, event.params.token] });
@@ -36,9 +33,7 @@ indexer.onEvent({ contract: "Aqua", event: "Pushed" }, async ({ event, context }
 
 indexer.onEvent({ contract: "Aqua", event: "Docked" }, async ({ event, context }) => {
   const id = strategyId(event.params.maker, event.params.app, event.params.strategyHash);
-  // A Docked event for a strategy this indexer never saw Shipped for means either a missed
-  // backfill range or a start_block set after that strategy's ship -- a loud failure is better
-  // than a silently-wrong "active" strategy that was actually docked.
+  // Fail on an unknown docked strategy so missing shipping history is visible.
   const strategy = await context.Strategy.getOrThrow(id);
   context.Strategy.set({
     ...strategy,

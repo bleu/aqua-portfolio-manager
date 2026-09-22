@@ -6,29 +6,34 @@ pragma solidity 0.8.30;
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 
 /// @title IPortfolioManagerStrategyValidator
-/// @notice External interface for `PortfolioManagerStrategyValidator` — see that contract for the
-///         full rationale (why it validates a PM strategy's `ship()` encoding rather than
-///         forwarding to `IAqua.ship()` itself).
+/// @notice Parameter checks and attestation for PM strategies.
 interface IPortfolioManagerStrategyValidator {
     error PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy();
     error PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(address token);
     error PortfolioManagerStrategyValidatorShippedTokenNotDeclared(address token);
-    /// @dev Ship-time counterpart to `IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation`
-    ///      -- `maker`'s wallet is already off-target beyond `maxDeviationBps` before the strategy
-    ///      even starts trading (e.g. it was funded that way, or drifted between an earlier
-    ///      strategy's expiry and this one's `ship()`).
+    /// @dev The maker's group share exceeds the configured relative deviation before shipping.
     error PortfolioManagerStrategyValidatorExcessivePriceDeviation(
         uint256 groupIndex, uint256 actualShareWad, uint256 targetWeightWad
     );
+    /// @dev Portfolio shares are undefined when the declared tokens have zero total value.
+    error PortfolioManagerStrategyValidatorEmptyPortfolio();
 
-    /// @notice Reverts unless `order`'s own encoded universe matches `tokens` exactly -- same
-    ///         members, both directions. Only accepts programs whose first (and, for a real PM
-    ///         strategy, only) instruction is `PortfolioManagerProgramBuilder.CURVE_OPCODE`.
+    /// @dev Emitted on every successful attestation, including repeat calls.
+    event BuildParametersAttested(bytes32 indexed strategyHash);
+
+    /// @notice Requires matching token membership in the order and supplied list, in both directions.
+    /// @dev The program must start with CURVE_OPCODE. This check does not read balances or prices.
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure;
 
-    /// @notice Reverts unless `maker`'s current wallet composition is within `order`'s declared
-    ///         `maxDeviationBps` of every group's target weight (no-op when it's 0). A one-time
-    ///         ship()-time check, batched alongside `requireUniverseMatches` -- see
-    ///         `PortfolioManagerE2EBase.sol::_shipOnly`.
+    /// @notice Requires each group's share to stay within maxDeviationBps of its target, relative to that target.
+    /// @dev Zero disables the check. Reads the supplied maker's current balances.
     function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view;
+
+    /// @notice Validates parameters and records attestation required by PM quotes and swaps.
+    /// @dev Permissionless and idempotent. Does not bind a later ship() token array or guarantee future balances.
+    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external;
+
+    /// @notice Whether `attestBuildParameters` has ever succeeded for this `strategyHash`
+    ///         (`keccak256(abi.encode(order))` for Aqua-native orders).
+    function buildParamsAttested(bytes32 strategyHash) external view returns (bool);
 }

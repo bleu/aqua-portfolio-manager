@@ -20,15 +20,11 @@ import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Exercises the shipped protocol-fee mechanism through a real SwapVM.swap() call
-/// against a real Aqua registry — not the individual instructions in isolation, which
-/// PortfolioManagerPricing.t.sol/PortfolioManagerArgsCodec.t.sol already cover. This file
-/// answers: does the protocol-fee pull baked into PortfolioManagerSwap's own execution (tiered
-/// per 1IP-103) actually behave as designed end to end, and is it actually mandatory — not just
-/// something PortfolioManagerProgramBuilder happens to include.
+/// @notice Tests fee collection and enforcement through SwapVM settlement against Aqua.
 contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant FEE_BPS_SCALE = 1e9;
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
@@ -41,6 +37,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     MockAggregatorV3 internal feedA;
@@ -53,13 +50,13 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        router = new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1");
+        strategyValidator = new PortfolioManagerStrategyValidator();
+        router =
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
-        // $1.00 per token (18-decimal feed) so a group's oracle-valued sum equals its raw
-        // balance exactly, matching every DAO-fee/tiering assertion below (all derived from
-        // INITIAL_BALANCE / SWAP_AMOUNT as if they were the group's value directly).
+        // Unit prices and 18 decimals make value amounts equal native balances.
         feedA = new MockAggregatorV3(18, 1e18, block.timestamp);
         feedB = new MockAggregatorV3(18, 1e18, block.timestamp);
 
@@ -79,9 +76,7 @@ contract PortfolioManagerOpcodesTest is Test {
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        // The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours) -- generous on
-        // purpose within that ceiling, since this suite's own vm.warp usage (if any) is about
-        // ledger/fee mechanics, not oracle freshness.
+        // Keep feeds fresh so these tests isolate ledger and fee behavior.
         members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: 18 hours});
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
@@ -90,11 +85,7 @@ contract PortfolioManagerOpcodesTest is Test {
         return _orderForProgram(PortfolioManagerProgramBuilder.build(groups, lpFeeBps));
     }
 
-    /// @dev Deliberately does NOT call PortfolioManagerProgramBuilder — hand-packs the wire
-    ///      format directly (opcode 0, the curve, per VM.sol's runLoop) the way any third party
-    ///      who never heard of our builder still could, using only the LP-facing
-    ///      PortfolioManagerArgsCodec encoding (public, documented, nothing secret about it).
-    ///      Proves the protocol fee survives bypassing our own tooling entirely.
+    /// @dev Bypass the program builder to test fee enforcement in the opcode itself.
     function _buildOrderFromHandCraftedProgram(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
         bytes memory args = PortfolioManagerArgsCodec.build(groups, lpFeeBps);
         bytes memory program = abi.encodePacked(uint8(0), uint8(args.length), args);
@@ -126,10 +117,7 @@ contract PortfolioManagerOpcodesTest is Test {
         );
     }
 
-    /// @param tokenInLedgerAmount Aqua-ledger amount shipped for tokenA specifically — kept
-    ///        separate from the maker's real wallet balance (always `INITIAL_BALANCE`, since
-    ///        that's what the curve actually prices off, per ADR-0002) so a test can starve
-    ///        just the ledger `_AQUA.pull()` draws from without touching real exposure.
+    /// @param tokenInLedgerAmount Authorized tokenA amount, independent of the funded wallet balance.
     function _shipOrder(ISwapVM.Order memory order, uint256 tokenInLedgerAmount) internal returns (bytes32) {
         tokenA.mint(maker, INITIAL_BALANCE);
         tokenB.mint(maker, INITIAL_BALANCE);
@@ -145,6 +133,8 @@ contract PortfolioManagerOpcodesTest is Test {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = tokenInLedgerAmount;
         amounts[1] = INITIAL_BALANCE;
+
+        strategyValidator.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         bytes32 strategyHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -210,15 +200,12 @@ contract PortfolioManagerOpcodesTest is Test {
             })
         );
 
-        // Exact-out grosses amountIn up by both the LP's own curve fee and the protocol fee on
-        // top -- mint generously past amountOut so the taker never runs short regardless of tier.
+        // Fund enough input to cover both LP and DAO fees for exact-out.
         tokenA.mint(address(taker), amountOut * 3);
         return taker.swap(order, address(tokenA), address(tokenB), amountOut, takerData);
     }
 
-    /// @dev Replicates PortfolioManagerSwap's own exact-out math (clean amountIn via the curve,
-    ///      then grossed up by daoBps/(FEE_BPS - daoBps)) so tests can assert an independently
-    ///      derived expected value instead of just "some nonzero fee landed".
+    /// @dev Compute expected exact-out fees from the curve input and DAO rate.
     function _expectedExactOutDaoAmount(uint32 lpFeeBps, uint256 amountOut) internal view returns (uint256) {
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: INITIAL_BALANCE,
@@ -337,6 +324,104 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
     }
 
+    function test_ExactInPreservesInvariantWithFractionalInputReserve() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 3);
+        tokenB.burn(maker, INITIAL_BALANCE - 100e18);
+
+        _swapExactIn(order, 200);
+
+        // Constant prices cancel from the equal-weight invariant. Flooring the input
+        // reserve's value from 1.5 to 1 previously paid 99 B and reduced this product.
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
+    }
+
+    function test_ExactOutPreservesInvariantWithFractionalInputReserve() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 3);
+        tokenB.burn(maker, INITIAL_BALANCE - 100e18);
+
+        _swapExactOut(order, 99e18);
+
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
+    }
+
+    function testFuzz_FractionalReservesPreserveSettledInvariant(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 amount,
+        bool exactIn,
+        bool withFee
+    ) public {
+        balanceIn = bound(balanceIn, 3, 1e6);
+        balanceOut = bound(balanceOut, 8, INITIAL_BALANCE);
+        feedA.setAnswer(0.5e18, block.timestamp);
+        feedB.setAnswer(0.75e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(withFee ? LOW_TIER_FEE_BPS : 0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - balanceIn);
+        tokenB.burn(maker, INITIAL_BALANCE - balanceOut);
+
+        if (exactIn) {
+            // Keep output nonzero even at the smallest reserve and after fee rounding.
+            amount = bound(amount, balanceIn + 4, 10 * balanceIn);
+            _swapExactIn(order, amount);
+        } else {
+            amount = bound(amount, 1, balanceOut / 2);
+            // Small output reserves can require much more native input than output.
+            tokenA.mint(address(taker), 10 * balanceIn + 100);
+            _swapExactOut(order, amount);
+        }
+
+        // Uses settled native balances, independent of rounded oracle values or powers.
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), balanceIn * balanceOut);
+        assertGt(tokenB.balanceOf(maker), 0);
+    }
+
+    function test_ExactOutRoundsRequestedOutputValueUp() public {
+        feedB.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 100);
+        tokenB.burn(maker, INITIAL_BALANCE - 100);
+
+        // Three output units are worth 1.5 value units. Flooring that request to one
+        // charges only three input units, violating (100 + input) * (100 - 3) >= 100^2.
+        // Constant prices cancel from this equal-weight invariant, so native balances
+        // provide an independent integer oracle without using the production pricing math.
+        (, uint256 amountOut) = _swapExactOut(order, 3);
+
+        assertEq(amountOut, 3);
+        assertGe(
+            tokenA.balanceOf(maker) * tokenB.balanceOf(maker),
+            100 * 100,
+            "rounding output value down must not decrease the settled invariant"
+        );
+    }
+
+    function test_ExactOutRoundsRequiredNativeInputUp() public {
+        feedA.setAnswer(2e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 100);
+        tokenB.burn(maker, INITIAL_BALANCE - 100);
+
+        // The conservative curve quote requires three value units, or 1.5 input units.
+        // Paying only one native unit would leave 101 * 99 < 100^2 in the maker's wallet.
+        (, uint256 amountOut) = _swapExactOut(order, 1);
+
+        assertEq(amountOut, 1);
+        assertGe(
+            tokenA.balanceOf(maker) * tokenB.balanceOf(maker),
+            100 * 100,
+            "rounding native input down must not decrease the settled invariant"
+        );
+    }
+
     function test_ProtocolFeeSkipsWhenMakerUnderfundedExactOut() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -371,16 +456,11 @@ contract PortfolioManagerOpcodesTest is Test {
         _shipOrder(feeOrder, INITIAL_BALANCE);
         (, uint256 amountOutWithLpFee) = _swapExactIn(feeOrder, SWAP_AMOUNT);
 
-        // Same starting balances (via the snapshot/revert) -- only the LP's own curve fee
-        // differs, so it alone must explain a strictly smaller quoted output. Confirms feeWad
-        // still reaches PortfolioManagerPricing correctly, unaffected by the protocol-fee pull
-        // running ahead of it in the program.
+        // Restore identical balances to isolate the effect of the LP fee.
         assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
     }
 
-    /// @notice A token never shipped to Aqua at all: `SwapVM`'s own `AQUA.safeBalances()` gate
-    /// rejects it before dispatch reaches this opcode. See `PortfolioManagerSwap.sol` for why
-    /// our own declared-universe check exists anyway.
+    /// @notice Aqua rejects unshipped tokens before PM dispatch.
     function test_RevertsWhenTakerRequestsTokenOutsideDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         bytes32 strategyHash = _shipOrder(order, INITIAL_BALANCE);
@@ -401,11 +481,9 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(outsideToken), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice The one case where our own declared-universe check is genuinely reachable, not
-    /// just defense-in-depth: a token shipped to Aqua's ledger that PM's own args-level universe
-    /// never gave a weight to (a ship()/PortfolioManagerArgsCodec encoding mismatch, not a
-    /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
-    /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
+    /// @notice Aqua permits a shipped token that the encoded PM universe does not declare.
+    /// @dev Attest two tokens, then ship three. Attestation does not bind ship()'s later token list.
+    ///      Aqua accepts the token, but PM's _resolve rejects it.
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -418,6 +496,11 @@ contract PortfolioManagerOpcodesTest is Test {
         tokenB.approve(address(aqua), type(uint256).max);
         tokenC.approve(address(aqua), type(uint256).max);
         vm.stopPrank();
+
+        address[] memory declaredTokens = new address[](2);
+        declaredTokens[0] = address(tokenA);
+        declaredTokens[1] = address(tokenB);
+        strategyValidator.attestBuildParameters(order, declaredTokens);
 
         address[] memory tokens = new address[](3);
         tokens[0] = address(tokenA);
@@ -439,11 +522,39 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice The central guarantee: the protocol fee is not merely a convention our own
-    /// program-builder happens to follow. A strategy shipped from program bytes that never
-    /// touched PortfolioManagerProgramBuilder -- built by hand, exactly as any third party
-    /// could -- still pays the DAO the moment it invokes our curve opcode, because the pull is
-    /// baked into PortfolioManagerSwap's own execution, not a separate, omittable instruction.
+    function test_RevertsWhenStrategyWasNeverAttested() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        tokenA.mint(maker, INITIAL_BALANCE);
+        tokenB.mint(maker, INITIAL_BALANCE);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = INITIAL_BALANCE;
+        amounts[1] = INITIAL_BALANCE;
+
+        // Ships directly, skipping strategyValidator.attestBuildParameters entirely -- exactly what
+        // a caller that never went through the recommended multicall batch would do.
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), tokens, amounts);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenA.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapBuildParametersNotAttested.selector, router.hash(order)
+            )
+        );
+        taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
+    }
+
+    /// @notice Hand-packed programs still pay the DAO fee when they execute the PM curve opcode.
     function test_ProtocolFeeIsMandatoryEvenBypassingOurProgramBuilder() public {
         ISwapVM.Order memory order = _buildOrderFromHandCraftedProgram(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
