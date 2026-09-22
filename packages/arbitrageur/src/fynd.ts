@@ -3,7 +3,7 @@ import { isAddress, type Address, type Hex } from "viem";
 /// A route Fynd found to swap `amountIn` of one token into another, encoded as calldata this
 /// server can hand straight to `Arbitrageur.executeFlashArbitrage` -- not something the caller
 /// signs or submits itself (that's Fynd's *other*, EOA-oriented client flow, which this server
-/// deliberately doesn't use; see README's "Fynd integration" section).
+/// deliberately doesn't use; see README's "Flash-loan execution" section).
 export interface FyndQuote {
   target: Address;
   spender: Address;
@@ -53,7 +53,7 @@ export async function getFyndSwapCalldata(params: FyndQuoteParams): Promise<Fynd
 
 /// Field-name mapping kept in its own function, separate from the fetch above, so it's a
 /// one-function fix if these don't match Fynd's real response shape -- unverified against a live
-/// server; see README's "Fynd integration" section.
+/// server; see README's "Flash-loan execution" section.
 export function parseFyndQuoteResponse(json: unknown): FyndQuote {
   const body = json as Record<string, unknown>;
   const tx = body.transaction as Record<string, unknown> | undefined;
