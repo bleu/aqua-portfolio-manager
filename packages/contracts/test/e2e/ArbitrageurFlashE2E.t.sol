@@ -94,8 +94,10 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     function setUp() public override {
         super.setUp();
 
-        router = new PortfolioManagerRouter(address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1");
         strategyValidator = new PortfolioManagerStrategyValidator();
+        router = new PortfolioManagerRouter(
+            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+        );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(3); // distinct salt nonce from the other E2E fixtures' Safes
 
@@ -179,12 +181,12 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         }
         vm.stopPrank();
 
-        bytes memory validateData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.requireUniverseMatches, (order, tokens));
+        bytes memory attestData =
+            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(
-            _encodeMultiSendTx(address(strategyValidator), validateData), _encodeMultiSendTx(address(aqua), shipData)
+            _encodeMultiSendTx(address(strategyValidator), attestData), _encodeMultiSendTx(address(aqua), shipData)
         );
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
 
