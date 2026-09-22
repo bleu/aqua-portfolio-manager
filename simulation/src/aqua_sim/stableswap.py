@@ -1,13 +1,4 @@
-"""StableSwap-style pricing for near-pegged pairs (e.g. USDC/USDT) — a constant-product
-curve like `xyc.py`'s XYCSwap is a poor fit for two assets expected to trade near parity:
-it has real slippage even for small trades near the peg, whereas Curve Finance's
-StableSwap invariant (Egorov, 2019) blends a constant-sum curve (flat, near-zero slippage
-near the peg) with a constant-product curve (only kicking in as balances diverge, for
-stability at the extremes) via an amplification coefficient `A`.
-
-n = 2 only: this module models exactly the two-stablecoin case this suite needs, not a
-general n-asset StableSwap pool.
-"""
+"""Two-asset StableSwap model based on Egorov (2019), with amplification between constant-product and constant-sum behavior."""
 
 from __future__ import annotations
 
@@ -24,12 +15,7 @@ class DegenerateBalanceError(ValueError):
 
 @dataclass(frozen=True)
 class StableSwapState:
-    """One pair's state for a 2-asset StableSwap pool. `amplification` (Curve's `A`)
-    controls how flat the curve is near the 1:1 peg — higher `A` means lower slippage
-    near parity, at the cost of more slippage once balances diverge far from 1:1.
-    `A` near `0` degenerates toward `xyc.py`'s plain constant product; very large `A`
-    degenerates toward a flat constant-sum curve.
-    """
+    """Two-asset reserves and amplification. Higher amplification reduces slippage near parity and concentrates it at larger imbalances."""
 
     balance_in: float
     balance_out: float
@@ -46,10 +32,9 @@ class StableSwapState:
 
 
 def invariant_d(balance_in: float, balance_out: float, amplification: float) -> float:
-    """Solves Curve's StableSwap invariant for `D` (the pool's notional total balance at
-    perfect balance) via Newton's method — the standard iterative solve, n=2:
-    `A*n^n*S + D = A*D*n^n + D^(n+1) / (n^n * P)`, `S = sum(balances)`, `P = prod(balances)`.
-    """
+    """Solve for D with Newton iteration at n=2.
+
+    A*n^n*S + D = A*D*n^n + D^(n+1)/(n^n*P), with S=sum(balances) and P=prod(balances)."""
     s = balance_in + balance_out
     ann = amplification * _N**_N
     d = s
@@ -78,20 +63,14 @@ def _solve_other_balance(balance_known: float, d: float, amplification: float) -
 
 
 def spot_price(state: StableSwapState) -> float:
-    """SP(i->o) = units of i paid per unit of o received, at the current balances,
-    matching `xyc.py`'s `spot_price` convention exactly. Computed via a tiny numerical
-    trade rather than the closed-form marginal price — simpler to verify correct, and a
-    1e-6-relative trade is small enough that quoting/gating logic never notices the
-    difference."""
+    """Approximate the marginal input-per-output price with a trade of 1e-6 times the input reserve."""
     epsilon = state.balance_in * 1e-6
     amount_out = exact_in(state, epsilon, fee=0.0)
     return epsilon / amount_out
 
 
 def exact_in(state: StableSwapState, amount_in: float, fee: float) -> float:
-    """Amount of token o received for a given amount of token i sent in, holding the
-    invariant `D` constant through the trade (net of fee) — same fee convention as
-    `xyc.py`'s `exact_in`."""
+    """Return output for exact input while holding D constant after deducting the input fee."""
     if not 0 <= fee < 1:
         raise ValueError(f"fee must be in [0, 1), got {fee}")
     if amount_in <= 0:

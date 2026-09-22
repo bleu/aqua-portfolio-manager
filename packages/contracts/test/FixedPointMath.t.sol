@@ -58,10 +58,7 @@ contract FixedPointMathTest is Test {
         _assertApproxRelWad(result, 5 * WAD, REL_TOL);
     }
 
-    // ---- monotonicity: the property PortfolioManagerPricing.t.sol's invariant fuzz test needs ----
-    //
-    // Base bounded to a real value in [1e-5, 1e5] and exponent to [0.01, 10] WAD (a generous
-    // superset of the weight-ratio domain `PortfolioManagerPricing` actually calls `pow` with).
+    // Monotonicity over bases [1e-5, 1e5] and exponents [0.01, 10], WAD-scaled.
 
     function testFuzz_PowMonotonicInBaseAboveOne(uint256 baseLow, uint256 baseHigh, uint256 exponent) public pure {
         baseLow = bound(baseLow, WAD, 1e23);
@@ -90,14 +87,7 @@ contract FixedPointMathTest is Test {
         expLow = bound(expLow, 1e16, 10e18);
         expHigh = bound(expHigh, expLow, 10e18);
         vm.assume(expHigh > expLow);
-        // `exponent == WAD` is an exact shortcut (`return base` unchanged, PRBMath's own); every
-        // other exponent goes through the approximate `exp2(log2(base)*exponent)` composition,
-        // which does not round-trip to bit-exact agreement with that shortcut. Right at this
-        // seam, a single-wei-adjacent exponent can land a few ULPs on either side of the exact
-        // value -- a real, expected limit of composing independently-truncating steps, not
-        // something a wider tolerance meaningfully fixes at the point of stitching an exact
-        // identity onto an approximate curve. Excluding the exact seam value keeps this test
-        // checking real monotonicity, not this one-point discontinuity.
+        // Exclude the exponent == WAD shortcut: its exact result can differ from adjacent approximate powers by a few ULPs.
         vm.assume(expLow != WAD && expHigh != WAD);
 
         uint256 resultLow = FixedPointMath.powDown(base, expLow);

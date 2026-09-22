@@ -11,12 +11,8 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {PoCRouter} from "../../src/PoCRouter.sol";
 import {BasketXYCSwapArgsBuilder} from "../../src/BasketXYCSwap.sol";
 
-/// @dev Shared setup for BasketXYCSwap's exact-in and exact-out test suites. Kept as a base
-///      contract each suite inherits, rather than one merged contract with both test sets —
-///      merging them into a single contract trips via-ir's optimizer into a stack-too-deep
-///      error inside `_shipMaker` (more call sites through the same helper shifts its inlined
-///      stack allocation). Splitting into two contracts, each with its own bytecode, sidesteps
-///      that while still sharing this setup instead of duplicating it.
+/// @dev Shared setup for separate exact-in and exact-out suites.
+///      Combining them triggers a via-IR optimizer stack limit in _shipMaker.
 abstract contract BasketXYCSwapTestBase is Test {
     AquaRouter aqua;
     PoCRouter router;
@@ -27,9 +23,7 @@ abstract contract BasketXYCSwapTestBase is Test {
     address owner = address(0xEEEE);
     address taker = address(0xBEEF);
 
-    // _opcodes()'s array-shrinking trick overwrites index 0 with the new length, shifting
-    // everything down by one — the second literal element (_basketXycSwapXD) ends up at
-    // result[0], the third (plain XYCSwap._xycSwapXD) at result[1].
+    // The placeholder slot becomes the array length, so curve opcodes start at zero.
     uint8 constant OPCODE_BASKET_XYC_SWAP = 0;
     uint8 constant OPCODE_PLAIN_XYC_SWAP = 1;
 
@@ -45,9 +39,7 @@ abstract contract BasketXYCSwapTestBase is Test {
         tokenA.approve(address(router), type(uint256).max);
     }
 
-    /// @dev Ships one maker's strategy with initial A/B/C balances and returns the order
-    /// needed to trade against it. tokenC is deliberately never approved to Aqua — it's
-    /// read-only for the curve, proving the swap never actually moves it.
+    /// @dev Ship A/B/C balances without approving tokenC, to verify that swaps only read it.
     function _shipMaker(address maker, uint256 initA, uint256 initB, uint256 initC)
         internal
         returns (ISwapVM.Order memory order)
@@ -99,10 +91,7 @@ abstract contract BasketXYCSwapTestBase is Test {
         assertEq(shippedHash, orderHash, "strategyHash must equal SwapVM's own orderHash");
     }
 
-    /// @dev Ships a maker running swap-vm's own plain XYCSwap instead of the basket-aware curve
-    /// — a real, independently-implemented comparison baseline with no notion of a third token
-    /// at all (not even a zero-balance one), rather than just BasketXYCSwap parameterized at
-    /// C=0. Never mints or references tokenC for this maker.
+    /// @dev Ship the independent XYCSwap baseline with only A/B balances.
     function _shipPlainXYCMaker(address maker, uint256 initA, uint256 initB)
         internal
         returns (ISwapVM.Order memory order)

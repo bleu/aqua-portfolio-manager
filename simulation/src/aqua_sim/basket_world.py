@@ -1,9 +1,4 @@
-"""The shared-wallet simulation environment: real token balances, ADR-0003's oracle-valued
-group ("virtual balance") accounting, ADR-0011's group-boundary enforcement, and the step
-loop that ties a `PriceProcess` and any number of `Strategy` implementations together --
-the number and kind of strategies, and the number of declared groups, are run-time
-configuration, not separate code paths per scenario.
-"""
+"""Shared wallet simulation with group valuation, trade validation, and sequential strategy execution."""
 
 from __future__ import annotations
 
@@ -15,10 +10,7 @@ from aqua_sim.strategy import Strategy, Trade
 
 @dataclass(frozen=True)
 class BasketGroup:
-    """One declared token group (ADR-0003) — the unit ADR-0011's Basket Scope Guard
-    protects the boundary of. A single-token "group" (`token_ids` of length 1) is the
-    degenerate case of a token with no basket-mates; nothing here requires more than one.
-    """
+    """A declared group of one or more tokens, valued in the common quote currency."""
 
     group_id: str
     token_ids: tuple[str, ...]
@@ -27,36 +19,21 @@ class BasketGroup:
         return token_id in self.token_ids
 
     def virtual_balance(self, world: "BasketWorldView") -> float:
-        """`Σ balance_j × oracle_price_j` over this group's members (ADR-0003) — what
-        PM's curve actually prices against, not any single member's raw balance."""
+        """Return the sum of each member balance multiplied by its reference price."""
         return sum(world.token_balances[t] * world.reference_prices[t] for t in self.token_ids)
 
 
 class UnknownTokenError(ValueError):
-    """A trade referenced a token that isn't in any declared `BasketGroup` — ADR-0011
-    blocks touching a token outside the declared universe, same as crossing a boundary."""
+    """A trade references a token outside the simulated wallet."""
 
 
 @dataclass(frozen=True)
 class GroupBoundaryGuard:
-    """Simulates ADR-0011's Basket Scope Guard: every strategy except those explicitly
-    trading PM's own declared pair is confined to trading *within* a single declared
-    group, but only when PM is actually registered in this world.
+    """Model group restrictions while PM is registered.
 
-    The real `BasketScopeGuard.sol` is a Safe Transaction Guard installed on PM's own
-    dedicated maker wallet (ADR-0002) — only PM's own registered strategy contract is
-    ever authorized to move that wallet's funds at all (`TRUSTED_PM_STRATEGY_HASH`), so
-    *any* settlement against PM's declared pair — whether the counterparty is an
-    arbitrageur correcting price or organic flow clearing through it — is exempt the same
-    way. `pm_strategy_id` is the strategy whose presence determines whether this Guard
-    exists at all (`pm_present`); `also_exempt_ids` covers any other strategy (e.g.
-    organic flow) that's also legitimately settling against PM's own pair, not some other
-    strategy crossing a group boundary it has no business touching. There is no
-    real-world wallet with this Guard installed and no PM ever shipped to it; a wallet
-    with no PM simply never has this Guard in the first place, so nothing on it is
-    confined to a single group. `check`'s `pm_present` argument models exactly that: with
-    `pm_present=False`, every trade is allowed regardless of group membership.
-    """
+    PM and also_exempt_ids may cross groups. Other strategies must stay within one group.
+    With pm_present=False, all trades pass this check.
+    This model checks trades, whereas the Solidity Guard inspects direct shipping calls."""
 
     pm_strategy_id: str
     also_exempt_ids: frozenset[str] = frozenset()
@@ -80,10 +57,7 @@ class GroupBoundaryGuard:
 
 @dataclass(frozen=True)
 class BasketWorldView:
-    """Read-only snapshot handed to every `Strategy.decide_trade` — deliberately not a
-    reference to the live `BasketWorld`, so no strategy can mutate state directly or see
-    more than "current balances + prices + declared groups". Keeps PM, a competing
-    strategy, and organic flow symmetric under the same interface."""
+    """Snapshot of balances and prices for strategy decisions. Strategies must not mutate the supplied data."""
 
     token_balances: dict[str, float]
     reference_prices: dict[str, float]
@@ -98,17 +72,10 @@ class BasketWorldView:
 
 @dataclass
 class MetricsRecorder:
-    """Records what a `BasketWorld` run needs for a with-PM/without-PM comparison: each
-    declared pair's virtual-balance path and the tracking error against a declared target
-    weight, over arbitrary oracle-valued groups (ADR-0003), not just raw two-token
-    balances.
+    """Record group values, tracking error, and value captured by each strategy.
 
-    Deliberately does not (yet) track a "cost of rebalancing" metric benchmarked against a
-    frictionless reference — that kind of benchmark usually assumes only one side's
-    *price* moves between steps, which doesn't hold once other strategies can also move a
-    group's real balances. Extending "cost" to that case is its own design question, not
-    reimplemented here as a shortcut.
-    """
+    Does not measure rebalancing cost against a frictionless reference.
+    That benchmark needs a separate definition when other strategies also change balances."""
 
     group_a_id: str
     group_b_id: str
@@ -138,15 +105,9 @@ class MetricsRecorder:
 
 @dataclass
 class BasketWorld:
-    """Owns every real balance, every declared group, every registered strategy, the
-    price process, the group-boundary guard, and the step loop that ties them together.
+    """Manage shared reserves, strategies, prices, and metrics.
 
-    Strategies act in registration order, each seeing the effects of every trade already
-    applied earlier in the *same* step (sequential, not simultaneous-against-a-stale-
-    snapshot) — closer to how transactions actually order within a block than a
-    collect-then-apply-all model, and it avoids one strategy's decision going stale
-    before it's even applied.
-    """
+    Strategies run in registration order and see earlier trades from the same step."""
 
     token_balances: dict[str, float]
     groups: list[BasketGroup]
@@ -166,23 +127,12 @@ class BasketWorld:
         )
 
     def apply(self, trade: Trade) -> bool:
-        """Validates `trade` against the group-boundary rule and current liquidity, then
-        mutates balances. Returns whether it was applied — `False` means the guard
-        blocked it (recorded in `blocked_trades`) or the pool didn't have enough of
-        `token_out` to actually pay it out.
+        """Apply a trade if group restrictions and output liquidity permit it.
 
-        No `Strategy` here owns the wallet it trades against -- every registered strategy
-        is a *taker* quoting/settling against the shared pool (`token_balances`), same as
-        a real arbitrageur or organic swapper never gets to be the AMM they're trading
-        with. `strategy_captured_value` marks that split explicitly: whatever
-        mark-to-market value the pool gives up on a trade (received at `token_in`'s price,
-        paid out at `token_out`'s price) is attributed as *captured by* the strategy that
-        submitted it -- negative when the trade is bad for the pool (an arbitrage-style
-        correction), positive when it's good for the pool (e.g. organic flow paying a
-        fee). This is a notional value ledger for charting "who's winning," not a second
-        token balance sheet -- the pool's own `token_balances` remain the only real
-        reserves this world tracks.
-        """
+        Return False for blocked trades or insufficient output liquidity.
+        Record guard rejections in blocked_trades.
+        strategy_captured_value records the negative of the pool's marked value change.
+        It is a reporting ledger, not a second reserve balance."""
         if trade.token_in not in self.token_balances or trade.token_out not in self.token_balances:
             raise UnknownTokenError(f"trade references a token not in this world: {trade.token_in}/{trade.token_out}")
         pm_present = any(s.id == self.guard.pm_strategy_id for s in self.strategies)

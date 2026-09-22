@@ -1,14 +1,4 @@
-"""No PM registered, so there's no Guard (see `basket_world.GroupBoundaryGuard` — the real
-`BasketScopeGuard.sol` only exists because it's installed on PM's own dedicated wallet).
-Instead of one competitor confined to a single pair (`basket_with_without_pm.py`'s
-"without PM" arm), this deploys an independent, profit-seeking `XYCCompetitorStrategy` on
-*every* pairwise combination of the wallet's tokens — a fully-connected set with nothing
-stopping any of them from moving WETH against the stables.
-
-This is the second half of the comparison: does an unconstrained set of ordinary,
-profit-seeking strategies rebalance the wallet anywhere close to what PM (with the Guard
-confining everyone else to one group) achieves on its own?
-"""
+"""Model independent XYC competitors on every token pair, with no PM and no group restrictions."""
 
 from __future__ import annotations
 

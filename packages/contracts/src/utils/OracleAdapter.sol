@@ -7,16 +7,9 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import {FixedPointMath} from "./FixedPointMath.sol";
 
-/// @title OracleAdapter — Chainlink-style push-feed pricing, per ADR-0005
-/// @notice Two jobs, both per-feed, matching ADR-0005's decision exactly: reject a stale read
-///         outright (no fallback price, no degraded execution), and convert each declared
-///         group member's own-decimal balance through its own feed's price into one common
-///         WAD-scaled value, per ADR-0003 (`Σ balance_j × oracle_price_j`) — the `B_i`/`B_o`
-///         PRICING.md's formula actually consumes for a multi-token group. The reference PoC
-///         (`BasketXYCSwap.sol`) adds a basket token's raw balance with no price applied,
-///         correct only by coincidence when every group member is worth the same
-///         (see `docs/ARCHITECTURE.md`'s Oracle Adapter component note) — this is the corrected
-///         version.
+/// @title OracleAdapter
+/// @notice Converts token balances through fresh push feeds into a common WAD-scaled value.
+/// @dev All feeds must use the same quote currency. Stale or non-positive prices revert.
 library OracleAdapter {
     uint256 internal constant WAD = FixedPointMath.WAD;
 
@@ -29,18 +22,15 @@ library OracleAdapter {
         Up
     }
 
-    /// @param feed         The Chainlink-style aggregator for one declared token.
-    /// @param maxStaleness Per-feed threshold (ADR-0005: "coverage quality varies by token, so
-    ///                     one global threshold isn't appropriate") — a config value, not a
-    ///                     constant here.
+    /// @param feed Chainlink-style feed for one token.
+    /// @param maxStaleness Maximum permitted price age in seconds.
     struct PriceFeed {
         AggregatorV3Interface feed;
         uint256 maxStaleness;
     }
 
-    /// @notice WAD-scaled price of one whole token, rounded in the requested direction.
-    /// @dev Reverts on a stale or non-positive read — ADR-0005's Decision is explicit that a
-    ///      stale read reverts the whole trade. Prices below one raw WAD unit also revert.
+    /// @notice Returns the WAD-scaled price of one whole token with the requested rounding.
+    /// @dev Rejects stale, non-positive prices and prices below one raw WAD unit.
     function priceWad(PriceFeed memory config, Rounding rounding) internal view returns (uint256) {
         (, int256 answer,, uint256 updatedAt,) = config.feed.latestRoundData();
         require(answer > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
@@ -58,12 +48,9 @@ library OracleAdapter {
         return rounding == Rounding.Up ? FixedPointMath.scaleUp(uint256(answer), decimals, 18) : lower;
     }
 
-    /// @notice `Σ (token_balance_j × oracle_price_j)` over a group's declared members
-    ///         (ADR-0003), converted to one comparable WAD-scaled value — PRICING.md's `B_i`/
-    ///         `B_o` for a multi-token group. `balances` are each token's own real, native-
-    ///         decimal balance (e.g. a plain wallet `balanceOf` read), not yet normalized for
-    ///         either the token's own decimals or the feed's — both normalizations happen here.
-    /// @param rounding Round each member up for input reserves, down for output reserves.
+    /// @notice Sums member balances multiplied by their prices, with token and feed decimal normalization.
+    /// @param balances Native token balances before normalization.
+    /// @param rounding Round each member up for input reserves and down for output reserves.
     function groupValueWad(
         address[] memory tokens,
         uint256[] memory balances,

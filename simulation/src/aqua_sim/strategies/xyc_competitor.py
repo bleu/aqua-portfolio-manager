@@ -1,8 +1,4 @@
-"""A competing swapVM strategy — plain constant-product (`xyc.py`, swapVM's `XYCSwap`
-opcode), profit-seeking against the world's reference prices. Not PM's own strategy:
-`GroupBoundaryGuard` never exempts it, so it can only ever trade within one declared
-group, same as any other non-PM strategy.
-"""
+"""Profit-seeking constant-product competitor, subject to the world's group restrictions."""
 
 from __future__ import annotations
 
@@ -15,28 +11,11 @@ from aqua_sim.xyc import XYCState, apply_exact_in, spot_price
 
 @dataclass
 class XYCCompetitorStrategy:
-    """Quotes and trades one fixed token pair on its own plain `xy=k` pool.
+    """Price a fixed pair from private xy=k reserves.
 
-    Prices and sizes off `virtual_balance_a`/`virtual_balance_b` — its own private reserve
-    pair, seeded at construction and updated only by this instance's own trades — never
-    the shared wallet's real balance. This is what an independent pool actually is: two
-    separate `XYCCompetitorStrategy` instances on overlapping pairs (e.g. one on WETH/USDC,
-    another on WETH/USDT) must not see or affect each other's reserves, the same way two
-    unrelated Uniswap pools don't. PM is the one strategy meant to run on the wallet's real
-    balance (`BasketGroup.virtual_balance`); everything else, including this strategy,
-    prices off its own private state.
-
-    Settlement is unchanged: a decided trade still moves the real, shared wallet balance
-    via `BasketWorld.apply()` — these are still other strategies shipped from the same
-    dedicated wallet, so the actual on-chain settlement is real regardless of how a
-    strategy privately prices itself. Because this strategy's own reserves aren't
-    resynced from the real wallet, they can drift from the real balance over a long run
-    (other strategies' settlements move the real balance without updating this instance's
-    private view) — the same way an independent pool's own price is whatever its own
-    reserves say, decoupled from anything else happening elsewhere. An occasional
-    resulting trade can get rejected by `BasketWorld.apply()`'s real-liquidity check; that's
-    accepted, not treated as a bug.
-    """
+    Other strategies do not update these reserves, but settlement uses the shared wallet.
+    Private reserves can diverge from available wallet balances.
+    BasketWorld.apply may reject a proposed trade for insufficient real liquidity."""
 
     id: str
     token_a: str

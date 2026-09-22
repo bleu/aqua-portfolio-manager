@@ -16,60 +16,36 @@ import {OracleAdapter} from "./utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {FixedPointMath} from "./utils/FixedPointMath.sol";
 
-/// @title PortfolioManagerSwap — the real weighted-curve SwapVM instruction, per PRICING.md
-/// @notice Wires PortfolioManagerArgsCodec's declared groups and PortfolioManagerPricing's
-///         curve math into an actual instruction: reads real wallet balances via plain
-///         `balanceOf` (ADR-0002 — never AQUA's own ledger via ctx.swap.balanceIn/Out, which is
-///         a same-strategy-only accounting entry, not a wallet-wide reading), resolves which
-///         declared group tokenIn/tokenOut each belong to, values that group's full member set
-///         through `OracleAdapter` (ADR-0003), and prices the trade against the two groups'
-///         weights.
-/// @dev Real multi-token oracle-valued groups (ADR-0003) — every group, including a
-///      single-member one, goes through `OracleAdapter` uniformly (no "skip the oracle"
-///      special case), so decimal normalization and price conversion always apply the same
-///      way regardless of group size.
-/// @dev The 1inch DAO protocol fee (1IP-103's tiered cut) is pulled directly from
-///      inside this instruction's own execution, not composed as a separate chainable
-///      instruction — `Aqua.ship()` is permissionless, so a program that only invokes this
-///      opcode (skipping any separate fee instruction) would otherwise pay nothing. Baking the
-///      pull in here means anyone shipping a strategy that actually uses this curve pays the
-///      fee, regardless of what tooling built their program bytes. Inherits `Fee` purely to
-///      reuse its `_AQUA` reference, `BPS` scale, and `ProtocolFeeSkipped` event — not to call
-///      any of its instruction functions, which wrap "the rest of the program" in a way that
-///      only composes correctly across separate chained instructions, not within one function
-///      body that still has its own pricing left to do afterward.
-/// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerOpcodes`.
+/// @title PortfolioManagerSwap
+/// @notice Prices cross-group swaps from real wallet balances, oracle values, and target weights.
+/// @dev Every group member uses its feed, including single-token groups.
+///      The DAO fee transfer is inside this opcode so programs cannot omit a separate fee instruction.
+///      Collection remains best-effort. Fee inheritance supplies the Aqua reference, scale, and skipped-fee event.
+///      See docs/PRICING.md for formulas and units.
 abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     using ContextLib for Context;
 
     uint256 private constant WAD = FixedPointMath.WAD;
 
-    /// @dev The multicall validation that's supposed to run alongside `Aqua.ship()` is
-    ///      convention, not enforced by `ship()` itself -- this is what lets the swap opcode
-    ///      independently check it actually happened, instead of trusting the caller.
+    /// @dev Aqua.ship() does not enforce validation. The opcode checks this validator's attestation.
     IPortfolioManagerStrategyValidator private immutable STRATEGY_VALIDATOR;
 
     constructor(address aqua, address strategyValidator) Fee(aqua) {
         STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
     }
 
-    /// @param args Encoded via PortfolioManagerArgsCodec.build (tokens, weights, feeBps)
-    /// @dev Not declared `view`: Solidity won't implicitly widen a view-typed function-pointer
-    ///      array literal to the unqualified array type `_opcodes()` needs (same reasoning as
-    ///      `BasketXYCSwap.sol`'s identical note).
+    /// @param args Group configuration, LP fee, and deviation limit encoded by PortfolioManagerArgsCodec.
+    /// @dev The opcode table requires a non-view function pointer.
     function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
-        // Checked first, before parsing args, so an unattested strategy never pays parse cost.
-        // The flag is monotonic, so re-checking every swap (not just the first) is behaviorally
-        // identical and needs no firstness special-case.
+        // Checked before decoding args to skip parse cost when unattested; the flag is
+        // monotonic (set once, never unset), so re-checking every swap is intentional, not a
+        // missed firstness optimization.
         require(
             STRATEGY_VALIDATOR.buildParamsAttested(ctx.query.orderHash),
             PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
         );
 
-        // decodeTrusted, not parse: STRATEGY_VALIDATOR.buildParamsAttested above already proves
-        // attestBuildParameters ran parse() successfully against these exact bytes once --
-        // re-deriving group/member bounds, weight sum, duplicate tokens, and fee range on every
-        // swap would just repeat work whose answer can't have changed since attestation.
+        // Attestation validates these exact argument bytes. Decode them without repeating validation.
         (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =
             PortfolioManagerArgsCodec.decodeTrusted(args);
 
@@ -91,13 +67,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             require(deviationBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(sp, maxDeviationBps));
         }
 
-        // The curve's own balanceIn/balanceOut are oracle-VALUE-scaled (ADR-0003: `Σ balance_j
-        // × price_j` per group), not the traded token's native units — so the traded amount
-        // must be converted into that same value numeraire before the formula call, and the
-        // result converted back, using the specific traded token's own price/decimals. Skipping
-        // this (as an earlier version of this function did) silently prices a $2,500 WETH unit
-        // as if it were a $1 unit, since PortfolioManagerPricing itself is unit-agnostic and
-        // trusts amountIn/amountOut to already share balanceIn/balanceOut's unit system.
+        // Convert traded amounts to the reserves' value unit before pricing, then back to native token units.
         (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
             _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn, OracleAdapter.Rounding.Down);
         (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
@@ -111,11 +81,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, PortfolioManagerSwapRecomputeDetected());
-            // The taker's full, requested amountIn — the curve prices off it net of the
-            // protocol pull, but SwapVM's own settlement must still collect the full amount
-            // from the taker, so it's restored below (matches Fee.sol's own _feeAmountIn
-            // exact-in branch, minus the wrap-the-rest-of-program recursion we don't need
-            // here — nothing runs after this instruction).
+            // Price after the DAO cut, but retain the full input for SwapVM settlement.
             uint256 fullAmountIn = ctx.swap.amountIn;
             daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
             uint256 netAmountIn = fullAmountIn - daoAmount;
@@ -126,10 +92,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             ctx.swap.amountIn = fullAmountIn;
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
-            // Exact-out: the curve first computes the amountIn needed including the LP's own
-            // curve fee (PortfolioManagerPricing.exactOut already grosses that up internally),
-            // then the protocol fee is grossed up on top of that — mirrors Fee.sol's own
-            // exact-out branch, which fees only once the swap amount is known.
+            // The curve includes the LP fee. Add the DAO fee to its required input.
             uint256 amountOutValueWad = FixedPointMath.mulDivUp(ctx.swap.amountOut, tokenOutPriceWad, tokenOutUnit);
             uint256 amountInValueWad = PortfolioManagerPricing.exactOut(quote, amountOutValueWad);
             uint256 cleanAmountIn = FixedPointMath.mulDivUp(amountInValueWad, tokenInUnit, tokenInPriceWad);
@@ -137,19 +100,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 
-        // Group-aggregate value covering amountOut doesn't guarantee tokenOut's own raw balance
-        // can cover it (a multi-member group with a raw balance imbalance, e.g. from a depeg) --
-        // revert cleanly here instead of underflowing inside Aqua.pull().
+        // A group's total value does not guarantee enough units of the output token.
         uint256 tokenOutAvailable = IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker);
         require(
             ctx.swap.amountOut <= tokenOutAvailable,
             PortfolioManagerSwapInsufficientMemberBalance(ctx.query.tokenOut, ctx.swap.amountOut, tokenOutAvailable)
         );
 
-        // Best-effort, matching Fee.sol's own _tryPullFee rationale exactly: reverting on an
-        // uncollectible fee would make a one-sided position untradable (OpenZeppelin M-09,
-        // Theori #10). Skipped entirely in quote() (isStaticContext) — same divergence
-        // Fee.sol's transfer-performing variants document.
+        // Preserve swap availability when fee collection fails, matching Fee.sol (OpenZeppelin M-09, Theori #10).
+        // Quotes skip the transfer.
         if (daoAmount != 0 && !ctx.vm.isStaticContext) {
             address recipient = PortfolioManagerFee.DAO_TREASURY_ADDRESS;
             try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoAmount, recipient) {
@@ -160,9 +119,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         }
     }
 
-    /// @dev Sole guard on the declared universe now (balances below are ungated) — reachable
-    ///      via a `ship()`/args encoding mismatch, since `AQUA.safeBalances()` only checks the
-    ///      token is part of the shipped strategy, not that it matches this instruction's args.
+    /// @dev Aqua's token list can differ from the encoded PM universe. Enforce membership here too.
     function _resolve(PortfolioManagerArgsCodec.Group[] memory groups, address token)
         private
         pure
@@ -177,9 +134,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         revert PortfolioManagerSwapTokenNotDeclared(token);
     }
 
-    /// @dev The specific traded token's own price/decimals, separate from its group's
-    ///      aggregate `groupValueWad` sum -- needed to convert the traded amount into and back
-    ///      out of the group-value numeraire (see the main function's own note on why).
+    /// @dev Gets the traded member's price and decimals for native-token/value conversion.
     function _priceAndDecimals(
         PortfolioManagerArgsCodec.Member memory member,
         address token,
@@ -192,9 +147,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         decimals = IERC20Metadata(token).decimals();
     }
 
-    /// @dev `Σ (member_balance × oracle_price)` over a group's full member set (ADR-0003) —
-    ///      always goes through `OracleAdapter`, even for a single-member group, so decimal
-    ///      normalization and price conversion are uniform regardless of group size.
+    /// @dev Values every member through OracleAdapter, including single-token groups.
     function _groupValueWad(
         PortfolioManagerArgsCodec.Group memory group,
         address maker,
