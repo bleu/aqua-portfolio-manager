@@ -1,11 +1,6 @@
-"""Organic background flow — Poisson-arrival, random direction, lognormal size. Kept
-separate from the profit-seeking competitor strategies (`xyc_competitor.py`,
-`stableswap_competitor.py`), not merged into them.
+"""Background trades with Poisson arrivals, random direction, and lognormal size.
 
-Deliberately does not price against any pool's own curve: this models flow that clears at
-close to the fair oracle rate (e.g. via an external venue or aggregator) before settling
-into the shared wallet, not flow that specifically targets PM's or a competitor's pool.
-"""
+Trades settle near the reference rate, modeling external flow rather than targeting a simulated pool curve."""
 
 from __future__ import annotations
 

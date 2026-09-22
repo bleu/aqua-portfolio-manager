@@ -1,13 +1,4 @@
-"""Plain constant-product (xy=k) pricing — floating-point reimplementation of swapVM's
-`XYCSwap` opcode (`lib/swap-vm/src/instructions/XYCSwap.sol`), used to model a competing
-Aqua-native strategy that isn't the Portfolio Manager's own weighted curve.
-
-This is `curve.py`'s `CurveState`/`exact_in` at `weight_in == weight_out == 0.5` in
-substance, but kept as its own module rather than a thin wrapper: `XYCState` deliberately
-carries no weights at all, so a competing strategy built on this module can never be
-mistaken for one that reads PM's group weights, and this module's math stays correct even
-if `curve.py`'s weighted formula ever changes shape.
-"""
+"""Floating-point xy=k model of SwapVM XYCSwap. Independent of PM group weights and the weighted-curve implementation."""
 
 from __future__ import annotations
 
@@ -34,9 +25,7 @@ class XYCState:
 
 
 def spot_price(state: XYCState) -> float:
-    """SP(i->o) = balance_in / balance_out — units of i paid per unit of o received,
-    before fees, matching `curve.py`'s `spot_price` convention exactly (this is that
-    formula's `weight_in == weight_out` special case, kept explicit here)."""
+    """Return balance_in / balance_out, in input units per output unit before fees."""
     return state.balance_in / state.balance_out
 
 
@@ -47,11 +36,7 @@ def invariant(state: XYCState) -> float:
 
 
 def exact_in(state: XYCState, amount_in: float, fee: float) -> float:
-    """Amount of token o received for a given amount of token i sent in.
-
-    `A_i_eff = A_i * (1 - f)`, `A_o = B_o - (B_i * B_o) / (B_i + A_i_eff)` — the standard
-    constant-product formula, k held constant through the trade net of fee.
-    """
+    """Return output with constant product after deducting the input fee."""
     if not 0 <= fee < 1:
         raise ValueError(f"fee must be in [0, 1), got {fee}")
     if amount_in <= 0:

@@ -1,15 +1,4 @@
-"""Constant-mean weighted curve pricing — floating-point reimplementation of
-``docs/PRICING.md`` for economic simulation.
-
-This is NOT the on-chain source of truth. The real strategy is Solidity,
-fixed-point, with rounding that always favors the pool (floor on exact-in output,
-ceil throughout exact-out — see ``docs/PRICING.md``'s "Rounding" notes and
-``docs/DONATION-RESISTANCE-PROOF.md``). This module trades that rounding discipline for
-speed and precision, since a market simulation runs the formula millions of times
-across parameter sweeps and rounding-direction bias would not change which
-parameters look best — only the on-chain contract's own Forge test suite is the
-place that proof-grade rounding behavior gets verified.
-"""
+"""Floating-point weighted-curve model. Contract rounding guarantees are tested separately in Forge."""
 
 from __future__ import annotations
 
@@ -17,19 +6,12 @@ from dataclasses import dataclass
 
 
 class DegenerateBalanceError(ValueError):
-    """A swap was attempted against a zero (or negative) balance side of the curve.
-
-    Mirrors ``docs/PRICING.md``'s "Degenerate cases": "B_i == 0 or B_o == 0: revert."
-    """
+    """A reserve is zero or negative."""
 
 
 @dataclass(frozen=True)
 class CurveState:
-    """One pool side-pair's state: the two balances and weights a swap prices against.
-
-    Field names match ``docs/PRICING.md`` exactly (``B_i``, ``B_o``, ``w_i``, ``w_o``)
-    so the formulas below can be read side by side with that document.
-    """
+    """Balances and weights for the two sides of a weighted-curve swap."""
 
     balance_in: float
     balance_out: float
@@ -50,35 +32,17 @@ class CurveState:
 
 
 def spot_price(state: CurveState) -> float:
-    """SP(i->o) = (B_i / w_i) / (B_o / w_o) — PRICING.md "Spot price".
-
-    Units of i paid per unit of o received, before fees — i.e. the price of o
-    denominated in i.
-    """
+    """Return (balance_in / weight_in) / (balance_out / weight_out), in input units per output unit before fees."""
     return (state.balance_in / state.weight_in) / (state.balance_out / state.weight_out)
 
 
 def invariant(state: CurveState) -> float:
-    """V = B_i^w_i * B_o^w_o — DONATION-RESISTANCE-PROOF.md's round-trip invariant.
-
-    Proven (see that file) to never decrease across a trade priced by this curve,
-    and to strictly increase on a pure donation. Used here as a numerical check,
-    not as a proof — the proof itself is algebraic, done once, in that document.
-    """
+    """Return balance_in**weight_in * balance_out**weight_out for numerical invariant checks."""
     return state.balance_in**state.weight_in * state.balance_out**state.weight_out
 
 
 def exact_in(state: CurveState, amount_in: float, fee: float) -> float:
-    """Amount of token o received for a given amount of token i sent in.
-
-    PRICING.md "Exact-in swap":
-        A_i_eff = A_i * (1 - f)
-        A_o = B_o * (1 - (B_i / (B_i + A_i_eff))^(w_i / w_o))
-
-    The real contract floors A_o (the pool keeps the remainder). This function
-    returns the exact float — callers that need the pool-favoring rounding for a
-    specific check should floor the result themselves.
-    """
+    """Return output for an exact input using the formula in docs/PRICING.md. Floating-point arithmetic does not enforce directed rounding."""
     if not 0 <= fee < 1:
         raise ValueError(f"fee must be in [0, 1), got {fee}")
     if amount_in <= 0:
@@ -90,15 +54,7 @@ def exact_in(state: CurveState, amount_in: float, fee: float) -> float:
 
 
 def exact_out(state: CurveState, amount_out: float, fee: float) -> float:
-    """Amount of token i that must be sent in for a given amount of token o out.
-
-    PRICING.md "Exact-out swap":
-        A_i_eff = B_i * ((B_o / (B_o - A_o))^(w_i / w_o) - 1)
-        A_i = A_i_eff / (1 - f)
-
-    The real contract ceils throughout. As with `exact_in`, this returns the exact
-    float; callers needing pool-favoring rounding should ceil the result themselves.
-    """
+    """Return fee-inclusive input for exact output using docs/PRICING.md. Floating-point arithmetic does not enforce directed rounding."""
     if not 0 <= fee < 1:
         raise ValueError(f"fee must be in [0, 1), got {fee}")
     if not 0 < amount_out < state.balance_out:
@@ -113,12 +69,7 @@ def exact_out(state: CurveState, amount_out: float, fee: float) -> float:
 
 
 def apply_exact_in(state: CurveState, amount_in: float, fee: float) -> tuple[CurveState, float]:
-    """Applies an exact-in trade, returning the resulting `CurveState` and amount_out.
-
-    The *full* `amount_in` (fee included) lands in the real balance — PRICING.md:
-    "the full A_i (fee included) is what actually lands in the wallet's real
-    balance — this is what lets the fee show up as a strict invariant increase."
-    """
+    """Return the updated CurveState and output amount. Add the full input, including the retained fee, to the input reserve."""
     amount_out = exact_in(state, amount_in, fee)
     new_state = CurveState(
         balance_in=state.balance_in + amount_in,
@@ -130,11 +81,7 @@ def apply_exact_in(state: CurveState, amount_in: float, fee: float) -> tuple[Cur
 
 
 def donate(state: CurveState, amount: float, *, into: str) -> CurveState:
-    """A pure, one-sided balance increase — no output leg (PRICING.md/ADR-0007's
-    "donation": an unsolicited transfer meant to skew the reading).
-
-    `into` must be `"in"` or `"out"`, selecting which side of the pair receives it.
-    """
+    """Increase one reserve without an output leg. Set into to "in" or "out"."""
     if into == "in":
         return CurveState(
             balance_in=state.balance_in + amount,

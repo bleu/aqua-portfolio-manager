@@ -1,16 +1,6 @@
-"""Another (profit-seeking) strategy trading within PM's declared "stables" group, with
-PM present and correcting vs. PM absent (no correction fires) — isolates what PM's own
-presence contributes to tracking error. Uses `StableSwapCompetitorStrategy` for the
-stables pair — USDC/USDT are both pegged to the same value, so a Curve-style StableSwap
-curve is the right model, not a plain constant-product pool.
+"""Compare PM present or absent with a StableSwap competitor inside the stables group.
 
-`weth_drift_per_step` defaults to `0.0` (driftless, matching every other scenario in this
-suite) but can be set to force a directional price trend — e.g. to see whether PM's
-active rebalancing helps or costs the portfolio when WETH is genuinely trending up, not
-just noisily wandering. For a price regime GBM can't express at all (e.g. mean-reverting,
-`price_process.MeanRevertingPriceProcess`), pass `weth_price_process` directly instead —
-it overrides `weth_sigma_per_step`/`weth_drift_per_step` entirely.
-"""
+Set weth_drift_per_step for a trend, or provide weth_price_process to override the GBM parameters."""
 
 from __future__ import annotations
 

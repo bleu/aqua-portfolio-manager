@@ -1,16 +1,7 @@
-"""Synthetic-only price generation for the basket world.
+"""Synthetic price processes with per-step parameters.
 
-No historical or live market data anywhere in this module: every price path is a random
-process, parametrized by volatility/drift/jump rate directly, never fit to a specific
-real dataset. Also step-based, not calendar-based: every parameter here is "per step", not
-"per year" — a step's real-world meaning (e.g. "5 minutes") is a label a caller can attach
-for reporting, never something this module's math depends on.
-
-Each `PriceProcess` is stateful and step-wise, not a pre-vectorized whole-path array:
-`BasketWorld.step()` calls `next(step)` once per step, which matters here because
-strategies need to see each step's price before the next one exists — there's no "the
-rest of the path" to peek at.
-"""
+Volatility, drift, and jump probability are not annualized or fitted to market data.
+Each next(step) call produces one stateful update."""
 
 from __future__ import annotations
 
@@ -34,14 +25,10 @@ class PriceProcess(Protocol):
 
 @dataclass
 class GBMPriceProcess:
-    """Geometric Brownian motion for a single token, denominated in some numeraire.
+    """Geometric Brownian motion with per-step log returns.
 
-    `sigma_per_step` / `drift_per_step` are the step-level volatility and drift of the
-    log-return — no annualization, no calendar unit. `log_path[t] = log_path[t-1] +
-    drift_per_step + sigma_per_step * Z`, `Z ~ N(0, 1)`; `drift_per_step = 0.0` (the
-    default) is the standard driftless assumption for a scenario sweep with no
-    directional view baked in (same rationale `market.py` used).
-    """
+    log_price[t] = log_price[t-1] + drift_per_step + sigma_per_step * Z, where Z is standard normal.
+    Zero drift gives zero expected log return."""
 
     token_id: str
     sigma_per_step: float
@@ -68,15 +55,9 @@ class GBMPriceProcess:
 
 @dataclass
 class JumpDiffusionPriceProcess:
-    """`GBMPriceProcess` plus discrete, sudden jumps (Merton-style) — the standard way to
-    add abrupt, discontinuous moves (flash crashes, de-pegs, gap moves) that pure GBM
-    structurally cannot produce.
+    """GBM with Bernoulli jumps at jump_prob_per_step.
 
-    `jump_prob_per_step` is the per-step probability of a jump (a Bernoulli draw, not an
-    annualized rate — no `dt` conversion needed since this is already step-based).
-    `jump_mean_log = 0.0` (the default) gives symmetric jump risk; set negative for a
-    deliberately crash-biased stress scenario.
-    """
+    Jump sizes use log-space parameters. Zero jump_mean_log gives symmetric log jumps."""
 
     token_id: str
     sigma_per_step: float
@@ -115,22 +96,10 @@ class JumpDiffusionPriceProcess:
 
 @dataclass
 class MeanRevertingPriceProcess:
-    """Ornstein-Uhlenbeck in log-price space: pulls the price back toward a long-run
-    anchor instead of letting it wander or trend indefinitely (`GBMPriceProcess`).
-    `log_price[t] = log_price[t-1] + kappa * (log(mean_price) - log_price[t-1]) +
-    sigma_per_step * Z`.
+    """Ornstein-Uhlenbeck process in log-price space.
 
-    Exists specifically to demonstrate the flip side of a persistent trend: constant-mix
-    rebalancing (what PM does) systematically loses to buy-and-hold under a one-directional
-    GBM drift (see `02_basket_with_without_pm.ipynb`'s forced-uptrend/downtrend sections),
-    but recovers its edge -- capturing fee revenue on genuine round-trip volatility,
-    directly connected to `DONATION-RESISTANCE-PROOF.md`'s invariant never decreasing on a
-    round trip -- once the price actually reverts instead of trending forever.
-
-    `kappa` is the per-step mean-reversion speed, in `(0, 1]`: `1.0` snaps fully back to
-    `mean_price` every step (pure noise around a fixed level), values near `0` revert very
-    slowly (close to a random walk over any short window).
-    """
+    log_price[t] = log_price[t-1] + kappa * (log(mean_price) - log_price[t-1]) + sigma_per_step * Z.
+    kappa in (0, 1] controls reversion speed. One resets to the mean before adding noise."""
 
     token_id: str
     sigma_per_step: float
@@ -163,9 +132,7 @@ class MeanRevertingPriceProcess:
 
 @dataclass
 class CompositePriceProcess:
-    """Combines several single-token `PriceProcess`es (each independently seeded) into
-    one, so `BasketWorld` only needs to hold a single `price_process` regardless of how
-    many tokens the basket world tracks."""
+    """Combine independently seeded token price processes for one BasketWorld."""
 
     processes: list[PriceProcess]
 
