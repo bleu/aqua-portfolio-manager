@@ -20,6 +20,7 @@ import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
+import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
@@ -41,6 +42,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
+    PortfolioManagerStrategyValidator internal strategyValidator;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     MockAggregatorV3 internal feedA;
@@ -53,7 +55,9 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function setUp() public {
         aqua = new Aqua();
-        router = new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1");
+        strategyValidator = new PortfolioManagerStrategyValidator();
+        router =
+            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -145,6 +149,8 @@ contract PortfolioManagerOpcodesTest is Test {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = tokenInLedgerAmount;
         amounts[1] = INITIAL_BALANCE;
+
+        strategyValidator.attestBuildParameters(order, tokens);
 
         vm.prank(maker);
         bytes32 strategyHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -337,6 +343,104 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
     }
 
+    function test_ExactInPreservesInvariantWithFractionalInputReserve() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 3);
+        tokenB.burn(maker, INITIAL_BALANCE - 100e18);
+
+        _swapExactIn(order, 200);
+
+        // Constant prices cancel from the equal-weight invariant. Flooring the input
+        // reserve's value from 1.5 to 1 previously paid 99 B and reduced this product.
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
+    }
+
+    function test_ExactOutPreservesInvariantWithFractionalInputReserve() public {
+        feedA.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 3);
+        tokenB.burn(maker, INITIAL_BALANCE - 100e18);
+
+        _swapExactOut(order, 99e18);
+
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
+    }
+
+    function testFuzz_FractionalReservesPreserveSettledInvariant(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 amount,
+        bool exactIn,
+        bool withFee
+    ) public {
+        balanceIn = bound(balanceIn, 3, 1e6);
+        balanceOut = bound(balanceOut, 8, INITIAL_BALANCE);
+        feedA.setAnswer(0.5e18, block.timestamp);
+        feedB.setAnswer(0.75e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(withFee ? LOW_TIER_FEE_BPS : 0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - balanceIn);
+        tokenB.burn(maker, INITIAL_BALANCE - balanceOut);
+
+        if (exactIn) {
+            // Keep output nonzero even at the smallest reserve and after fee rounding.
+            amount = bound(amount, balanceIn + 4, 10 * balanceIn);
+            _swapExactIn(order, amount);
+        } else {
+            amount = bound(amount, 1, balanceOut / 2);
+            // Small output reserves can require much more native input than output.
+            tokenA.mint(address(taker), 10 * balanceIn + 100);
+            _swapExactOut(order, amount);
+        }
+
+        // Uses settled native balances, independent of rounded oracle values or powers.
+        assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), balanceIn * balanceOut);
+        assertGt(tokenB.balanceOf(maker), 0);
+    }
+
+    function test_ExactOutRoundsRequestedOutputValueUp() public {
+        feedB.setAnswer(0.5e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 100);
+        tokenB.burn(maker, INITIAL_BALANCE - 100);
+
+        // Three output units are worth 1.5 value units. Flooring that request to one
+        // charges only three input units, violating (100 + input) * (100 - 3) >= 100^2.
+        // Constant prices cancel from this equal-weight invariant, so native balances
+        // provide an independent integer oracle without using the production pricing math.
+        (, uint256 amountOut) = _swapExactOut(order, 3);
+
+        assertEq(amountOut, 3);
+        assertGe(
+            tokenA.balanceOf(maker) * tokenB.balanceOf(maker),
+            100 * 100,
+            "rounding output value down must not decrease the settled invariant"
+        );
+    }
+
+    function test_ExactOutRoundsRequiredNativeInputUp() public {
+        feedA.setAnswer(2e18, block.timestamp);
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE);
+        tokenA.burn(maker, INITIAL_BALANCE - 100);
+        tokenB.burn(maker, INITIAL_BALANCE - 100);
+
+        // The conservative curve quote requires three value units, or 1.5 input units.
+        // Paying only one native unit would leave 101 * 99 < 100^2 in the maker's wallet.
+        (, uint256 amountOut) = _swapExactOut(order, 1);
+
+        assertEq(amountOut, 1);
+        assertGe(
+            tokenA.balanceOf(maker) * tokenB.balanceOf(maker),
+            100 * 100,
+            "rounding native input down must not decrease the settled invariant"
+        );
+    }
+
     function test_ProtocolFeeSkipsWhenMakerUnderfundedExactOut() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -406,6 +510,12 @@ contract PortfolioManagerOpcodesTest is Test {
     /// never gave a weight to (a ship()/PortfolioManagerArgsCodec encoding mismatch, not a
     /// malicious taker). `AQUA.safeBalances()` passes -- the token really is part of the active
     /// strategy -- so dispatch reaches this opcode, and `_groupIndexOf` is what actually catches it.
+    /// @dev Attests with the *declared* 2-token set (matches, so attestation succeeds) but then
+    ///      ships a *different*, 3-token set directly -- `attestBuildParameters`'s own `tokens`
+    ///      argument isn't cryptographically bound to whatever a later, separate `ship()` call
+    ///      actually uses, so this is still a real, reachable scenario even with attestation
+    ///      required, as long as the two calls aren't the same atomic batch (the recommended flow
+    ///      always batches them together with the identical `tokens` array).
     function test_RevertsWhenShippedTokenIsMissingFromPmsOwnDeclaredUniverse() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
@@ -418,6 +528,11 @@ contract PortfolioManagerOpcodesTest is Test {
         tokenB.approve(address(aqua), type(uint256).max);
         tokenC.approve(address(aqua), type(uint256).max);
         vm.stopPrank();
+
+        address[] memory declaredTokens = new address[](2);
+        declaredTokens[0] = address(tokenA);
+        declaredTokens[1] = address(tokenB);
+        strategyValidator.attestBuildParameters(order, declaredTokens);
 
         address[] memory tokens = new address[](3);
         tokens[0] = address(tokenA);
@@ -437,6 +552,42 @@ contract PortfolioManagerOpcodesTest is Test {
             abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapTokenNotDeclared.selector, address(tokenC))
         );
         taker.swap(order, address(tokenC), address(tokenB), SWAP_AMOUNT, takerData);
+    }
+
+    /// @notice The multicall validation that's supposed to run alongside `ship()`
+    /// (`PortfolioManagerStrategyValidator.attestBuildParameters`) is convention, not enforced by
+    /// `Aqua.ship()` itself -- this proves the swap opcode blocks trading on its own when that
+    /// convention was skipped, rather than trusting the caller.
+    function test_RevertsWhenStrategyWasNeverAttested() public {
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
+
+        tokenA.mint(maker, INITIAL_BALANCE);
+        tokenB.mint(maker, INITIAL_BALANCE);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = INITIAL_BALANCE;
+        amounts[1] = INITIAL_BALANCE;
+
+        // Ships directly, skipping strategyValidator.attestBuildParameters entirely -- exactly what
+        // a caller that never went through the recommended multicall batch would do.
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), tokens, amounts);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenA.mint(address(taker), SWAP_AMOUNT * 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapBuildParametersNotAttested.selector, router.hash(order)
+            )
+        );
+        taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
     /// @notice The central guarantee: the protocol fee is not merely a convention our own

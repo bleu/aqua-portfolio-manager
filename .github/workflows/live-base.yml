@@ -1,0 +1,37 @@
+name: Live Base
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-contracts:
+    name: Live Base integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/contracts
+    env:
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      # Snapshot the current head once so all tests inspect the same live state.
+      - name: Resolve current Base block
+        run: |
+          block=$(cast block-number --rpc-url "$BASE_RPC_URL")
+          echo "BASE_RPC_BLOCK=$block" >> "$GITHUB_ENV"
+          echo "Checking Base block $block. After a successful run, update DEFAULT_BASE_RPC_BLOCK deliberately and rerun the pinned suite." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run live integration tests
+        run: forge test --match-path 'test/e2e/*.t.sol' -vvv

@@ -17,3 +17,5 @@ Most of these decisions were made before this repo existed, during the grant pro
 | [0009](0009-deploy-on-an-l2-at-launch.md) | Deploy on an L2 at launch, specific chain not locked in | Accepted |
 | [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | On-chain form: independent router, new swapVM instruction (not AquaApp, not merged into 1inch's router) | Accepted |
 | [0011](0011-safe-wallet-with-basket-scope-guard.md) | Safe-only maker wallet with a Basket Scope Guard, instead of bounding cross-strategy risk | Accepted |
+| [0012](0012-price-deviation-circuit-breaker.md) | Price-deviation circuit breaker for extreme off-target composition | Accepted |
+| [0013](0013-build-parameter-attestation-gate.md) | Build-parameter attestation gate — block trading unless ship-time validation ran on-chain | Accepted |

@@ -17,4 +17,24 @@ interface IPortfolioManagerSwap {
     ///      silently degenerate to a spot price of exactly 1 with zero skew-based curve
     ///      behavior, so it's rejected outright instead of left as an undefined edge case.
     error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
+    /// @dev A multi-member group's aggregate value can afford `amountOut`, but the specific
+    ///      traded member's own raw balance can't -- reachable whenever a member's raw balance
+    ///      diverges from its share of the group's total value, whether from oracle price
+    ///      divergence (a depeg) or simply an imbalanced raw funding across members.
+    error PortfolioManagerSwapInsufficientMemberBalance(address token, uint256 requested, uint256 available);
+    /// @dev Pre-trade circuit breaker: the traded pair's current spot price (`spotPrice`, exactly
+    ///      `WAD` at perfect target composition regardless of weight ratio) has drifted further
+    ///      from `WAD` than `maxDeviationBps` allows -- e.g. a direct Safe-owner withdrawal that
+    ///      bypasses `ship()`/`BasketScopeGuard` entirely. Checked against current state, not the
+    ///      post-trade state, so once a pair is skewed past this, no single trade can self-correct
+    ///      past the check in one step -- that pair stays untradeable until external action
+    ///      (a deposit, or a fresh strategy) restores it within tolerance.
+    error PortfolioManagerSwapExcessivePriceDeviation(uint256 spotPriceWad, uint256 maxDeviationBps);
+    /// @dev The multicall validation that's supposed to run alongside `Aqua.ship()`
+    ///      (`PortfolioManagerStrategyValidator.attestBuildParameters`) is convention, not
+    ///      enforced by `Aqua.ship()` itself -- anyone can call `ship()` directly and skip it
+    ///      entirely. Checked first, before anything else in this opcode: a strategy that was
+    ///      never attested can't be priced or traded at all, regardless of what its own encoded
+    ///      args claim.
+    error PortfolioManagerSwapBuildParametersNotAttested(bytes32 strategyHash);
 }

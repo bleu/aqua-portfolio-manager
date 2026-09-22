@@ -1,6 +1,6 @@
 # ADR-0003: Track exposure by oracle-valued token groups, not per-token targets
 
-**Status:** Accepted — revised 2026-08-25 to correct the Context's phrasing (the strategy never buys anything itself; see ADR-0004); revised again to note the production implementation now exists (BLEUDEV-347) — see Consequences
+**Status:** Accepted — revised 2026-08-25 to correct the Context's phrasing (the strategy never buys anything itself; see ADR-0004); revised again to note the production implementation now exists — see Consequences
 
 ## Context
 
