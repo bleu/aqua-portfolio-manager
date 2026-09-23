@@ -29,13 +29,6 @@ interface IArbitrageur is IUnlockCallback {
         uint40 deadline;
     }
 
-    event ArbitrageExecuted(
-        bytes32 indexed orderHash,
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut
-    );
     event FlashArbitrageExecuted(
         bytes32 indexed orderHash,
         address indexed tokenIn,
@@ -63,18 +56,8 @@ interface IArbitrageur is IUnlockCallback {
         view
         returns (uint256 amountOut);
 
-    /// @notice Executes one real exact-in trade against `order`, self-funded from the caller.
-    function executeArbitrage(
-        ISwapVM.Order calldata order,
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint256 minAmountOut,
-        uint40 deadline
-    ) external returns (uint256 amountOut);
-
-    /// @notice Same trade `executeArbitrage` runs, except `amountIn` is borrowed from the
-    ///         PoolManager instead of pulled from the caller.
+    /// @notice Executes one real exact-in trade against `order`, borrowing `amountIn` from the
+    ///         PoolManager and repaying it within the same transaction.
     function executeFlashArbitrage(FlashArbParams calldata params) external;
 
     /// @notice Recovers any token balance left on this contract, including flash-arbitrage

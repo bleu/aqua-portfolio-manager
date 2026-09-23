@@ -15,9 +15,9 @@ import {IArbitrageur} from "./interfaces/IArbitrageur.sol";
 /// @notice Executes SwapVM orders on the owner's behalf; sizing and profitability decisions live
 ///         off-chain in `packages/arbitrageur`.
 /// @dev Every swap uses `_takerTraits` with both transfer callbacks left `false`, so the owner
-///      can be a plain EOA. `executeArbitrage` pulls `amountIn` from the owner per call;
-///      `executeFlashArbitrage` borrows it from Uniswap V4's PoolManager instead and, by design,
-///      leaves any profit on this contract -- `sweep` collects it (see `sweep`'s own doc comment).
+///      can be a plain EOA. `executeFlashArbitrage` borrows `amountIn` from Uniswap V4's
+///      PoolManager and, by design, leaves any profit on this contract -- `sweep` collects it
+///      (see `sweep`'s own doc comment).
 contract Arbitrageur is Ownable, IArbitrageur {
     using SafeERC20 for IERC20;
 
@@ -41,37 +41,10 @@ contract Arbitrageur is Ownable, IArbitrageur {
         (, amountOut,) = ROUTER.quote(order, tokenIn, tokenOut, amountIn, _takerTraits(address(0), "", 0));
     }
 
-    /// @notice Executes one real exact-in trade against `order`: pulls `amountIn` of `tokenIn`
-    ///         from the caller (who must have approved this contract first), and forwards
-    ///         whatever `tokenOut` the router settles directly back to the caller.
-    /// @param minAmountOut Slippage floor -- SwapVM's own `TakerTraitsLib.validate()` already
-    ///        reverts (`TakerTraitsInsufficientMinOutputAmount`) if the settled amount falls
-    ///        short, so this function does not re-check it itself.
-    /// @param deadline Unix timestamp after which SwapVM reverts the trade
-    ///        (`TakerTraitsDeadlineExpired`); 0 disables the check.
-    function executeArbitrage(
-        ISwapVM.Order calldata order,
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint256 minAmountOut,
-        uint40 deadline
-    ) external onlyOwner returns (uint256 amountOut) {
-        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        IERC20(tokenIn).forceApprove(address(ROUTER), amountIn);
-
-        bytes32 orderHash;
-        (, amountOut, orderHash) = ROUTER.swap(
-            order, tokenIn, tokenOut, amountIn, _takerTraits(msg.sender, abi.encodePacked(minAmountOut), deadline)
-        );
-
-        emit ArbitrageExecuted(orderHash, tokenIn, tokenOut, amountIn, amountOut);
-    }
-
-    /// @notice Same trade `executeArbitrage` runs, except `amountIn` of `tokenIn` is borrowed
-    ///         from Uniswap V4's PoolManager (no flash-loan fee at all -- see
-    ///         `IUniswapV4PoolManager.sol`) instead of pulled from the owner -- the owner never
-    ///         needs to hold or approve `tokenIn` at all. `params.fyndCalldata`, built off-chain
+    /// @notice Executes one real exact-in trade against `order`: `amountIn` of `tokenIn` is
+    ///         borrowed from Uniswap V4's PoolManager (no flash-loan fee at all -- see
+    ///         `IUniswapV4PoolManager.sol`) and repaid within the same transaction -- the owner
+    ///         never needs to hold or approve `tokenIn` at all. `params.fyndCalldata`, built off-chain
     ///         by `packages/arbitrageur` against a running Fynd instance, converts the curve's
     ///         `tokenOut` proceeds back into `tokenIn` on the open market so the loan can be
     ///         repaid within the same transaction -- see `unlockCallback`.

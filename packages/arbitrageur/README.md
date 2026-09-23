@@ -17,15 +17,7 @@ process).
 
 Two halves, split deliberately along the "protocol encoding vs. trading decisions" line:
 
-- **On-chain: `packages/contracts/src/Arbitrageur.sol`.** A minimal, owner-controlled contract
-  that builds SwapVM's packed `TakerTraits` encoding once, in Solidity, reusing the same audited
-  `TakerTraitsLib` the rest of this codebase already relies on. Exposes `quoteExactIn` (a
-  static-call-safe price simulation), `executeArbitrage` (a self-funded trade, pulling tokens from
-  the owner), and `executeFlashArbitrage` (borrows the input token from Uniswap V4's PoolManager
-  instead -- see "Flash-loan execution" below) -- so its owner can be an ordinary EOA with no
-  `ITakerCallbacks` implementation. Hand-replicating `TakerTraitsLib`'s bit-packed encoding in
-  TypeScript, with no test coverage protecting it, was a correctness risk not worth taking (see
-  the contract's own doc comment).
+- **On-chain: `packages/contracts/src/Arbitrageur.sol`.** A minimal, owner-controlled contract that builds SwapVM's packed `TakerTraits` encoding once, in Solidity, reusing the same audited `TakerTraitsLib` the rest of this codebase already relies on. Exposes `quoteExactIn` (a static-call-safe price simulation) and `executeFlashArbitrage` (borrows the input token from Uniswap V4's PoolManager -- see "Flash-loan execution" below) -- so its owner can be an ordinary EOA with no `ITakerCallbacks` implementation. Hand-replicating `TakerTraitsLib`'s bit-packed encoding in TypeScript, with no test coverage protecting it, was a correctness risk not worth taking (see the contract's own doc comment).
 - **Off-chain: this package.** The trade-decision logic -- deciding *whether* a trade is
   profitable and *how large* to size it -- reading the strategy's own Chainlink feeds (the same
   ones `OracleAdapter.sol` reads) as the fair-value reference, comparing them against the curve's

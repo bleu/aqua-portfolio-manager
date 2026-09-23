@@ -13,7 +13,7 @@ import {IArbitrageur} from "../src/interfaces/IArbitrageur.sol";
 
 /// @notice Access-control checks only -- `onlyOwner` reverts before either function touches
 /// `ROUTER` or any real token, so no fork/shipped strategy is needed (see
-/// `test/e2e/ArbitrageurE2E.t.sol` for the real-fork behavioral coverage). A dummy router
+/// `test/e2e/ArbitrageurFlashE2E.t.sol` for the real-fork behavioral coverage). A dummy router
 /// address and an empty order are enough to reach the modifier.
 contract ArbitrageurTest is Test {
     Arbitrageur private arbitrageur;
@@ -22,15 +22,6 @@ contract ArbitrageurTest is Test {
     function setUp() public {
         owner = makeAddr("owner");
         arbitrageur = new Arbitrageur(makeAddr("router"), makeAddr("poolManager"), owner);
-    }
-
-    function test_RevertsWhenCalledByNonOwner() public {
-        ISwapVM.Order memory order = ISwapVM.Order({maker: address(0), traits: MakerTraits.wrap(0), data: ""});
-
-        address stranger = makeAddr("stranger");
-        vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
-        arbitrageur.executeArbitrage(order, address(0), address(0), 1e18, 0, 0);
     }
 
     function test_RevertsWhenFlashArbitrageCalledByNonOwner() public {
