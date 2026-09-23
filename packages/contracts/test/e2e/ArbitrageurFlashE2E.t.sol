@@ -10,6 +10,7 @@ import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {MultiSendCallOnly} from "safe-smart-account/contracts/libraries/MultiSendCallOnly.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
+import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
 import {Aqua} from "aqua/Aqua.sol";
 
 import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
@@ -232,10 +233,13 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
     /// @dev Funds the mock Fynd router with `fyndReturnAmount` USDT and builds the params for a
     ///      trade where it pulls `fyndPulledAmount` of the curve's WBTC payout in exchange.
+    ///      `minCurveAmountOut` is a separate input (not derived from `_setUpFlashArb`'s own
+    ///      `quotedOut`) specifically so tests can set an unreachable threshold and exercise the
+    ///      curve leg's own slippage revert.
     function _flashParams(
         ISwapVM.Order memory order,
         uint256 amountIn,
-        uint256 quotedOut,
+        uint256 minCurveAmountOut,
         uint256 fyndPulledAmount,
         uint256 fyndReturnAmount
     ) internal returns (IArbitrageur.FlashArbParams memory) {
@@ -245,7 +249,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             tokenIn: address(usdt),
             tokenOut: address(wbtc),
             amountIn: amountIn,
-            minCurveAmountOut: quotedOut,
+            minCurveAmountOut: minCurveAmountOut,
             fyndTarget: address(fyndRouter),
             fyndSpender: address(fyndRouter),
             fyndCalldata: abi.encodeCall(MockFyndRouter.swap, (wbtc, usdt, fyndPulledAmount, fyndReturnAmount)),
@@ -339,6 +343,48 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         vm.expectRevert(
             abi.encodeWithSelector(IArbitrageur.ArbitrageurInsufficientRepayment.selector, owed, fyndReturnAmount)
         );
+        arbitrageur.executeFlashArbitrage(params);
+    }
+
+    /// @notice The curve leg inside `unlockCallback` carries its own slippage floor
+    /// (`minCurveAmountOut`, enforced by `TakerTraitsLib.validate` the same way the router
+    /// enforces it for every other taker) -- proves it actually reverts the whole flash
+    /// arbitrage, not just that the field exists on `FlashArbParams`.
+    function test_FlashArbitrageRevertsWhenCurveSlippageFloorNotMet() public {
+        uint256 amountIn = 1_000e6;
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
+
+        // One wei above what the curve can actually pay out for this amountIn at this block --
+        // unreachable by construction, so the curve leg itself must revert before ever reaching
+        // the Fynd call or the repayment check.
+        uint256 unreachableMinCurveAmountOut = quotedOut + 1;
+        IArbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, unreachableMinCurveAmountOut, quotedOut, amountIn);
+
+        vm.prank(arbitrageurOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TakerTraitsLib.TakerTraitsInsufficientMinOutputAmount.selector, quotedOut, unreachableMinCurveAmountOut
+            )
+        );
+        arbitrageur.executeFlashArbitrage(params);
+    }
+
+    /// @notice The curve leg's deadline (`params.deadline`, the same field `_takerTraits` threads
+    /// through) must actually be enforced on the flash-loan path -- proves an expired deadline
+    /// reverts the whole flash arbitrage, not just the self-funded path this repo already deleted
+    /// coverage for when `executeArbitrage` was removed (see PR #37 item #6).
+    function test_FlashArbitrageRevertsAfterDeadline() public {
+        uint256 amountIn = 1_000e6;
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
+
+        IArbitrageur.FlashArbParams memory params = _flashParams(order, amountIn, quotedOut, quotedOut, amountIn);
+
+        // Past the deadline `_flashParams` set (block.timestamp + 60 at build time).
+        vm.warp(params.deadline + 1);
+
+        vm.prank(arbitrageurOwner);
+        vm.expectRevert(TakerTraitsLib.TakerTraitsDeadlineExpired.selector);
         arbitrageur.executeFlashArbitrage(params);
     }
 }
