@@ -18,6 +18,7 @@ import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCod
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
 import {Arbitrageur} from "../../src/Arbitrageur.sol";
+import {IArbitrageur} from "../../src/interfaces/IArbitrageur.sol";
 
 /// @dev Stands in for whatever real DEX route Fynd would have found to convert the curve's
 ///      `tokenOut` proceeds back into `tokenIn` -- pulls `amountIn` of `tokenIn` via the
@@ -237,9 +238,9 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         uint256 quotedOut,
         uint256 fyndPulledAmount,
         uint256 fyndReturnAmount
-    ) internal returns (Arbitrageur.FlashArbParams memory) {
+    ) internal returns (IArbitrageur.FlashArbParams memory) {
         deal(address(usdt), address(fyndRouter), fyndReturnAmount);
-        return Arbitrageur.FlashArbParams({
+        return IArbitrageur.FlashArbParams({
             order: order,
             tokenIn: address(usdt),
             tokenOut: address(wbtc),
@@ -262,7 +263,8 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         // profit" this test is proving actually lands on the contract, sweepable by the owner.
         uint256 owed = amountIn; // Uniswap V4 flash loans have no fee at all
         uint256 fyndReturnAmount = (owed * 105) / 100;
-        Arbitrageur.FlashArbParams memory params = _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
+        IArbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
 
         vm.prank(arbitrageurOwner);
         arbitrageur.executeFlashArbitrage(params);
@@ -283,11 +285,12 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         // whole transaction including the already-settled curve trade, must revert atomically.
         uint256 owed = amountIn;
         uint256 fyndReturnAmount = owed - 1;
-        Arbitrageur.FlashArbParams memory params = _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
+        IArbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
 
         vm.prank(arbitrageurOwner);
         vm.expectRevert(
-            abi.encodeWithSelector(Arbitrageur.ArbitrageurInsufficientRepayment.selector, owed, fyndReturnAmount)
+            abi.encodeWithSelector(IArbitrageur.ArbitrageurInsufficientRepayment.selector, owed, fyndReturnAmount)
         );
         arbitrageur.executeFlashArbitrage(params);
     }
@@ -302,7 +305,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
         uint256 fyndPulledAmount = quotedOut / 2; // only spends half the approved curve payout
         uint256 fyndReturnAmount = (amountIn * 105) / 100;
-        Arbitrageur.FlashArbParams memory params =
+        IArbitrageur.FlashArbParams memory params =
             _flashParams(order, amountIn, quotedOut, fyndPulledAmount, fyndReturnAmount);
 
         vm.prank(arbitrageurOwner);

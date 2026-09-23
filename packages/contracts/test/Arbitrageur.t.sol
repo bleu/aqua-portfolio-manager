@@ -9,6 +9,7 @@ import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraits} from "swap-vm/libs/MakerTraits.sol";
 
 import {Arbitrageur} from "../src/Arbitrageur.sol";
+import {IArbitrageur} from "../src/interfaces/IArbitrageur.sol";
 
 /// @notice Access-control checks only -- `onlyOwner` reverts before either function touches
 /// `ROUTER` or any real token, so no fork/shipped strategy is needed (see
@@ -34,7 +35,7 @@ contract ArbitrageurTest is Test {
 
     function test_RevertsWhenFlashArbitrageCalledByNonOwner() public {
         ISwapVM.Order memory order = ISwapVM.Order({maker: address(0), traits: MakerTraits.wrap(0), data: ""});
-        Arbitrageur.FlashArbParams memory params = Arbitrageur.FlashArbParams({
+        IArbitrageur.FlashArbParams memory params = IArbitrageur.FlashArbParams({
             order: order,
             tokenIn: address(0),
             tokenOut: address(0),
@@ -54,7 +55,7 @@ contract ArbitrageurTest is Test {
 
     function test_UnlockCallbackRevertsWhenNotCalledByPoolManager() public {
         vm.expectRevert(
-            abi.encodeWithSelector(Arbitrageur.ArbitrageurUnauthorizedFlashLoanCallback.selector, address(this))
+            abi.encodeWithSelector(IArbitrageur.ArbitrageurUnauthorizedFlashLoanCallback.selector, address(this))
         );
         arbitrageur.unlockCallback("");
     }

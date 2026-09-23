@@ -1,7 +1,7 @@
 # Arbitrageur
 
-An off-chain taker/solver stand-in for 1inch's Pathfinder, so a deployed Portfolio Manager
-strategy's tradeability can actually be exercised end-to-end -- not just unit-tested in Foundry.
+An off-chain taker that fills trades on a deployed Portfolio Manager strategy's orders, so its
+tradeability can actually be exercised end-to-end -- not just unit-tested in Foundry.
 
 ## Why this exists
 
@@ -26,7 +26,7 @@ Two halves, split deliberately along the "protocol encoding vs. trading decision
   `ITakerCallbacks` implementation. Hand-replicating `TakerTraitsLib`'s bit-packed encoding in
   TypeScript, with no test coverage protecting it, was a correctness risk not worth taking (see
   the contract's own doc comment).
-- **Off-chain: this package.** The actual "pathfinder" logic -- deciding *whether* a trade is
+- **Off-chain: this package.** The trade-decision logic -- deciding *whether* a trade is
   profitable and *how large* to size it -- reading the strategy's own Chainlink feeds (the same
   ones `OracleAdapter.sol` reads) as the fair-value reference, comparing them against the curve's
   actual quoted price via `Arbitrageur.quoteExactIn`, and (for the flash-loan path) asking a

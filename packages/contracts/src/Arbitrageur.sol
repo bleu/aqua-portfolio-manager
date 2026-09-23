@@ -8,69 +8,21 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
-import {Currency, IUniswapV4PoolManager, IUnlockCallback} from "./interfaces/IUniswapV4PoolManager.sol";
+import {Currency, IUniswapV4PoolManager} from "./interfaces/IUniswapV4PoolManager.sol";
+import {IArbitrageur} from "./interfaces/IArbitrageur.sol";
 
 /// @title Arbitrageur — a minimal, owner-controlled taker for any SwapVM router
-/// @notice A general-purpose taker that any SwapVM router order can be executed against,
-///         callable by its owner with plain, ABI-typed arguments -- the on-chain half of a
-///         Pathfinder-style trading stand-in. Decision logic (when a trade is profitable, how
-///         large to size it) lives off-chain in `packages/arbitrageur` instead, so it can be
-///         iterated on without a redeploy.
-/// @dev Every swap uses `isFirstTransferFromTaker` + `useTransferFromAndAquaPush` with both
-///      `hasPreTransferInCallback`/`hasPreTransferOutCallback` left `false` (see `_takerTraits`),
-///      so the owner never needs to implement `ITakerCallbacks` and can be a plain EOA.
-///      `TakerTraitsLib.build`'s packed, bit-shifted encoding (`lib/swap-vm/src/libs/TakerTraits.sol`)
-///      is built once here, in Solidity, reusing the same library the rest of this codebase
-///      already relies on, rather than hand-replicated off-chain with no test coverage.
-/// @dev `executeArbitrage` holds no standing balance between calls: it pulls exactly `amountIn`
-///      from the owner immediately before swapping, and `tokenOut` settles directly to the owner
-///      (`to: msg.sender`). `executeFlashArbitrage` borrows `amountIn` from Uniswap V4's
-///      PoolManager instead of pulling it from the owner -- see that function's own doc comment
-///      -- and, by design, leaves any profit sitting on this contract afterward; `sweep` is how
-///      that profit (and anything stranded here by mistake) gets collected.
-contract Arbitrageur is Ownable, IUnlockCallback {
+/// @notice Executes SwapVM orders on the owner's behalf; sizing and profitability decisions live
+///         off-chain in `packages/arbitrageur`.
+/// @dev Every swap uses `_takerTraits` with both transfer callbacks left `false`, so the owner
+///      can be a plain EOA. `executeArbitrage` pulls `amountIn` from the owner per call;
+///      `executeFlashArbitrage` borrows it from Uniswap V4's PoolManager instead and, by design,
+///      leaves any profit on this contract -- `sweep` collects it (see `sweep`'s own doc comment).
+contract Arbitrageur is Ownable, IArbitrageur {
     using SafeERC20 for IERC20;
 
     ISwapVM public immutable ROUTER;
     IUniswapV4PoolManager public immutable POOL_MANAGER;
-
-    /// @dev Threaded through `unlockCallback` as the PoolManager's opaque `data`, since the
-    ///      callback's own signature is fixed by `IUnlockCallback`. `fyndTarget`/`fyndSpender`
-    ///      are kept separate since an aggregator's calldata may target one contract while a
-    ///      different one (e.g. a Permit2-style allowance holder) needs the approval.
-    struct FlashArbParams {
-        ISwapVM.Order order;
-        address tokenIn;
-        address tokenOut;
-        uint256 amountIn;
-        uint256 minCurveAmountOut;
-        address fyndTarget;
-        address fyndSpender;
-        bytes fyndCalldata;
-        uint40 deadline;
-    }
-
-    event ArbitrageExecuted(
-        bytes32 indexed orderHash,
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut
-    );
-    event FlashArbitrageExecuted(
-        bytes32 indexed orderHash,
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 curveAmountOut,
-        uint256 repaid,
-        uint256 profit
-    );
-    event Swept(address indexed token, uint256 amount, address indexed to);
-
-    error ArbitrageurUnauthorizedFlashLoanCallback(address caller);
-    error ArbitrageurFyndCallFailed(bytes reason);
-    error ArbitrageurInsufficientRepayment(uint256 owed, uint256 actual);
 
     constructor(address router, address poolManager, address owner_) Ownable(owner_) {
         ROUTER = ISwapVM(router);
@@ -178,10 +130,8 @@ contract Arbitrageur is Ownable, IUnlockCallback {
         return "";
     }
 
-    /// @notice Recovers any token balance left on this contract by mistake -- not part of the
-    ///         normal flow (see this contract's own top-level doc comment). Also how
-    ///         `executeFlashArbitrage`'s profit (whatever `tokenIn` remains after repayment) is
-    ///         collected -- there's no separate profit-forwarding step in the flash-loan path.
+    /// @notice Collects `executeFlashArbitrage`'s profit -- by design left on this contract
+    ///         instead of forwarded automatically, same as any token stranded here by mistake.
     function sweep(address token, uint256 amount, address to) external onlyOwner {
         IERC20(token).safeTransfer(to, amount);
         emit Swept(token, amount, to);

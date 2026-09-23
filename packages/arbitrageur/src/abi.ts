@@ -63,15 +63,7 @@ export const arbitrageurAbi = [
   },
 ] as const;
 
-export const erc20Abi = [
-  {
-    type: "function",
-    name: "decimals",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint8" }],
-  },
-] as const;
+export { erc20Abi } from "viem";
 
 /// Chainlink's AggregatorV3Interface -- the same feed shape PM's own OracleAdapter reads.
 export const aggregatorV3Abi = [
