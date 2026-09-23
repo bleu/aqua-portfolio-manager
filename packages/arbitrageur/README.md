@@ -21,8 +21,8 @@ Two halves, split deliberately along the "protocol encoding vs. trading decision
   that builds SwapVM's packed `TakerTraits` encoding once, in Solidity, reusing the same audited
   `TakerTraitsLib` the rest of this codebase already relies on. Exposes `quoteExactIn` (a
   static-call-safe price simulation), `executeArbitrage` (a self-funded trade, pulling tokens from
-  the owner), and `executeFlashArbitrage` (borrows the input token from Balancer's Vault instead
-  -- see "Flash-loan execution" below) -- so its owner can be an ordinary EOA with no
+  the owner), and `executeFlashArbitrage` (borrows the input token from Uniswap V4's PoolManager
+  instead -- see "Flash-loan execution" below) -- so its owner can be an ordinary EOA with no
   `ITakerCallbacks` implementation. Hand-replicating `TakerTraitsLib`'s bit-packed encoding in
   TypeScript, with no test coverage protecting it, was a correctness risk not worth taking (see
   the contract's own doc comment).
@@ -39,22 +39,22 @@ owner EOA's wallet -- only enough ETH to pay gas. Every arbitrage borrows exactl
 trades, and repays within one atomic transaction:
 
 ```
-                         ┌─ 1. Flash-borrow tokenIn from Balancer's Vault (0% fee) ─┐
-                         │                                                          │
-oracle price (Chainlink) ─┤                                                          ▼
-                         │                                         2. Swap tokenIn -> tokenOut
-curve price (PM's curve) ─┘                                            against the PM curve
-                                                                                     │
-                                                                                     ▼
-                                                          3. Swap tokenOut -> tokenIn via
-                                                             Fynd's best real-market route
-                                                                                     │
-                                                                                     ▼
-                                                          4. Repay the Vault; keep the profit
+                         ┌─ 1. Flash-borrow tokenIn from Uniswap V4's PoolManager (no fee) ─┐
+                         │                                                                   │
+oracle price (Chainlink) ─┤                                                                   ▼
+                         │                                              2. Swap tokenIn -> tokenOut
+curve price (PM's curve) ─┘                                                 against the PM curve
+                                                                                              │
+                                                                                              ▼
+                                                                   3. Swap tokenOut -> tokenIn via
+                                                                      Fynd's best real-market route
+                                                                                              │
+                                                                                              ▼
+                                                                4. Repay the PoolManager; keep profit
 ```
 
 **Why this is safe even though step 3 routes through arbitrary, off-chain-supplied calldata:**
-the final check inside `Arbitrageur.receiveFlashLoan` is that this contract's `tokenIn` balance
+the final check inside `Arbitrageur.unlockCallback` is that this contract's `tokenIn` balance
 covers the amount owed -- if Fynd's route (or the market) slips worse than expected, that check
 fails and the *entire* transaction reverts, including the curve trade from step 2. A bad attempt
 costs gas, never borrowed principal. Slippage buffers and the minimum-profit threshold are
@@ -89,12 +89,15 @@ Point `FYND_URL` (see `.env.example`) at wherever this ends up listening (`http:
 by default). See [Fynd's own quickstart](https://github.com/propeller-heads/fynd/tree/main/docs/get-started/quickstart)
 for the full setup.
 
-### Balancer's Vault
+### Uniswap V4's PoolManager
 
-`Arbitrageur`'s constructor now takes a `balancerVault` address -- Balancer V2's Vault is deployed
-at the same canonical address (`0xBA12222222228d8Ba445958a75a0704d566BF2C8`) on every EVM chain
-it supports, Base included, so this is a fixed constant, not something to look up per-deployment.
-Flash loans there are 0% fee as of this writing.
+`Arbitrageur`'s constructor takes a `poolManager` address -- Uniswap V4's singleton PoolManager is
+deployed at the same canonical address (`0x498581fF718922c3f8e6A244956aF099B2652b2b`) on every
+EVM chain it supports, Base included, so this is a fixed constant, not something to look up
+per-deployment. There's no flash-loan fee at all: `take`ing a token just opens a debt that
+`unlockCallback` must zero out (via `sync` + a plain transfer + `settle`) before the call returns,
+or the whole `unlock` reverts -- not a rate anyone could configure, a structural property of the
+accounting model.
 
 ## Opportunity search
 
@@ -130,7 +133,7 @@ standing up something for this server to talk to is a few manual steps:
    ```
    forge create src/Arbitrageur.sol:Arbitrageur \
      --rpc-url http://127.0.0.1:8545 --private-key <anvil-key> \
-     --constructor-args <router-address> 0xBA12222222228d8Ba445958a75a0704d566BF2C8 <owner-eoa-address>
+     --constructor-args <router-address> 0x498581fF718922c3f8e6A244956aF099B2652b2b <owner-eoa-address>
    ```
 3. **Start a local Fynd server** pointed at the same fork (see "Running a local Fynd server"
    above) -- on a local anvil fork, Fynd needs `RPC_URL`/equivalent config pointed at

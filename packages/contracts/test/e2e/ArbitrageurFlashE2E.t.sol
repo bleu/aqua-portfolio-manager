@@ -18,7 +18,6 @@ import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCod
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
 import {Arbitrageur} from "../../src/Arbitrageur.sol";
-import {IBalancerVault} from "../../src/interfaces/IBalancerVault.sol";
 
 /// @dev Stands in for whatever real DEX route Fynd would have found to convert the curve's
 ///      `tokenOut` proceeds back into `tokenIn` -- pulls `amountIn` of `tokenIn` via the
@@ -35,17 +34,17 @@ contract MockFyndRouter {
 }
 
 /// @notice Real-fork proof that `Arbitrageur.executeFlashArbitrage` genuinely borrows, trades,
-/// and repays within one transaction against a real, shipped PM strategy and the real Balancer V2
-/// Vault (`0xBA12...F2C8`, same canonical address as every EVM chain Balancer V2 is deployed to,
-/// already live on this Base fork -- no mock needed for the Vault itself). `MockFyndRouter` above
-/// stands in for the real DEX route Fynd would find for the return leg, since hitting live DEX
-/// liquidity deterministically from a test isn't practical. Access-control reverts
-/// (`onlyOwner`, `receiveFlashLoan` vault-only) are covered separately in `test/Arbitrageur.t.sol`
-/// (no fork needed there) -- same split `ArbitrageurE2E.t.sol` already uses.
+/// and repays within one transaction against a real, shipped PM strategy and the real Uniswap V4
+/// PoolManager (`0x4985...52b2b`, same canonical address as every EVM chain Uniswap V4 is
+/// deployed to, already live on this Base fork -- no mock needed for the manager itself).
+/// `MockFyndRouter` above stands in for the real DEX route Fynd would find for the return leg,
+/// since hitting live DEX liquidity deterministically from a test isn't practical. Access-control
+/// reverts (`onlyOwner`, `unlockCallback` manager-only) are covered separately in
+/// `test/Arbitrageur.t.sol` (no fork needed there) -- same split `ArbitrageurE2E.t.sol` uses.
 contract ArbitrageurFlashE2ETest is AquaE2EBase {
-    /// @dev Real Balancer V2 Vault -- same address on every EVM chain it's deployed to, Base
-    ///      included: https://basescan.org/address/0xba12222222228d8ba445958a75a0704d566bf2c8
-    address internal constant BALANCER_VAULT_BASE = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    /// @dev Real Uniswap V4 PoolManager -- same address on every EVM chain it's deployed to, Base
+    ///      included: https://basescan.org/address/0x498581ff718922c3f8e6a244956af099b2652b2b
+    address internal constant POOL_MANAGER_BASE = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
 
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
     /// @dev WBTC on Base — https://basescan.org/token/0x1cea84203673764244e05693e42e6ace62be9ba5
@@ -107,7 +106,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         usdc = IERC20(USDC_BASE);
 
         arbitrageurOwner = vm.addr(OWNER_KEY);
-        arbitrageur = new Arbitrageur(address(router), BALANCER_VAULT_BASE, arbitrageurOwner);
+        arbitrageur = new Arbitrageur(address(router), POOL_MANAGER_BASE, arbitrageurOwner);
         fyndRouter = new MockFyndRouter();
 
         PortfolioManagerArgsCodec.Member[] memory stables = new PortfolioManagerArgsCodec.Member[](2);
@@ -210,22 +209,24 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
     }
 
-    /// @dev Overwrites the real Balancer Vault's balance of `token` directly, isolating "does our
-    ///      contract's flash-loan logic work" from "does Balancer's Base deployment happen to
-    ///      hold enough of this token in its pools at whatever block this fork lands on."
-    function _ensureVaultLiquidity(IERC20 token, uint256 amount) internal {
-        deal(address(token), BALANCER_VAULT_BASE, amount);
+    /// @dev Overwrites the real PoolManager's balance of `token` directly, isolating "does our
+    ///      contract's flash-loan logic work" from "does Uniswap V4's Base deployment happen to
+    ///      hold enough of this token across its pools at whatever block this fork lands on" --
+    ///      `take` just transfers out of the manager's own balance (see `PoolManager.sol::take`),
+    ///      so this is a faithful stand-in for real pool liquidity, not a mechanism bypass.
+    function _ensurePoolManagerLiquidity(IERC20 token, uint256 amount) internal {
+        deal(address(token), POOL_MANAGER_BASE, amount);
     }
 
     /// @dev Shared by every test below: ships the strategy, quotes the real curve for `amountIn`
-    ///      USDT -> WBTC, and funds the Vault so the flash loan itself is never the bottleneck --
-    ///      each test only supplies what it's actually varying (see `_flashParams`).
+    ///      USDT -> WBTC, and funds the manager so the flash loan itself is never the bottleneck
+    ///      -- each test only supplies what it's actually varying (see `_flashParams`).
     function _setUpFlashArb(uint256 amountIn) internal returns (ISwapVM.Order memory order, uint256 quotedOut) {
         order = _buildOrder(0);
         _shipOnly(order);
         quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
         assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped strategy");
-        _ensureVaultLiquidity(usdt, amountIn * 10);
+        _ensurePoolManagerLiquidity(usdt, amountIn * 10);
     }
 
     /// @dev Funds the mock Fynd router with `fyndReturnAmount` USDT and builds the params for a
@@ -259,7 +260,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
         // The mock Fynd route returns 5% more USDT than the flash loan owes -- the "arbitrage
         // profit" this test is proving actually lands on the contract, sweepable by the owner.
-        uint256 owed = amountIn; // Balancer flash loans are 0% fee
+        uint256 owed = amountIn; // Uniswap V4 flash loans have no fee at all
         uint256 fyndReturnAmount = (owed * 105) / 100;
         Arbitrageur.FlashArbParams memory params = _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
 

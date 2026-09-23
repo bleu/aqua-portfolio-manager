@@ -8,7 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
-import {IBalancerVault, IFlashLoanRecipient} from "./interfaces/IBalancerVault.sol";
+import {Currency, IUniswapV4PoolManager, IUnlockCallback} from "./interfaces/IUniswapV4PoolManager.sol";
 
 /// @title Arbitrageur — a minimal, owner-controlled taker for any SwapVM router
 /// @notice A general-purpose taker that any SwapVM router order can be executed against,
@@ -24,18 +24,18 @@ import {IBalancerVault, IFlashLoanRecipient} from "./interfaces/IBalancerVault.s
 ///      already relies on, rather than hand-replicated off-chain with no test coverage.
 /// @dev `executeArbitrage` holds no standing balance between calls: it pulls exactly `amountIn`
 ///      from the owner immediately before swapping, and `tokenOut` settles directly to the owner
-///      (`to: msg.sender`). `executeFlashArbitrage` borrows `amountIn` from Balancer instead of
-///      pulling it from the owner -- see that function's own doc comment -- and, by design,
-///      leaves any profit sitting on this contract afterward; `sweep` is how that profit (and
-///      anything stranded here by mistake) gets collected.
-contract Arbitrageur is Ownable, IFlashLoanRecipient {
+///      (`to: msg.sender`). `executeFlashArbitrage` borrows `amountIn` from Uniswap V4's
+///      PoolManager instead of pulling it from the owner -- see that function's own doc comment
+///      -- and, by design, leaves any profit sitting on this contract afterward; `sweep` is how
+///      that profit (and anything stranded here by mistake) gets collected.
+contract Arbitrageur is Ownable, IUnlockCallback {
     using SafeERC20 for IERC20;
 
     ISwapVM public immutable ROUTER;
-    IBalancerVault public immutable BALANCER_VAULT;
+    IUniswapV4PoolManager public immutable POOL_MANAGER;
 
-    /// @dev Threaded through `receiveFlashLoan` as Balancer's opaque `userData`, since the
-    ///      callback's own signature is fixed by `IFlashLoanRecipient`. `fyndTarget`/`fyndSpender`
+    /// @dev Threaded through `unlockCallback` as the PoolManager's opaque `data`, since the
+    ///      callback's own signature is fixed by `IUnlockCallback`. `fyndTarget`/`fyndSpender`
     ///      are kept separate since an aggregator's calldata may target one contract while a
     ///      different one (e.g. a Permit2-style allowance holder) needs the approval.
     struct FlashArbParams {
@@ -72,9 +72,9 @@ contract Arbitrageur is Ownable, IFlashLoanRecipient {
     error ArbitrageurFyndCallFailed(bytes reason);
     error ArbitrageurInsufficientRepayment(uint256 owed, uint256 actual);
 
-    constructor(address router, address balancerVault, address owner_) Ownable(owner_) {
+    constructor(address router, address poolManager, address owner_) Ownable(owner_) {
         ROUTER = ISwapVM(router);
-        BALANCER_VAULT = IBalancerVault(balancerVault);
+        POOL_MANAGER = IUniswapV4PoolManager(poolManager);
     }
 
     /// @notice Simulates an exact-in trade against `order` without moving any tokens -- SwapVM's
@@ -117,37 +117,32 @@ contract Arbitrageur is Ownable, IFlashLoanRecipient {
     }
 
     /// @notice Same trade `executeArbitrage` runs, except `amountIn` of `tokenIn` is borrowed
-    ///         from Balancer's Vault (0% fee as of this writing -- see `IBalancerVault.sol`)
-    ///         instead of pulled from the owner -- the owner never needs to hold or approve
-    ///         `tokenIn` at all. `params.fyndCalldata`, built off-chain by `packages/arbitrageur`
-    ///         against a running Fynd instance, converts the curve's `tokenOut` proceeds back
-    ///         into `tokenIn` on the open market so the loan can be repaid within the same
-    ///         transaction -- see `receiveFlashLoan`.
+    ///         from Uniswap V4's PoolManager (no flash-loan fee at all -- see
+    ///         `IUniswapV4PoolManager.sol`) instead of pulled from the owner -- the owner never
+    ///         needs to hold or approve `tokenIn` at all. `params.fyndCalldata`, built off-chain
+    ///         by `packages/arbitrageur` against a running Fynd instance, converts the curve's
+    ///         `tokenOut` proceeds back into `tokenIn` on the open market so the loan can be
+    ///         repaid within the same transaction -- see `unlockCallback`.
     function executeFlashArbitrage(FlashArbParams calldata params) external onlyOwner {
-        IERC20[] memory tokens = new IERC20[](1);
-        tokens[0] = IERC20(params.tokenIn);
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = params.amountIn;
-
-        BALANCER_VAULT.flashLoan(this, tokens, amounts, abi.encode(params));
+        POOL_MANAGER.unlock(abi.encode(params));
     }
 
-    /// @notice Balancer's flash-loan callback -- reachable only as a direct, synchronous
-    ///         consequence of `executeFlashArbitrage`'s own call into `BALANCER_VAULT.flashLoan`,
-    ///         so `msg.sender == BALANCER_VAULT` is the entire access-control story here.
+    /// @notice The PoolManager's unlock callback -- reachable only as a direct, synchronous
+    ///         consequence of `executeFlashArbitrage`'s own call into `POOL_MANAGER.unlock`, so
+    ///         `msg.sender == POOL_MANAGER` is the entire access-control story here.
     /// @dev The safety property that actually protects borrowed principal isn't the slippage
     ///      checks below -- it's that the repayment check must find at least `owed` `tokenIn` on
     ///      this contract, or the whole transaction (including the curve trade) reverts. A
     ///      worse-than-expected Fynd route costs gas on a failed attempt, never principal.
-    function receiveFlashLoan(
-        IERC20[] memory, /* tokens */
-        uint256[] memory amounts,
-        uint256[] memory feeAmounts,
-        bytes memory userData
-    ) external {
-        require(msg.sender == address(BALANCER_VAULT), ArbitrageurUnauthorizedFlashLoanCallback(msg.sender));
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        require(msg.sender == address(POOL_MANAGER), ArbitrageurUnauthorizedFlashLoanCallback(msg.sender));
 
-        FlashArbParams memory p = abi.decode(userData, (FlashArbParams));
+        FlashArbParams memory p = abi.decode(data, (FlashArbParams));
+
+        // 0. Borrow: `take` moves `amountIn` of tokenIn from the manager to this contract,
+        // recording a debt this call must repay (via sync + transfer + settle below) before
+        // `unlock` returns, or the whole call reverts with `CurrencyNotSettled`.
+        POOL_MANAGER.take(Currency.wrap(p.tokenIn), address(this), p.amountIn);
 
         // 1. tokenIn -> tokenOut against the PM curve, proceeds settling here.
         IERC20(p.tokenIn).forceApprove(address(ROUTER), p.amountIn);
@@ -169,13 +164,18 @@ contract Arbitrageur is Ownable, IFlashLoanRecipient {
         // regardless of how much was actually spent so no allowance to `fyndSpender` survives.
         IERC20(p.tokenOut).forceApprove(p.fyndSpender, 0);
 
-        // 3. Repay the loan -- a direct transfer to the Vault, not an approve.
-        uint256 owed = amounts[0] + feeAmounts[0];
+        // 3. Repay the loan -- no fee, so exactly `amountIn` is owed. `sync` before transferring
+        // (it snapshots the manager's balance pre-repayment, so `settle` can tell how much of
+        // the transfer below actually counts), then transfer, then `settle` to zero the debt.
+        uint256 owed = p.amountIn;
         uint256 actual = IERC20(p.tokenIn).balanceOf(address(this));
         require(actual >= owed, ArbitrageurInsufficientRepayment(owed, actual));
-        IERC20(p.tokenIn).safeTransfer(msg.sender, owed);
+        POOL_MANAGER.sync(Currency.wrap(p.tokenIn));
+        IERC20(p.tokenIn).safeTransfer(address(POOL_MANAGER), owed);
+        POOL_MANAGER.settle();
 
         emit FlashArbitrageExecuted(orderHash, p.tokenIn, p.tokenOut, p.amountIn, curveAmountOut, owed, actual - owed);
+        return "";
     }
 
     /// @notice Recovers any token balance left on this contract by mistake -- not part of the

@@ -5,7 +5,6 @@ pragma solidity 0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraits} from "swap-vm/libs/MakerTraits.sol";
 
@@ -21,7 +20,7 @@ contract ArbitrageurTest is Test {
 
     function setUp() public {
         owner = makeAddr("owner");
-        arbitrageur = new Arbitrageur(makeAddr("router"), makeAddr("balancerVault"), owner);
+        arbitrageur = new Arbitrageur(makeAddr("router"), makeAddr("poolManager"), owner);
     }
 
     function test_RevertsWhenCalledByNonOwner() public {
@@ -53,15 +52,11 @@ contract ArbitrageurTest is Test {
         arbitrageur.executeFlashArbitrage(params);
     }
 
-    function test_ReceiveFlashLoanRevertsWhenNotCalledByVault() public {
-        IERC20[] memory tokens = new IERC20[](1);
-        uint256[] memory amounts = new uint256[](1);
-        uint256[] memory feeAmounts = new uint256[](1);
-
+    function test_UnlockCallbackRevertsWhenNotCalledByPoolManager() public {
         vm.expectRevert(
             abi.encodeWithSelector(Arbitrageur.ArbitrageurUnauthorizedFlashLoanCallback.selector, address(this))
         );
-        arbitrageur.receiveFlashLoan(tokens, amounts, feeAmounts, "");
+        arbitrageur.unlockCallback("");
     }
 
     function test_SweepRevertsForNonOwner() public {
