@@ -26,10 +26,19 @@ export function fairAmountOut(
 
 /// Profit as basis points (1/10_000) of the fair value of the trade -- standard bps, distinct
 /// from PM's own on-chain `PM_BPS` (1e9) convention, since this is a plain off-chain comparison,
-/// not something encoded into strategy args.
+/// not something encoded into strategy args. Kept for logging/diagnostics; `findBestOpportunity`
+/// itself selects on `profitUsdWad`, not this.
 export function profitBps(quotedOut: bigint, fairOut: bigint): bigint {
   if (fairOut === 0n) return 0n;
   return ((quotedOut - fairOut) * BPS_SCALE) / fairOut;
+}
+
+/// WAD-scaled USD profit of the trade: the tokenOut received beyond fair value, priced via
+/// `priceOutWad`. A dollar floor holds up better than a relative bps one -- it's what actually
+/// has to cover gas, and doesn't erode in an arbitrage race-to-the-bottom the way a percentage
+/// does. Negative when the trade pays out less than fair.
+export function profitUsdWad(quotedOut: bigint, fairOut: bigint, priceOutWad: bigint, decimalsOut: number): bigint {
+  return valueWad(quotedOut - fairOut, priceOutWad, decimalsOut);
 }
 
 export interface Opportunity {
@@ -37,6 +46,7 @@ export interface Opportunity {
   quotedOut: bigint;
   fairOut: bigint;
   profitBps: bigint;
+  profitUsdWad: bigint;
 }
 
 /// Samples `steps` geometrically-spaced trade sizes between `minAmount` and `maxAmount` (log-
@@ -48,14 +58,14 @@ export async function findBestOpportunity(params: {
   minAmount: bigint;
   maxAmount: bigint;
   steps: number;
-  minProfitBps: bigint;
+  minProfitUsdWad: bigint;
   priceInWad: bigint;
   decimalsIn: number;
   priceOutWad: bigint;
   decimalsOut: number;
   quote: (amountIn: bigint) => Promise<bigint>;
 }): Promise<Opportunity | undefined> {
-  const { minAmount, maxAmount, steps, minProfitBps, priceInWad, decimalsIn, priceOutWad, decimalsOut, quote } =
+  const { minAmount, maxAmount, steps, minProfitUsdWad, priceInWad, decimalsIn, priceOutWad, decimalsOut, quote } =
     params;
 
   if (minAmount <= 0n || maxAmount <= minAmount || steps < 2) {
@@ -74,10 +84,10 @@ export async function findBestOpportunity(params: {
     const amountIn = sizes[i]!;
     const quotedOut = quotedOuts[i]!;
     const fairOut = fairAmountOut(amountIn, priceInWad, decimalsIn, priceOutWad, decimalsOut);
-    const bps = profitBps(quotedOut, fairOut);
+    const usdProfit = profitUsdWad(quotedOut, fairOut, priceOutWad, decimalsOut);
 
-    if (bps >= minProfitBps && (best === undefined || bps > best.profitBps)) {
-      best = { amountIn, quotedOut, fairOut, profitBps: bps };
+    if (usdProfit >= minProfitUsdWad && (best === undefined || usdProfit > best.profitUsdWad)) {
+      best = { amountIn, quotedOut, fairOut, profitBps: profitBps(quotedOut, fairOut), profitUsdWad: usdProfit };
     }
   }
 

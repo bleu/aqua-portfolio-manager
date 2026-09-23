@@ -95,17 +95,34 @@ accounting model.
 
 `pricing.ts`'s `findBestOpportunity` probes `SEARCH_STEPS` geometrically-spaced trade sizes
 between `MIN_TRADE_AMOUNT` and `MAX_TRADE_AMOUNT` (log-spaced, so a wide range still gets even
-coverage across orders of magnitude) and picks whichever size clears `MIN_PROFIT_BPS` by the
-widest margin. This is a bounded approximation, not a true optimum -- good enough for a
-test/monitoring tool. A tighter search (e.g. exploiting the curve's known concavity) is a
-reasonable future improvement, not a correctness requirement.
+coverage across orders of magnitude) and picks whichever size clears `MIN_PROFIT_USD` by the
+widest dollar margin -- a dollar floor rather than a relative bps one, since that's what actually
+has to cover gas and doesn't erode in an arbitrage race-to-the-bottom. This is a bounded
+approximation, not a true optimum -- good enough for a test/monitoring tool. A tighter search
+(e.g. exploiting the curve's known concavity) is a reasonable future improvement, not a
+correctness requirement.
 
-**Basket-wide, not one fixed pair.** The strategy's declared universe is two groups -- group A
-(e.g. `{USDT, USDC}`) and group B (e.g. `{WBTC, WETH}`) -- and the PM curve only ever prices a
-trade between two *different* groups (`PortfolioManagerSwap._resolve`'s own `groupInIdx !=
-groupOutIdx` check). `src/index.ts` builds every cross-group directed pair (every group-A member
-against every group-B member, both directions) from `GROUP_A_TOKENS`/`GROUP_B_TOKENS` and checks
-all of them every tick, not just one hardcoded pair.
+**Basket-wide and multi-strategy, not one fixed pair.** Each strategy's declared universe is two
+groups -- group A (e.g. `{USDT, USDC}`) and group B (e.g. `{WBTC, WETH}`) -- and the PM curve only
+ever prices a trade between two *different* groups (`PortfolioManagerSwap._resolve`'s own
+`groupInIdx != groupOutIdx` check). `src/index.ts` builds every cross-group directed pair (every
+group-A member against every group-B member, both directions) for every declared strategy (see
+"Multiple strategies" below) and checks all of them every tick, not just one hardcoded pair.
+
+## Multiple strategies
+
+One bot process, one `Arbitrageur` contract, one owner EOA -- but any number of PM strategies can
+be watched at once. Set `STRATEGIES_FILE` (see `.env.example`) to a JSON array like
+`strategies.example.json`: each entry is its own `{orderMaker, orderTraits, orderData, groupA,
+groupB}`, so different strategies can have entirely different baskets. Every strategy's legs get
+searched together each tick, and the single most profitable opportunity across all of them wins
+(see `buildLegs` in `src/index.ts`). Leave `STRATEGIES_FILE` unset to fall back to exactly one
+strategy declared inline via `PM_ORDER_*`/`GROUP_*_*`, matching the local Base-fork flow below.
+
+This is a static list, not live discovery -- adding a strategy means editing the file and
+restarting the bot, not something that updates itself as new strategies get shipped. Wiring this
+up to an indexer instead (so the bot picks up newly-shipped strategies on its own) is a separate,
+larger piece of infrastructure work, not done here.
 
 ## Running against a local Base fork
 
@@ -146,6 +163,7 @@ standing up something for this server to talk to is a few manual steps:
 - `pnpm build` / `pnpm start` -- compiles to `dist/` and runs the compiled output.
 - `pnpm typecheck` -- `tsc --noEmit`.
 - `pnpm test` -- `vitest run`, covering `pricing.ts`'s pure functions (fair-value conversion,
-  profit calculation, the geometric search) against synthetic quote functions, and `fynd.ts`'s
-  request-building and response-mapping against a fake `FyndClient` -- no live chain or Fynd
-  server needed for either.
+  profit calculation, the geometric search) against synthetic quote functions, `fynd.ts`'s
+  request-building and response-mapping against a fake `FyndClient`, and `config.ts`'s
+  `parseStrategies` against hand-built JSON -- no live chain, Fynd server, or filesystem needed
+  for any of them.

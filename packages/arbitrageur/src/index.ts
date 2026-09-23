@@ -1,4 +1,5 @@
-import { loadConfig, type Config, type Order, type TokenFeed } from "./config.js";
+import { formatUnits } from "viem";
+import { loadConfig, type Config, type Order, type Strategy } from "./config.js";
 import { makeClients, tokenDecimals, quoteExactIn, executeFlashArbitrage } from "./chain.js";
 import { readOraclePriceWad } from "./oracle.js";
 import { findBestOpportunity, type Opportunity } from "./pricing.js";
@@ -7,31 +8,40 @@ import { getFyndSwapCalldata, FyndClient } from "./fynd.js";
 const ORACLE_MAX_STALENESS_SECONDS = 12 * 60 * 60; // matches PortfolioManagerE2EBase's own PM_MAX_STALENESS default
 
 interface Leg {
+  order: Order;
   tokenIn: `0x${string}`;
   tokenOut: `0x${string}`;
   feedIn: `0x${string}`;
   feedOut: `0x${string}`;
 }
 
-/// Every directed cross-group pair: each member of `groupA` traded against each member of
-/// `groupB`, both directions -- the PM curve only ever prices a trade between two *different*
-/// declared groups (`PortfolioManagerSwap._resolve`'s `groupInIdx != groupOutIdx` check), never
-/// within one, so within-group pairs are never legs here.
-function buildLegs(groupA: TokenFeed[], groupB: TokenFeed[]): Leg[] {
+/// Every directed cross-group pair within one strategy: each member of `groupA` traded against
+/// each member of `groupB`, both directions -- the PM curve only ever prices a trade between two
+/// *different* declared groups (`PortfolioManagerSwap._resolve`'s `groupInIdx != groupOutIdx`
+/// check), never within one, so within-group pairs are never legs here.
+function buildLegsForStrategy({ order, groupA, groupB }: Strategy): Leg[] {
   const legs: Leg[] = [];
   for (const a of groupA) {
     for (const b of groupB) {
-      legs.push({ tokenIn: a.token, tokenOut: b.token, feedIn: a.feed, feedOut: b.feed });
-      legs.push({ tokenIn: b.token, tokenOut: a.token, feedIn: b.feed, feedOut: a.feed });
+      legs.push({ order, tokenIn: a.token, tokenOut: b.token, feedIn: a.feed, feedOut: b.feed });
+      legs.push({ order, tokenIn: b.token, tokenOut: a.token, feedIn: b.feed, feedOut: a.feed });
     }
   }
   return legs;
 }
 
+/// Every leg across every declared strategy -- searched together each tick so the single most
+/// profitable opportunity wins regardless of which strategy it came from (see
+/// `findBestAcrossAllLegs`). Ready to watch as many strategies as `STRATEGIES_FILE` declares;
+/// discovering that list dynamically from an indexer instead of a static file is a separate,
+/// larger piece of work (see this package's README).
+function buildLegs(strategies: Strategy[]): Leg[] {
+  return strategies.flatMap(buildLegsForStrategy);
+}
+
 async function findBestAcrossAllLegs(
   config: Config,
   clients: ReturnType<typeof makeClients>,
-  order: Order,
   legs: Leg[],
   decimals: Map<string, number>,
 ): Promise<{ leg: Leg; opportunity: Opportunity } | undefined> {
@@ -54,13 +64,13 @@ async function findBestAcrossAllLegs(
         minAmount: config.minTradeAmount,
         maxAmount: config.maxTradeAmount,
         steps: config.searchSteps,
-        minProfitBps: config.minProfitBps,
+        minProfitUsdWad: config.minProfitUsdWad,
         priceInWad: prices.get(leg.feedIn)!,
         decimalsIn: decimals.get(leg.tokenIn)!,
         priceOutWad: prices.get(leg.feedOut)!,
         decimalsOut: decimals.get(leg.tokenOut)!,
         quote: (amountIn) =>
-          quoteExactIn(clients.publicClient, config.arbitrageurAddress, order, leg.tokenIn, leg.tokenOut, amountIn),
+          quoteExactIn(clients.publicClient, config.arbitrageurAddress, leg.order, leg.tokenIn, leg.tokenOut, amountIn),
       });
       return opportunity ? { leg, opportunity } : undefined;
     }),
@@ -83,17 +93,18 @@ async function tick(
   legs: Leg[],
   decimals: Map<string, number>,
 ) {
-  const best = await findBestAcrossAllLegs(config, clients, config.order, legs, decimals);
+  const best = await findBestAcrossAllLegs(config, clients, legs, decimals);
 
   if (!best) {
-    console.log(`[${new Date().toISOString()}] no opportunity above ${config.minProfitBps}bps`);
+    console.log(`[${new Date().toISOString()}] no opportunity above $${formatUnits(config.minProfitUsdWad, 18)}`);
     return;
   }
 
   const { leg, opportunity } = best;
   console.log(
     `[${new Date().toISOString()}] opportunity: ${opportunity.amountIn} ${leg.tokenIn} -> ` +
-      `${opportunity.quotedOut} ${leg.tokenOut} (fair=${opportunity.fairOut}, profit=${opportunity.profitBps}bps)`,
+      `${opportunity.quotedOut} ${leg.tokenOut} (fair=${opportunity.fairOut}, ` +
+      `profit=$${formatUnits(opportunity.profitUsdWad, 18)} / ${opportunity.profitBps}bps)`,
   );
 
   if (config.dryRun) {
@@ -121,7 +132,7 @@ async function tick(
   });
 
   const result = await executeFlashArbitrage(clients, config.arbitrageurAddress, {
-    order: config.order,
+    order: leg.order,
     tokenIn: leg.tokenIn,
     tokenOut: leg.tokenOut,
     amountIn: opportunity.amountIn,
@@ -146,16 +157,21 @@ async function main() {
     timeoutMs: config.deadlineBufferSeconds * 1000,
   });
 
-  const legs = buildLegs(config.groupA, config.groupB);
-  const allTokens = [...config.groupA, ...config.groupB].map((t) => t.token);
+  const legs = buildLegs(config.strategies);
+  // A token can recur across strategies (e.g. the same USDC in two different baskets) -- collect
+  // its decimals once, not once per strategy it appears in.
+  const allTokens = [
+    ...new Set(config.strategies.flatMap((s) => [...s.groupA, ...s.groupB]).map((t) => t.token)),
+  ];
 
   const decimals = new Map<string, number>(
     await Promise.all(allTokens.map(async (token) => [token, await tokenDecimals(clients.publicClient, token)] as const)),
   );
 
   console.log(
-    `arbitrageur watching ${legs.length} cross-group legs via ${config.arbitrageurAddress} ` +
-      `(fynd=${config.fyndUrl}, dryRun=${config.dryRun}, blockPollingIntervalMs=${config.blockPollingIntervalMs})`,
+    `arbitrageur watching ${legs.length} cross-group legs across ${config.strategies.length} ` +
+      `strategies via ${config.arbitrageurAddress} (fynd=${config.fyndUrl}, dryRun=${config.dryRun}, ` +
+      `blockPollingIntervalMs=${config.blockPollingIntervalMs})`,
   );
 
   // Runs on every new block instead of a fixed timer, so a tick never fires on a block it's

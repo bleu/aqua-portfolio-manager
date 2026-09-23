@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fairAmountOut, findBestOpportunity, geometricSteps, profitBps, valueWad } from "../src/pricing.js";
+import { fairAmountOut, findBestOpportunity, geometricSteps, profitBps, profitUsdWad, valueWad } from "../src/pricing.js";
 
 const WAD = 10n ** 18n;
 
@@ -48,6 +48,21 @@ describe("profitBps", () => {
   });
 });
 
+describe("profitUsdWad", () => {
+  it("is zero when quoted matches fair exactly", () => {
+    expect(profitUsdWad(100n * WAD, 100n * WAD, WAD, 18)).toBe(0n);
+  });
+
+  it("prices the excess tokenOut in USD via priceOutWad", () => {
+    // 10 extra tokens at $2000/token = $20,000 profit, WAD-scaled.
+    expect(profitUsdWad(110n * WAD, 100n * WAD, 2000n * WAD, 18)).toBe(20_000n * WAD);
+  });
+
+  it("is negative when quoted falls short of fair", () => {
+    expect(profitUsdWad(90n * WAD, 100n * WAD, WAD, 18)).toBe(-10n * WAD);
+  });
+});
+
 describe("geometricSteps", () => {
   it("includes both endpoints and is monotonically increasing", () => {
     const steps = geometricSteps(1_000n, 1_000_000n, 5);
@@ -76,41 +91,48 @@ describe("findBestOpportunity", () => {
   /// A synthetic constant-product-style quote function: amountOut = amountIn * k / (amountIn + c),
   /// which concaves exactly like a real weighted-curve AMM's marginal price does -- good enough
   /// to exercise the search's ability to find an interior maximum, without needing a live chain.
+  /// `k` and `c` must be on the same scale as `amountIn` (WAD, here) -- an unscaled `k` makes the
+  /// curve's large-amountIn asymptote negligible next to a WAD-scaled fair value, so every size
+  /// reads as unprofitable regardless of the curve's intended shape.
   function syntheticQuote(k: bigint, c: bigint) {
     return async (amountIn: bigint) => (amountIn * k) / (amountIn + c);
   }
 
   it("finds a profitable size when the curve pays out above fair value", async () => {
-    // Fair rate is 1:1 (priceIn == priceOut, same decimals). The synthetic curve pays out more
-    // than amountIn for small trades (mispriced pool), tapering off as size grows.
+    // Fair rate is 1:1 (priceIn == priceOut, same decimals, so $1 == 1 WAD token here). Amounts
+    // are WAD-scaled (real 18-decimal token units), not raw integers -- a $1 profit floor is
+    // meaningless against amountIn values smaller than a wei-fraction of a token. The synthetic
+    // curve pays out more than amountIn for small trades (mispriced pool), tapering off as size
+    // grows; `c` is scaled alongside the amount range so the curve's shape (profitable-small,
+    // tapering-large) is preserved at this new scale.
     const result = await findBestOpportunity({
-      minAmount: 10n,
-      maxAmount: 100_000n,
+      minAmount: 10n * WAD,
+      maxAmount: 100_000n * WAD,
       steps: 10,
-      minProfitBps: 100n, // 1%
+      minProfitUsdWad: 1n * WAD, // $1
       priceInWad: WAD,
       decimalsIn: 18,
       priceOutWad: WAD,
       decimalsOut: 18,
-      quote: syntheticQuote(1_500_000n, 1_000n), // pays > amountIn while amountIn is small
+      quote: syntheticQuote(1_500_000n * WAD, 1_000n * WAD), // pays > amountIn while amountIn is small
     });
 
     expect(result).toBeDefined();
-    expect(result!.profitBps).toBeGreaterThanOrEqual(100n);
+    expect(result!.profitUsdWad).toBeGreaterThanOrEqual(1n * WAD);
   });
 
   it("returns undefined when nothing clears the profit threshold", async () => {
     const result = await findBestOpportunity({
-      minAmount: 10n,
-      maxAmount: 100_000n,
+      minAmount: 10n * WAD,
+      maxAmount: 100_000n * WAD,
       steps: 10,
-      minProfitBps: 100n,
+      minProfitUsdWad: 1n * WAD,
       priceInWad: WAD,
       decimalsIn: 18,
       priceOutWad: WAD,
       decimalsOut: 18,
       // Pays out less than amountIn always -- never profitable in either direction.
-      quote: syntheticQuote(900_000n, 1_000_000n),
+      quote: syntheticQuote(900_000n * WAD, 1_000_000n * WAD),
     });
 
     expect(result).toBeUndefined();
@@ -122,7 +144,7 @@ describe("findBestOpportunity", () => {
         minAmount: 100n,
         maxAmount: 10n, // max < min
         steps: 5,
-        minProfitBps: 0n,
+        minProfitUsdWad: 0n,
         priceInWad: WAD,
         decimalsIn: 18,
         priceOutWad: WAD,
