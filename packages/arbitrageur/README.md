@@ -63,14 +63,18 @@ optimization on top of that hard guarantee, not what makes the design safe.
 **Why Fynd, and why self-hosted.** [Fynd](https://github.com/propeller-heads/fynd) (PropellerHeads,
 built on their Tycho engine) is an open-source, real-time DEX routing engine -- the off-chain
 equivalent of what this package's own `pricing.ts` search does for the PM curve alone, but across
-the real market. It runs as a small local HTTP server, so `src/fynd.ts` queries it directly rather
-than depending on a hosted API. Its higher-level TypeScript client package is built around an EOA
-sign-and-submit flow (quote → Permit2 approval → client signs and posts the tx); this package
-instead calls Fynd's raw `/v1/{chain}/quote` HTTP endpoint directly and extracts the returned
-calldata as `(target, spender, calldata)`, since what step 3 above needs is calldata a *contract*
-can call mid-transaction, not something an EOA signs. **The exact JSON field names `src/fynd.ts`
-expects are a best-effort mapping, not confirmed against a live Fynd server** -- see that file's
-own doc comment; it's a one-function fix if your server's real response differs.
+the real market. It runs as a small local HTTP server, so `src/fynd.ts` points a client at it
+directly rather than depending on a hosted API.
+
+`src/fynd.ts` uses the official `@kayibal/fynd-client` package's `FyndClient.quote` (with
+`encodingOptions` set, so the response includes a ready-to-call `transaction`) and
+`FyndClient.info` (to get the router's address, the spender that ends up holding the approval).
+The client's higher-level `swapPayload`/`executeSwap` methods build an EOA sign-and-submit flow;
+this package skips those and uses only the raw `quote`/`info` calls, since what step 3 above
+needs is calldata a *contract* can call mid-transaction, not something an EOA signs.
+`encodingOptions`'s default `transferType` (`'transfer_from'`) means the router pulls the
+approved amount via a plain `approve()`, not Permit2 -- there's no EOA available mid-flash-loan
+to produce a Permit2 signature with.
 
 ### Running a local Fynd server
 
@@ -148,5 +152,5 @@ standing up something for this server to talk to is a few manual steps:
 - `pnpm typecheck` -- `tsc --noEmit`.
 - `pnpm test` -- `vitest run`, covering `pricing.ts`'s pure functions (fair-value conversion,
   profit calculation, the geometric search) against synthetic quote functions, and `fynd.ts`'s
-  request/response handling against a mocked `fetch` -- no live chain or Fynd server needed for
-  either.
+  request-building and response-mapping against a fake `FyndClient` -- no live chain or Fynd
+  server needed for either.

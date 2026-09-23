@@ -1,110 +1,66 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { FyndQuoteError, getFyndSwapCalldata, parseFyndQuoteResponse } from "../src/fynd.js";
+import { describe, expect, it, vi } from "vitest";
+import type { FyndClient } from "@kayibal/fynd-client";
+import { FyndError, getFyndSwapCalldata } from "../src/fynd.js";
 
 const TOKEN_A = "0x1111111111111111111111111111111111111111";
 const TOKEN_B = "0x2222222222222222222222222222222222222222";
 const SENDER = "0x3333333333333333333333333333333333333333";
 const ROUTER = "0x4444444444444444444444444444444444444444";
 
-describe("parseFyndQuoteResponse", () => {
-  it("extracts target/spender/calldata/expectedAmountOut from a well-formed response", () => {
-    const quote = parseFyndQuoteResponse({
-      transaction: { to: ROUTER, data: "0xabcdef" },
-      spender: ROUTER,
-      amountOut: "12345",
-    });
-
-    expect(quote).toEqual({
-      target: ROUTER,
-      spender: ROUTER,
-      calldata: "0xabcdef",
-      expectedAmountOut: 12345n,
-    });
-  });
-
-  it("falls back to the transaction target when spender is omitted", () => {
-    const quote = parseFyndQuoteResponse({ transaction: { to: ROUTER, data: "0x00" }, amountOut: 0 });
-    expect(quote.spender).toBe(ROUTER);
-  });
-
-  it("throws FyndQuoteError when transaction.to/data is missing", () => {
-    expect(() => parseFyndQuoteResponse({ amountOut: "1" })).toThrow(FyndQuoteError);
-    expect(() => parseFyndQuoteResponse({ transaction: { to: ROUTER }, amountOut: "1" })).toThrow(FyndQuoteError);
-  });
-
-  it("throws FyndQuoteError when amountOut is missing", () => {
-    expect(() => parseFyndQuoteResponse({ transaction: { to: ROUTER, data: "0x00" } })).toThrow(FyndQuoteError);
-  });
-
-  it("throws FyndQuoteError when transaction.to or spender is not a well-formed address", () => {
-    expect(() =>
-      parseFyndQuoteResponse({ transaction: { to: "not-an-address", data: "0x00" }, amountOut: "1" }),
-    ).toThrow(FyndQuoteError);
-    expect(() =>
-      parseFyndQuoteResponse({
-        transaction: { to: ROUTER, data: "0x00" },
-        spender: "not-an-address",
-        amountOut: "1",
-      }),
-    ).toThrow(FyndQuoteError);
-  });
-});
+/// `FyndClient`'s constructor talks to the network, so tests fake just the two methods
+/// `getFyndSwapCalldata` actually calls rather than constructing a real client.
+function fakeClient(overrides: { quote?: unknown; info?: unknown }): FyndClient {
+  return {
+    quote: overrides.quote ?? vi.fn(),
+    info: overrides.info ?? vi.fn(),
+  } as unknown as FyndClient;
+}
 
 describe("getFyndSwapCalldata", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+  const baseParams = { tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: 1000n, sender: SENDER, slippageBps: 50n };
 
-  it("posts a sell-order quote request and parses the response", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ transaction: { to: ROUTER, data: "0xdead" }, spender: ROUTER, amountOut: "999" }),
-        { status: 200 },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+  it("builds a sell-order request and maps a well-formed quote + info to a FyndQuote", async () => {
+    const quoteMock = vi.fn(async () => ({
+      transaction: { to: ROUTER, value: 0n, data: "0xdead" },
+      amountOut: 999n,
+    }));
+    const infoMock = vi.fn(async () => ({ routerAddress: ROUTER, permit2Address: "0x", chainId: 8453 }));
+    const client = fakeClient({ quote: quoteMock, info: infoMock });
 
-    const quote = await getFyndSwapCalldata({
-      fyndUrl: "http://127.0.0.1:4000/",
-      chain: "base",
-      tokenIn: TOKEN_A,
-      tokenOut: TOKEN_B,
-      amountIn: 1000n,
-      sender: SENDER,
-      slippageBps: 50n,
-      timeoutMs: 5_000,
-    });
+    const quote = await getFyndSwapCalldata(client, baseParams);
 
     expect(quote).toEqual({ target: ROUTER, spender: ROUTER, calldata: "0xdead", expectedAmountOut: 999n });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("http://127.0.0.1:4000/v1/base/quote");
-    expect(init?.method).toBe("POST");
-    const body = JSON.parse(init?.body as string);
-    expect(body).toEqual({
-      order: { tokenIn: TOKEN_A, tokenOut: TOKEN_B, amount: "1000", side: "sell", sender: SENDER },
-      options: { slippage: 0.005 },
+    expect(quoteMock).toHaveBeenCalledWith({
+      order: { tokenIn: TOKEN_A, tokenOut: TOKEN_B, amount: 1000n, side: "sell", sender: SENDER },
+      options: { encodingOptions: expect.objectContaining({ slippage: 0.005, transferType: "transfer_from" }) },
     });
   });
 
-  it("throws FyndQuoteError on a non-ok HTTP response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("server error", { status: 500 })),
-    );
+  it("throws FyndError when the quote has no transaction (encodingOptions not honored)", async () => {
+    const client = fakeClient({
+      quote: vi.fn(async () => ({ amountOut: 999n })),
+      info: vi.fn(async () => ({ routerAddress: ROUTER })),
+    });
 
-    await expect(
-      getFyndSwapCalldata({
-        fyndUrl: "http://127.0.0.1:4000",
-        chain: "base",
-        tokenIn: TOKEN_A,
-        tokenOut: TOKEN_B,
-        amountIn: 1000n,
-        sender: SENDER,
-        slippageBps: 50n,
-        timeoutMs: 5_000,
-      }),
-    ).rejects.toThrow(FyndQuoteError);
+    await expect(getFyndSwapCalldata(client, baseParams)).rejects.toThrow(FyndError);
+  });
+
+  it("throws FyndError when the route requires nonzero native value", async () => {
+    const client = fakeClient({
+      quote: vi.fn(async () => ({ transaction: { to: ROUTER, value: 1n, data: "0xdead" }, amountOut: 999n })),
+      info: vi.fn(async () => ({ routerAddress: ROUTER })),
+    });
+
+    await expect(getFyndSwapCalldata(client, baseParams)).rejects.toThrow(FyndError);
+  });
+
+  it("throws FyndError when the Fynd instance has no routerAddress", async () => {
+    const client = fakeClient({
+      quote: vi.fn(async () => ({ transaction: { to: ROUTER, value: 0n, data: "0xdead" }, amountOut: 999n })),
+      info: vi.fn(async () => ({ routerAddress: null })),
+    });
+
+    await expect(getFyndSwapCalldata(client, baseParams)).rejects.toThrow(FyndError);
   });
 });

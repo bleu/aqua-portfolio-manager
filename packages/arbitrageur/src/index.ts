@@ -2,7 +2,7 @@ import { loadConfig, type Config, type Order, type TokenFeed } from "./config.js
 import { makeClients, tokenDecimals, quoteExactIn, executeFlashArbitrage } from "./chain.js";
 import { readOraclePriceWad } from "./oracle.js";
 import { findBestOpportunity, type Opportunity } from "./pricing.js";
-import { getFyndSwapCalldata } from "./fynd.js";
+import { getFyndSwapCalldata, FyndClient } from "./fynd.js";
 
 const ORACLE_MAX_STALENESS_SECONDS = 12 * 60 * 60; // matches PortfolioManagerE2EBase's own PM_MAX_STALENESS default
 
@@ -76,7 +76,13 @@ async function findBestAcrossAllLegs(
   return best;
 }
 
-async function tick(config: Config, clients: ReturnType<typeof makeClients>, legs: Leg[], decimals: Map<string, number>) {
+async function tick(
+  config: Config,
+  clients: ReturnType<typeof makeClients>,
+  fyndClient: FyndClient,
+  legs: Leg[],
+  decimals: Map<string, number>,
+) {
   const best = await findBestAcrossAllLegs(config, clients, config.order, legs, decimals);
 
   if (!best) {
@@ -106,15 +112,12 @@ async function tick(config: Config, clients: ReturnType<typeof makeClients>, leg
   // floor for the curve leg's own on-chain check, not how much this leg should trade; sizing
   // the Fynd request off the floor would leave the gap between it and the real payout stranded
   // on the contract every time the curve leg doesn't actually slip.
-  const fyndQuote = await getFyndSwapCalldata({
-    fyndUrl: config.fyndUrl,
-    chain: config.fyndChain,
+  const fyndQuote = await getFyndSwapCalldata(fyndClient, {
     tokenIn: leg.tokenOut,
     tokenOut: leg.tokenIn,
     amountIn: opportunity.quotedOut,
     sender: config.arbitrageurAddress,
     slippageBps: config.fyndSlippageBps,
-    timeoutMs: config.deadlineBufferSeconds * 1000,
   });
 
   const result = await executeFlashArbitrage(clients, config.arbitrageurAddress, {
@@ -135,6 +138,13 @@ async function tick(config: Config, clients: ReturnType<typeof makeClients>, leg
 async function main() {
   const config = loadConfig();
   const clients = makeClients(config);
+  // One long-lived client per process rather than one per tick -- it holds no per-request
+  // state, so there's nothing to gain from rebuilding it.
+  const fyndClient = new FyndClient({
+    baseUrl: config.fyndUrl,
+    chain: config.fyndChain,
+    timeoutMs: config.deadlineBufferSeconds * 1000,
+  });
 
   const legs = buildLegs(config.groupA, config.groupB);
   const allTokens = [...config.groupA, ...config.groupB].map((t) => t.token);
@@ -157,7 +167,7 @@ async function main() {
 
   while (!stopped) {
     try {
-      await tick(config, clients, legs, decimals);
+      await tick(config, clients, fyndClient, legs, decimals);
     } catch (err) {
       console.error(`tick failed: ${err instanceof Error ? err.message : err}`);
     }

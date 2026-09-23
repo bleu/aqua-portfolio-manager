@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@kayibal/fynd-client": "^0.107.1",
     "viem": "^2.21.0"
   },
   "devDependencies": {

@@ -1,9 +1,12 @@
-import { isAddress, type Address, type Hex } from "viem";
+import { encodingOptions, FyndError, type Address, type FyndClient, type Hex } from "@kayibal/fynd-client";
+
+export { FyndClient, FyndError } from "@kayibal/fynd-client";
 
 /// A route Fynd found to swap `amountIn` of one token into another, encoded as calldata this
 /// server can hand straight to `Arbitrageur.executeFlashArbitrage` -- not something the caller
-/// signs or submits itself (that's Fynd's *other*, EOA-oriented client flow, which this server
-/// deliberately doesn't use; see README's "Flash-loan execution" section).
+/// signs or submits itself (that's the client's own EOA-oriented `swapPayload`/`executeSwap`
+/// flow, which this server deliberately doesn't use; see README's "Flash-loan execution"
+/// section).
 export interface FyndQuote {
   target: Address;
   spender: Address;
@@ -12,67 +15,46 @@ export interface FyndQuote {
 }
 
 export interface FyndQuoteParams {
-  fyndUrl: string;
-  chain: string;
   tokenIn: Address;
   tokenOut: Address;
   amountIn: bigint;
   sender: Address;
   slippageBps: bigint;
-  timeoutMs: number;
 }
 
-export class FyndQuoteError extends Error {}
+/// One quote call to a locally-running Fynd server, via `@kayibal/fynd-client`. `sender` must be
+/// the `Arbitrageur` contract's own address, not the EOA running this server -- it's the
+/// contract that ends up holding and spending the tokens mid-flash-loan. `encodingOptions`
+/// defaults to `transferType: 'transfer_from'`, so the router pulls tokens via a plain
+/// `approve()`, never Permit2 -- a contract holding funds mid-transaction has no EOA available
+/// to produce a Permit2 signature with.
+export async function getFyndSwapCalldata(client: FyndClient, params: FyndQuoteParams): Promise<FyndQuote> {
+  const { tokenIn, tokenOut, amountIn, sender, slippageBps } = params;
 
-/// One POST to a locally-running Fynd server's raw HTTP API (`fynd serve --chain <chain>`, see
-/// README). `sender` must be the `Arbitrageur` contract's own address, not the EOA running this
-/// server -- it's the contract that ends up holding and spending the tokens mid-flash-loan.
-/// Bounded by `timeoutMs`: this runs inside an unattended polling loop, and `fetch` has no
-/// default timeout -- a hung Fynd server would otherwise stall every future tick, not just fail
-/// this one.
-export async function getFyndSwapCalldata(params: FyndQuoteParams): Promise<FyndQuote> {
-  const { fyndUrl, chain, tokenIn, tokenOut, amountIn, sender, slippageBps, timeoutMs } = params;
-
-  const url = `${fyndUrl.replace(/\/$/, "")}/v1/${chain}/quote`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      order: { tokenIn, tokenOut, amount: amountIn.toString(), side: "sell", sender },
-      options: { slippage: Number(slippageBps) / 10_000 },
+  const [quote, info] = await Promise.all([
+    client.quote({
+      order: { tokenIn, tokenOut, amount: amountIn, side: "sell", sender },
+      options: { encodingOptions: encodingOptions(Number(slippageBps) / 10_000) },
     }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+    client.info(),
+  ]);
 
-  if (!response.ok) {
-    throw new FyndQuoteError(`Fynd quote request failed: ${response.status} ${await response.text()}`);
+  if (!quote.transaction) {
+    throw FyndError.config("Fynd quote missing `transaction` -- encodingOptions was not honored");
   }
-
-  return parseFyndQuoteResponse(await response.json());
-}
-
-/// Field-name mapping kept in its own function, separate from the fetch above, so it's a
-/// one-function fix if these don't match Fynd's real response shape -- unverified against a live
-/// server; see README's "Flash-loan execution" section.
-export function parseFyndQuoteResponse(json: unknown): FyndQuote {
-  const body = json as Record<string, unknown>;
-  const tx = body.transaction as Record<string, unknown> | undefined;
-
-  if (!tx || typeof tx.to !== "string" || typeof tx.data !== "string" || !isAddress(tx.to)) {
-    throw new FyndQuoteError(`Unexpected Fynd quote response shape: ${JSON.stringify(json)}`);
+  if (quote.transaction.value !== 0n) {
+    throw FyndError.config(
+      `Fynd route requires sending ${quote.transaction.value} native value; the flash-loan call forwards none`,
+    );
   }
-  const spender = typeof body.spender === "string" ? body.spender : tx.to;
-  if (!isAddress(spender)) {
-    throw new FyndQuoteError(`Fynd quote response has an invalid spender address: ${JSON.stringify(json)}`);
-  }
-  if (typeof body.amountOut !== "string" && typeof body.amountOut !== "number") {
-    throw new FyndQuoteError(`Fynd quote response missing amountOut: ${JSON.stringify(json)}`);
+  if (!info.routerAddress) {
+    throw FyndError.config("Fynd instance has no routerAddress -- quote-only chain?");
   }
 
   return {
-    target: tx.to,
-    spender,
-    calldata: tx.data as Hex,
-    expectedAmountOut: BigInt(body.amountOut as string | number),
+    target: quote.transaction.to,
+    spender: info.routerAddress,
+    calldata: quote.transaction.data,
+    expectedAmountOut: quote.amountOut,
   };
 }
