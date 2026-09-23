@@ -1,4 +1,4 @@
-import { formatUnits } from "viem";
+import { formatUnits, type Address, type PublicClient } from "viem";
 import { loadConfig, type Config, type Order, type Strategy } from "./config.js";
 import { makeClients, tokenDecimals, quoteExactIn, executeFlashArbitrage } from "./chain.js";
 import { readOraclePriceWad } from "./oracle.js";
@@ -39,6 +39,32 @@ function buildLegs(strategies: Strategy[]): Leg[] {
   return strategies.flatMap(buildLegsForStrategy);
 }
 
+/// Reads every feed's oracle price, isolating each one's failure (stale, reverting, non-positive)
+/// from the rest -- one bad feed must never block every *other* feed's legs, or a single flaky
+/// price source would blind the whole search as the strategy count (and feed count with it) grows
+/// (see #16b). Returns only the feeds that actually resolved; the caller filters legs against it.
+export async function readUsablePrices(
+  client: PublicClient,
+  feeds: Address[],
+  maxStalenessSeconds: number,
+): Promise<Map<Address, bigint>> {
+  const settled = await Promise.allSettled(
+    feeds.map(async (feed) => [feed, await readOraclePriceWad(client, feed, maxStalenessSeconds)] as const),
+  );
+
+  const prices = new Map<Address, bigint>();
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      const [feed, price] = result.value;
+      prices.set(feed, price);
+    } else {
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      console.warn(`[${new Date().toISOString()}] oracle feed unusable this tick, skipping its legs: ${reason}`);
+    }
+  }
+  return prices;
+}
+
 async function findBestAcrossAllLegs(
   config: Config,
   clients: ReturnType<typeof makeClients>,
@@ -49,17 +75,25 @@ async function findBestAcrossAllLegs(
   // the reverse, and can recur across several legs in a basket) -- read every distinct feed once
   // per tick instead of once per leg-occurrence.
   const uniqueFeeds = [...new Set(legs.flatMap((leg) => [leg.feedIn, leg.feedOut]))];
-  const priceEntries = await Promise.all(
-    uniqueFeeds.map(
-      async (feed) => [feed, await readOraclePriceWad(clients.publicClient, feed, ORACLE_MAX_STALENESS_SECONDS)] as const,
-    ),
-  );
-  const prices = new Map(priceEntries);
+  const prices = await readUsablePrices(clients.publicClient, uniqueFeeds, ORACLE_MAX_STALENESS_SECONDS);
+
+  // Oracle pre-filter: a leg whose feedIn or feedOut price wasn't readable this tick is skipped
+  // outright -- never quoted, never searched -- rather than crashing every other leg's evaluation
+  // alongside it. This is a strict guarantee (skip what's unusable, evaluate everything else),
+  // not a heuristic that could ever cause a real opportunity to be missed on a leg whose own feed
+  // is healthy.
+  const usableLegs = legs.filter((leg) => prices.has(leg.feedIn) && prices.has(leg.feedOut));
+  if (usableLegs.length < legs.length) {
+    console.warn(
+      `[${new Date().toISOString()}] skipping ${legs.length - usableLegs.length}/${legs.length} legs this tick ` +
+        "(unusable oracle feed) -- searching the rest",
+    );
+  }
 
   // Legs are independent read-only work (an oracle-price lookup plus a curve-quote search) --
   // evaluated concurrently rather than one leg at a time.
   const results = await Promise.all(
-    legs.map(async (leg) => {
+    usableLegs.map(async (leg) => {
       const opportunity = await findBestOpportunity({
         minAmount: config.minTradeAmount,
         maxAmount: config.maxTradeAmount,
@@ -200,7 +234,12 @@ async function main() {
   process.once("SIGTERM", stop);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+// Only runs `main()` when this file is the actual entry point (`tsx src/index.ts`, `node
+// dist/index.js`) -- guarded so importing `readUsablePrices` from a test doesn't also start the
+// bot as a side effect (which would fail on `loadConfig()`'s required env vars).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}

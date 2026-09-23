@@ -109,6 +109,14 @@ ever prices a trade between two *different* groups (`PortfolioManagerSwap._resol
 group-A member against every group-B member, both directions) for every declared strategy (see
 "Multiple strategies" below) and checks all of them every tick, not just one hardcoded pair.
 
+**Oracle pre-filter.** `readUsablePrices` reads every distinct feed once per tick and isolates
+each one's failure (stale, reverting, non-positive) from the rest -- one bad feed only removes
+the legs that actually depend on it from that tick's search, it never blocks every *other*
+strategy's legs. This is a strict guarantee, not a heuristic: a leg whose own feed is healthy is
+never skipped, so it can never cause a real opportunity to be missed. This matters more as
+`STRATEGIES_FILE` grows the feed count -- one flaky price source shouldn't be able to blind the
+whole bot.
+
 ## Multiple strategies
 
 One bot process, one `Arbitrageur` contract, one owner EOA -- but any number of PM strategies can
@@ -164,6 +172,7 @@ standing up something for this server to talk to is a few manual steps:
 - `pnpm typecheck` -- `tsc --noEmit`.
 - `pnpm test` -- `vitest run`, covering `pricing.ts`'s pure functions (fair-value conversion,
   profit calculation, the geometric search) against synthetic quote functions, `fynd.ts`'s
-  request-building and response-mapping against a fake `FyndClient`, and `config.ts`'s
-  `parseStrategies` against hand-built JSON -- no live chain, Fynd server, or filesystem needed
-  for any of them.
+  request-building and response-mapping against a fake `FyndClient`, `config.ts`'s
+  `parseStrategies` against hand-built JSON, and `index.ts`'s `readUsablePrices` (the oracle
+  pre-filter) against a fake `PublicClient` with one feed forced stale -- no live chain, Fynd
+  server, or filesystem needed for any of them.
