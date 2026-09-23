@@ -21,7 +21,7 @@ export interface Config {
   fyndUrl: string;
   fyndChain: string;
   fyndSlippageBps: bigint;
-  pollIntervalMs: number;
+  blockPollingIntervalMs: number;
   minProfitBps: bigint;
   minTradeAmount: bigint;
   maxTradeAmount: bigint;
@@ -105,7 +105,7 @@ export function loadConfig(): Config {
     fyndUrl: required("FYND_URL"),
     fyndChain: optionalString("FYND_CHAIN", "base"),
     fyndSlippageBps: optionalBigInt("FYND_SLIPPAGE_BPS", 50n),
-    pollIntervalMs: optionalInt("POLL_INTERVAL_MS", 15_000),
+    blockPollingIntervalMs: optionalInt("BLOCK_POLLING_INTERVAL_MS", 2_000),
     minProfitBps: optionalBigInt("MIN_PROFIT_BPS", 20n),
     minTradeAmount,
     maxTradeAmount,

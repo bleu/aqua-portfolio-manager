@@ -155,24 +155,33 @@ async function main() {
 
   console.log(
     `arbitrageur watching ${legs.length} cross-group legs via ${config.arbitrageurAddress} ` +
-      `(fynd=${config.fyndUrl}, dryRun=${config.dryRun}, pollIntervalMs=${config.pollIntervalMs})`,
+      `(fynd=${config.fyndUrl}, dryRun=${config.dryRun}, blockPollingIntervalMs=${config.blockPollingIntervalMs})`,
   );
 
-  let stopped = false;
+  // Runs on every new block instead of a fixed timer, so a tick never fires on a block it's
+  // already seen. `ticking` skips a block if the previous tick is still in flight (e.g. waiting
+  // on a transaction receipt), rather than starting a second tick that would race the same
+  // nonce/allowance state -- the next block retries.
+  let ticking = false;
+  const unwatch = clients.publicClient.watchBlocks({
+    pollingInterval: config.blockPollingIntervalMs,
+    onBlock: () => {
+      if (ticking) return;
+      ticking = true;
+      tick(config, clients, fyndClient, legs, decimals)
+        .catch((err) => console.error(`tick failed: ${err instanceof Error ? err.message : err}`))
+        .finally(() => {
+          ticking = false;
+        });
+    },
+  });
+
   const stop = () => {
-    stopped = true;
+    unwatch();
+    process.exit(0);
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
-
-  while (!stopped) {
-    try {
-      await tick(config, clients, fyndClient, legs, decimals);
-    } catch (err) {
-      console.error(`tick failed: ${err instanceof Error ? err.message : err}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, config.pollIntervalMs));
-  }
 }
 
 main().catch((err) => {
