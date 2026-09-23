@@ -56,13 +56,17 @@ contract Arbitrageur is Ownable, IArbitrageur {
     ///         consequence of `executeFlashArbitrage`'s own call into `POOL_MANAGER.unlock`, so
     ///         `msg.sender == POOL_MANAGER` is the entire access-control story here.
     /// @dev The safety property that actually protects borrowed principal isn't the slippage
-    ///      checks below -- it's that the repayment check must find at least `owed` `tokenIn` on
-    ///      this contract, or the whole transaction (including the curve trade) reverts. A
-    ///      worse-than-expected Fynd route costs gas on a failed attempt, never principal.
+    ///      checks below -- it's that the repayment check must find `owed` `tokenIn` *gained*
+    ///      during this call, or the whole transaction (including the curve trade) reverts. A
+    ///      worse-than-expected Fynd route costs gas on a failed attempt, never principal. Gained
+    ///      is measured against the balance snapshotted before the borrow, not the absolute
+    ///      balance after -- a prior flash arbitrage's unswept profit sitting on this contract
+    ///      must never be able to mask a losing trade.
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         require(msg.sender == address(POOL_MANAGER), ArbitrageurUnauthorizedFlashLoanCallback(msg.sender));
 
         FlashArbParams memory p = abi.decode(data, (FlashArbParams));
+        uint256 balanceBeforeBorrow = IERC20(p.tokenIn).balanceOf(address(this));
 
         // 0. Borrow: `take` moves `amountIn` of tokenIn from the manager to this contract,
         // recording a debt this call must repay (via sync + transfer + settle below) before
@@ -89,17 +93,19 @@ contract Arbitrageur is Ownable, IArbitrageur {
         // regardless of how much was actually spent so no allowance to `fyndSpender` survives.
         IERC20(p.tokenOut).forceApprove(p.fyndSpender, 0);
 
-        // 3. Repay the loan -- no fee, so exactly `amountIn` is owed. `sync` before transferring
-        // (it snapshots the manager's balance pre-repayment, so `settle` can tell how much of
-        // the transfer below actually counts), then transfer, then `settle` to zero the debt.
+        // 3. Repay the loan -- no fee, so exactly `amountIn` is owed. `gained` is this trade's own
+        // contribution, not the contract's absolute tokenIn balance (see this function's own doc
+        // comment). `sync` before transferring (it snapshots the manager's balance
+        // pre-repayment, so `settle` can tell how much of the transfer below actually counts),
+        // then transfer, then `settle` to zero the debt.
         uint256 owed = p.amountIn;
-        uint256 actual = IERC20(p.tokenIn).balanceOf(address(this));
-        require(actual >= owed, ArbitrageurInsufficientRepayment(owed, actual));
+        uint256 gained = IERC20(p.tokenIn).balanceOf(address(this)) - balanceBeforeBorrow;
+        require(gained >= owed, ArbitrageurInsufficientRepayment(owed, gained));
         POOL_MANAGER.sync(Currency.wrap(p.tokenIn));
         IERC20(p.tokenIn).safeTransfer(address(POOL_MANAGER), owed);
         POOL_MANAGER.settle();
 
-        emit FlashArbitrageExecuted(orderHash, p.tokenIn, p.tokenOut, p.amountIn, curveAmountOut, owed, actual - owed);
+        emit FlashArbitrageExecuted(orderHash, p.tokenIn, p.tokenOut, p.amountIn, curveAmountOut, owed, gained - owed);
         return "";
     }
 

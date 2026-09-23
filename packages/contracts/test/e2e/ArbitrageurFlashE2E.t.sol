@@ -314,4 +314,31 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         assertEq(wbtc.allowance(address(arbitrageur), address(fyndRouter)), 0, "leftover wbtc allowance must be reset");
         assertEq(wbtc.balanceOf(address(arbitrageur)), quotedOut - fyndPulledAmount, "unspent wbtc remains on contract");
     }
+
+    /// @notice Proves the repayment check reads this trade's own gain, not the contract's
+    /// absolute tokenIn balance -- a prior flash arbitrage's unswept profit sitting on the
+    /// contract must not be able to paper over a losing current trade.
+    function test_FlashArbitrageRevertsOnInsufficientRepaymentEvenWithStaleProfitOnContract() public {
+        uint256 amountIn = 1_000e6;
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
+
+        // Leftover profit from some earlier flash arbitrage -- large enough that, combined with
+        // this trade's own (insufficient) return, the contract's absolute tokenIn balance would
+        // clear `owed`. The fix must still see through this and revert.
+        uint256 staleProfit = 10_000e6;
+        deal(address(usdt), address(arbitrageur), staleProfit);
+
+        uint256 owed = amountIn;
+        uint256 fyndReturnAmount = owed - 1;
+        IArbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
+
+        assertGt(staleProfit + fyndReturnAmount, owed, "stale profit must be large enough to mask the shortfall");
+
+        vm.prank(arbitrageurOwner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArbitrageur.ArbitrageurInsufficientRepayment.selector, owed, fyndReturnAmount)
+        );
+        arbitrageur.executeFlashArbitrage(params);
+    }
 }
