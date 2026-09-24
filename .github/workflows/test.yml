@@ -52,3 +52,29 @@ jobs:
           # hard-failing the moment this workflow merges, only once the secret is actually added.
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
         run: forge test -vvv
+
+  check-arbitrageur:
+    name: Arbitrageur
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --filter @aqua-portfolio-manager/arbitrageur
+
+      - name: Typecheck
+        run: pnpm --filter @aqua-portfolio-manager/arbitrageur typecheck
+
+      - name: Test
+        run: pnpm --filter @aqua-portfolio-manager/arbitrageur test

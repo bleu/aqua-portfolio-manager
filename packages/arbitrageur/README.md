@@ -1,0 +1,178 @@
+# Arbitrageur
+
+An off-chain taker that fills trades on a deployed Portfolio Manager strategy's orders, so its
+tradeability can actually be exercised end-to-end -- not just unit-tested in Foundry.
+
+## Why this exists
+
+Pathfinder is closed-source with **no self-hosted or forked-mainnet-testable equivalent**
+(`docs/ARCHITECTURE.md`'s Milestone 1 section). Every real trade against a live PM strategy is
+meant to come from *some* external taker or solver calling the router directly -- Pathfinder is
+one path to that, but not the only one, and not one we can test against ourselves. This package
+is that external taker, played by a real (or fork-local) EOA instead of a same-transaction
+Foundry mock (`lib/swap-vm/test/mocks/MockTaker.sol`, which only works inside a Foundry test
+process).
+
+## Architecture
+
+Two halves, split deliberately along the "protocol encoding vs. trading decisions" line:
+
+- **On-chain: `packages/contracts/src/Arbitrageur.sol`.** A minimal, owner-controlled contract that builds SwapVM's packed `TakerTraits` encoding once, in Solidity, reusing the same audited `TakerTraitsLib` the rest of this codebase already relies on. Exposes `quoteExactIn` (a static-call-safe price simulation) and `executeFlashArbitrage` (borrows the input token from Uniswap V4's PoolManager -- see "Flash-loan execution" below) -- so its owner can be an ordinary EOA with no `ITakerCallbacks` implementation. Hand-replicating `TakerTraitsLib`'s bit-packed encoding in TypeScript, with no test coverage protecting it, was a correctness risk not worth taking (see the contract's own doc comment).
+- **Off-chain: this package.** The trade-decision logic -- deciding *whether* a trade is
+  profitable and *how large* to size it -- reading the strategy's own Chainlink feeds (the same
+  ones `OracleAdapter.sol` reads) as the fair-value reference, comparing them against the curve's
+  actual quoted price via `Arbitrageur.quoteExactIn`, and (for the flash-loan path) asking a
+  locally-running **Fynd** server for the best real-market route to close the loop.
+
+## Flash-loan execution
+
+The default, automated flow (`src/index.ts`) never holds or approves standing capital in the
+owner EOA's wallet -- only enough ETH to pay gas. Every arbitrage borrows exactly what it needs,
+trades, and repays within one atomic transaction:
+
+```
+                         ┌─ 1. Flash-borrow tokenIn from Uniswap V4's PoolManager (no fee) ─┐
+                         │                                                                   │
+oracle price (Chainlink) ─┤                                                                   ▼
+                         │                                              2. Swap tokenIn -> tokenOut
+curve price (PM's curve) ─┘                                                 against the PM curve
+                                                                                              │
+                                                                                              ▼
+                                                                   3. Swap tokenOut -> tokenIn via
+                                                                      Fynd's best real-market route
+                                                                                              │
+                                                                                              ▼
+                                                                4. Repay the PoolManager; keep profit
+```
+
+**Why this is safe even though step 3 routes through arbitrary, off-chain-supplied calldata:**
+the final check inside `Arbitrageur.unlockCallback` is that this contract's `tokenIn` balance
+covers the amount owed -- if Fynd's route (or the market) slips worse than expected, that check
+fails and the *entire* transaction reverts, including the curve trade from step 2. A bad attempt
+costs gas, never borrowed principal. Slippage buffers and the minimum-profit threshold are
+optimization on top of that hard guarantee, not what makes the design safe.
+
+**Why Fynd, and why self-hosted.** [Fynd](https://github.com/propeller-heads/fynd) (PropellerHeads,
+built on their Tycho engine) is an open-source, real-time DEX routing engine -- the off-chain
+equivalent of what this package's own `pricing.ts` search does for the PM curve alone, but across
+the real market. It runs as a small local HTTP server, so `src/fynd.ts` points a client at it
+directly rather than depending on a hosted API.
+
+`src/fynd.ts` uses the official `@kayibal/fynd-client` package's `FyndClient.quote` (with
+`encodingOptions` set, so the response includes a ready-to-call `transaction`) and
+`FyndClient.info` (to get the router's address, the spender that ends up holding the approval).
+The client's higher-level `swapPayload`/`executeSwap` methods build an EOA sign-and-submit flow;
+this package skips those and uses only the raw `quote`/`info` calls, since what step 3 above
+needs is calldata a *contract* can call mid-transaction, not something an EOA signs.
+`encodingOptions`'s default `transferType` (`'transfer_from'`) means the router pulls the
+approved amount via a plain `approve()`, not Permit2 -- there's no EOA available mid-flash-loan
+to produce a Permit2 signature with.
+
+### Running a local Fynd server
+
+```
+cargo install fynd          # or: docker pull propellerheads/fynd
+export TYCHO_API_KEY=...    # ask PropellerHeads / whoever issued yours
+export RUST_LOG=fynd=info
+fynd serve --chain base
+```
+
+Point `FYND_URL` (see `.env.example`) at wherever this ends up listening (`http://127.0.0.1:4000`
+by default). See [Fynd's own quickstart](https://github.com/propeller-heads/fynd/tree/main/docs/get-started/quickstart)
+for the full setup.
+
+### Uniswap V4's PoolManager
+
+`Arbitrageur`'s constructor takes a `poolManager` address -- Uniswap V4's singleton PoolManager is
+deployed at the same canonical address (`0x498581fF718922c3f8e6A244956aF099B2652b2b`) on every
+EVM chain it supports, Base included, so this is a fixed constant, not something to look up
+per-deployment. There's no flash-loan fee at all: `take`ing a token just opens a debt that
+`unlockCallback` must zero out (via `sync` + a plain transfer + `settle`) before the call returns,
+or the whole `unlock` reverts -- not a rate anyone could configure, a structural property of the
+accounting model.
+
+## Opportunity search
+
+`pricing.ts`'s `findBestOpportunity` probes `SEARCH_STEPS` geometrically-spaced trade sizes
+between `MIN_TRADE_AMOUNT` and `MAX_TRADE_AMOUNT` (log-spaced, so a wide range still gets even
+coverage across orders of magnitude) and picks whichever size clears `MIN_PROFIT_USD` by the
+widest dollar margin -- a dollar floor rather than a relative bps one, since that's what actually
+has to cover gas and doesn't erode in an arbitrage race-to-the-bottom. This is a bounded
+approximation, not a true optimum -- good enough for a test/monitoring tool. A tighter search
+(e.g. exploiting the curve's known concavity) is a reasonable future improvement, not a
+correctness requirement.
+
+**Basket-wide and multi-strategy, not one fixed pair.** Each strategy's declared universe is two
+groups -- group A (e.g. `{USDT, USDC}`) and group B (e.g. `{WBTC, WETH}`) -- and the PM curve only
+ever prices a trade between two *different* groups (`PortfolioManagerSwap._resolve`'s own
+`groupInIdx != groupOutIdx` check). `src/index.ts` builds every cross-group directed pair (every
+group-A member against every group-B member, both directions) for every declared strategy (see
+"Multiple strategies" below) and checks all of them every tick, not just one hardcoded pair.
+
+**Oracle pre-filter.** `readUsablePrices` reads every distinct feed once per tick and isolates
+each one's failure (stale, reverting, non-positive) from the rest -- one bad feed only removes
+the legs that actually depend on it from that tick's search, it never blocks every *other*
+strategy's legs. This is a strict guarantee, not a heuristic: a leg whose own feed is healthy is
+never skipped, so it can never cause a real opportunity to be missed. This matters more as
+`STRATEGIES_FILE` grows the feed count -- one flaky price source shouldn't be able to blind the
+whole bot.
+
+## Multiple strategies
+
+One bot process, one `Arbitrageur` contract, one owner EOA -- but any number of PM strategies can
+be watched at once. Set `STRATEGIES_FILE` (see `.env.example`) to a JSON array like
+`strategies.example.json`: each entry is its own `{orderMaker, orderTraits, orderData, groupA,
+groupB}`, so different strategies can have entirely different baskets. Every strategy's legs get
+searched together each tick, and the single most profitable opportunity across all of them wins
+(see `buildLegs` in `src/index.ts`). Leave `STRATEGIES_FILE` unset to fall back to exactly one
+strategy declared inline via `PM_ORDER_*`/`GROUP_*_*`, matching the local Base-fork flow below.
+
+This is a static list, not live discovery -- adding a strategy means editing the file and
+restarting the bot, not something that updates itself as new strategies get shipped. Wiring this
+up to an indexer instead (so the bot picks up newly-shipped strategies on its own) is a separate,
+larger piece of infrastructure work, not done here.
+
+## Running against a local Base fork
+
+This repo currently has no deploy script (`packages/contracts/script/` was intentionally removed
+in favor of self-contained E2E tests, see `test/e2e/base/AquaE2EBase.t.sol`'s own doc comment), so
+standing up something for this server to talk to is a few manual steps:
+
+1. **Fork Base locally:**
+   ```
+   anvil --fork-url https://mainnet.base.org --chain-id 8453
+   ```
+2. **Deploy the router, ship a strategy, and deploy `Arbitrageur`.** The quickest path is a small
+   ad hoc `forge script` mirroring `test/e2e/ArbitrageurFlashE2E.t.sol`'s `setUp()` (which does
+   exactly this against the same fork pattern, including the two-group USDT/USDC vs. WBTC/WETH
+   basket) -- deploy `PortfolioManagerRouter` + `PortfolioManagerStrategyValidator`, ship the
+   strategy from a Safe (see `docs/guides/fresh-wallet-setup.md`), then:
+   ```
+   forge create src/Arbitrageur.sol:Arbitrageur \
+     --rpc-url http://127.0.0.1:8545 --private-key <anvil-key> \
+     --constructor-args <router-address> 0x498581fF718922c3f8e6A244956aF099B2652b2b <owner-eoa-address>
+   ```
+3. **Start a local Fynd server** pointed at the same fork (see "Running a local Fynd server"
+   above) -- on a local anvil fork, Fynd needs `RPC_URL`/equivalent config pointed at
+   `http://127.0.0.1:8545` too, not the public Base RPC, so its quotes reflect the fork's state.
+4. **Copy the shipped order's `(maker, traits, data)`** into `PM_ORDER_MAKER` /
+   `PM_ORDER_TRAITS` / `PM_ORDER_DATA` (from the ship script's logs).
+5. **Run in dry-run mode first:**
+   ```
+   cp .env.example .env   # fill in the values above
+   DRY_RUN=true pnpm --filter @aqua-portfolio-manager/arbitrageur dev
+   ```
+   Confirm it logs the opportunities you expect before setting `DRY_RUN=false`. No token funding
+   step is needed for the owner EOA -- the flash-loan path means it never holds `tokenIn` at all.
+
+## Scripts
+
+- `pnpm dev` -- runs `src/index.ts` directly (via `tsx`), restarting on file change.
+- `pnpm build` / `pnpm start` -- compiles to `dist/` and runs the compiled output.
+- `pnpm typecheck` -- `tsc --noEmit`.
+- `pnpm test` -- `vitest run`, covering `pricing.ts`'s pure functions (fair-value conversion,
+  profit calculation, the geometric search) against synthetic quote functions, `fynd.ts`'s
+  request-building and response-mapping against a fake `FyndClient`, `config.ts`'s
+  `parseStrategies` against hand-built JSON, and `index.ts`'s `readUsablePrices` (the oracle
+  pre-filter) against a fake `PublicClient` with one feed forced stale -- no live chain, Fynd
+  server, or filesystem needed for any of them.

@@ -1,0 +1,15 @@
+[
+  {
+    "orderMaker": "0x0000000000000000000000000000000000000000",
+    "orderTraits": "0",
+    "orderData": "0x",
+    "groupA": [
+      { "token": "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", "feed": "0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9" },
+      { "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "feed": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B" }
+    ],
+    "groupB": [
+      { "token": "0x1ceA84203673764244E05693e42E6Ace62bE9BA5", "feed": "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F" },
+      { "token": "0x4200000000000000000000000000000000000006", "feed": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70" }
+    ]
+  }
+]
