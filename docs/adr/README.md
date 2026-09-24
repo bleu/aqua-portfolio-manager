@@ -21,3 +21,4 @@ Follow the [documentation style](../STYLE.md).
 | [0011](0011-safe-wallet-with-basket-scope-guard.md) | Require a Safe with a Basket Scope Guard | Accepted |
 | [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Accepted |
 | [0013](0013-build-parameter-attestation-gate.md) | Require parameter attestation before trading | Accepted |
+| [0014](0014-production-arbitrageur-design.md) | Run the production arbitrageur on Base | Proposed |
