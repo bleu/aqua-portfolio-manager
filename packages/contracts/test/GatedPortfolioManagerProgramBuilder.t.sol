@@ -19,10 +19,10 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice Proves the resolver KYC gate (BLEUDEV-390): a strategy built with
-/// `GatedPortfolioManagerProgramBuilder` only trades for a `tx.origin` holding the configured
-/// credential token, while a strategy built with the plain, ungated `PortfolioManagerProgramBuilder`
-/// is completely unaffected by the new opcode's presence in `PortfolioManagerOpcodes`.
+/// @notice Proves the resolver KYC gate: a strategy built with `GatedPortfolioManagerProgramBuilder`
+/// only trades for a `tx.origin` holding the configured credential token, while a strategy built
+/// with the plain, ungated `PortfolioManagerProgramBuilder` is completely unaffected by the new
+/// opcode's presence in `PortfolioManagerOpcodes`.
 contract GatedPortfolioManagerProgramBuilderTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
@@ -178,6 +178,20 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
                 Controls.TxOriginTokenBalanceIsZero.selector, uncredentialedResolver, address(resolverKycToken)
             )
         );
+        vm.prank(uncredentialedResolver, uncredentialedResolver);
+        taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, _exactInTakerData());
+    }
+
+    /// @dev `address(0)` has no code, so `IERC20(token).balanceOf(...)` fails ABI-decoding the
+    ///      empty returndata instead of hitting `TxOriginTokenBalanceIsZero` -- still fails safe
+    ///      (no uncredentialed swap goes through), just with a different, less informative revert.
+    function test_GatedStrategyRevertsForZeroAddressToken() public {
+        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 0, address(0));
+        ISwapVM.Order memory order = _orderForProgram(program);
+        _shipOrder(order);
+        MockTaker taker = _fundedTakerFor(uncredentialedResolver);
+
+        vm.expectRevert();
         vm.prank(uncredentialedResolver, uncredentialedResolver);
         taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, _exactInTakerData());
     }

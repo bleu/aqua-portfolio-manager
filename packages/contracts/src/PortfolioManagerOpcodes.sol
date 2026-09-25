@@ -18,15 +18,12 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
     )
         internal {}
 
-    /// @dev Opcode 0 = the weighted-curve swap, protocol fee included. Opcode 1 is a resolver
-    ///      KYC gate (1inch's Aqua access-control requirement -- see
-    ///      https://business.1inch.com/portal/documentation/aqua/liquidity-layer/access-resolvers-and-pathfinder):
-    ///      `Controls._onlyTxOriginTokenBalanceNonZero` checks `tx.origin` (not `msg.sender`,
-    ///      since 1inch's own docs specify the `tx.origin` variant) holds a configured token.
-    ///      Present here so `GatedPortfolioManagerProgramBuilder` can reference it -- whether any
-    ///      given strategy's program actually includes it is a per-strategy choice, not a
-    ///      per-router one; `PortfolioManagerProgramBuilder`'s own programs never reference opcode
-    ///      1, so its presence here is inert for them.
+    /// @dev Opcode 1 = resolver KYC gate (1inch Aqua access-control -- see
+    ///      https://business.1inch.com/portal/documentation/aqua/liquidity-layer/access-resolvers-and-pathfinder),
+    ///      checked via `tx.origin` since the resolver, not the taker, is the credentialed party
+    ///      and only `tx.origin` identifies the resolver across a multi-hop call. Only referenced
+    ///      by `GatedPortfolioManagerProgramBuilder`; inert for `PortfolioManagerProgramBuilder`'s
+    ///      ungated programs.
     function _opcodes()
         internal
         pure
