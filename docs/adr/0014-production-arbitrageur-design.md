@@ -6,7 +6,7 @@
 
 The current arbitrageur experiment uses a static strategy file and a Uniswap V4 flash-borrow path. It does not use indexed Strategy State, queues, REST operations, or durable execution records.
 
-The production arbitrageur must discover Aqua Strategies on Base, evaluate them with indexed balances and oracle events, execute an atomic Uniswap V4 flash-loan and Fynd trade, and operate from one shared wallet.
+The production arbitrageur must discover Aqua Strategies on Base, evaluate them with indexed balances and polled oracle prices, execute an atomic Uniswap V4 flash-loan and Fynd trade, and operate from one shared wallet.
 
 ## Decision
 
@@ -41,7 +41,7 @@ Envio and Fynd are local dependencies. They are not parts of the arbitrageur app
 | --- | --- | --- |
 | Strategy Catalog | Store Shipped and Docked Strategies, raw program data, decoded data, and eligibility. | Envio and Postgres |
 | Balance State | Store supported-token balances for each Strategy Wallet. | Envio, Base RPC, and Postgres |
-| Price State | Store usable Chainlink Price Snapshots. | Envio and Postgres |
+| Price State | Poll and store usable Chainlink Price Snapshots. | Base RPC and Postgres |
 | Candidate Evaluation | Screen a Strategy State, find a Fynd Route, solve the input size, and rank Candidates. | Fynd, Postgres, Redis, and shared math |
 | Transaction Simulation | Validate a Candidate against current Base state. | Base RPC, Uniswap V4 PoolManager, executor, and Postgres |
 | Execution | Serialize nonces, send transactions, track results, and retry. | Base RPC, Redis, Postgres, and Slack |
@@ -65,7 +65,7 @@ flowchart TB
 
     envio[Envio] --> catalog
     envio --> balance
-    envio --> price
+    rpc[Base RPC] --> price
     catalog --> evaluate
     balance --> evaluate
     price --> evaluate
@@ -95,7 +95,8 @@ Extend Envio with these records.
 | --- | --- | --- |
 | Strategy Payload | `Shipped` and `Docked` | Raw program data, decoded trade data, active state, block, transaction, and log index. |
 | Wallet Balance Change | `Transfer` for allow-listed tokens and Strategy Wallets | Wallet, token, signed change, block, transaction, and log index. |
-| Oracle Price | Chainlink feed update event | Feed, answer, decimals, time, block, transaction, and log index. |
+
+Price State is not indexed. Each Chainlink feed address on the token allow list is a proxy (`EACAggregatorProxy`) that forwards `latestRoundData()` reads to an underlying aggregator it can swap out over time; the proxy does not itself emit `AnswerUpdated` (that event only appears at the aggregator's own address, and tracking aggregator swaps to follow it adds real complexity for a rare event). Price State instead polls each feed's `latestRoundData()` directly over Base RPC, on the same cadence a Strategy, balance, or oracle-triggered evaluation needs a fresh Price Snapshot -- see Candidate evaluation.
 
 At Strategy discovery, the application reads supported token balances with one multicall. It then uses indexed transfers as the normal balance source. It uses one new multicall only for the selected Candidate before simulation.
 
@@ -123,6 +124,7 @@ The service allows three retries for one Strategy State. A new Strategy, balance
 ```mermaid
 sequenceDiagram
     participant Envio
+    participant Price as Price State
     participant State as State modules
     participant Queue as BullMQ
     participant Evaluator
@@ -131,7 +133,8 @@ sequenceDiagram
     participant Executor
     participant Base
 
-    Envio->>State: Strategy, balance, or oracle event
+    Envio->>State: Strategy or balance event
+    Price->>State: Base RPC poll result
     State->>Queue: Coalesced evaluation
     Queue->>Evaluator: Latest State Version
     Evaluator->>Evaluator: Screen and solve input size
@@ -146,7 +149,7 @@ sequenceDiagram
     Executor->>Base: Submit transaction
 ```
 
-A Strategy, balance, or oracle event starts evaluation. A low-rate recovery job also starts evaluation.
+A Strategy or balance event from Envio, or a changed price from a Price State poll, starts evaluation. A low-rate recovery job also starts evaluation.
 
 The evaluator first uses Price Snapshots and TypeScript contract math. It excludes a Strategy State when the possible price difference cannot meet fees and the Profit Floor. It calls Fynd only for remaining inputs.
 
@@ -156,7 +159,7 @@ Fynd finds the allowed market pools and returns an executable Fynd Route. The se
 
 ## Price and slippage rules
 
-Price State uses Chainlink push-feed events. It stores one normalized price for each feed and event block. A stale, zero, negative, or unsupported price makes only affected Strategy Legs ineligible. This follows [ADR 0005](0005-chainlink-push-oracles.md).
+Price State polls each feed's `latestRoundData()` over Base RPC. It stores one normalized price for each feed at its latest polled round. A stale, zero, negative, or unsupported price makes only affected Strategy Legs ineligible. This follows [ADR 0005](0005-chainlink-push-oracles.md).
 
 At transaction build time, the evaluator converts the global USD Profit Floor to the expected return token with the newest usable Price Snapshot. It rejects a stale price. The executor receives that token amount as `minProfit`.
 
