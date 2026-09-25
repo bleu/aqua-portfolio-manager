@@ -10,7 +10,7 @@ _Avoid_: position, order
 
 **Strategy Wallet**:
 The maker wallet whose token balances the Strategy uses for pricing and settlement.
-_Avoid_: position wallet, pool wallet
+_Avoid_: maker wallet, position wallet, pool wallet
 
 **Strategy State**:
 The current active status, declared tokens, decoded program data, and token balances for a Strategy.
