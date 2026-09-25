@@ -1,5 +1,5 @@
-# See thoughts/indexer-architecture.md ("Database schema") for the full design and the
-# equivalent Postgres DDL Envio's codegen produces from this file.
+# See docs/adr/0014-production-arbitrageur-design.md ("Indexed state") for the design this
+# schema implements.
 
 type Strategy {
   id: ID! # `${maker}-${app}-${strategyHash}`, lowercase -- matches Aqua's own balance-state key
@@ -12,4 +12,28 @@ type Strategy {
   shippedAtTxHash: String! # also used to tell ship-time Pushed events from later trade-time ones
   dockedAt: BigInt
   dockedAtTxHash: String
+}
+
+# Marks an address as a known Strategy Wallet (a maker with at least one indexed Strategy), set
+# alongside every Strategy row so the Transfer handler can check membership in O(1) instead of
+# scanning every indexed Strategy by its composite id.
+type StrategyWallet {
+  id: ID! # the maker address, lowercase
+}
+
+# One row per allow-listed-token Transfer touching a known Strategy Wallet (a maker with at
+# least one indexed Strategy) -- ADR-0014's "Wallet Balance Change" record. `change` is signed:
+# negative when the wallet is the Transfer's `from`, positive when it's the `to`. A wallet's
+# current balance for a token is the sum of its `change` rows plus the one-time balance read
+# taken at Strategy discovery (see the ADR's Indexed state section) -- this table only ever
+# stores deltas, never a running total, so re-processing never double-counts.
+type WalletBalanceChange {
+  id: ID! # `${transactionHash}-${logIndex}`
+  wallet: String! @index
+  token: String! @index
+  change: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: String!
+  logIndex: Int!
 }

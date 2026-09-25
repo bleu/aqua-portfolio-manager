@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Indexes Aqua Shipped/Pushed/Docked events across all apps into a Strategy entity (BLEUDEV-339)",
+  "description": "Indexes Aqua strategy lifecycle and Strategy Wallet balance changes across all apps",
   "scripts": {
     "codegen": "envio codegen",
     "dev": "envio dev",
