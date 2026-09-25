@@ -6,13 +6,15 @@
 
 The current arbitrageur experiment uses a static strategy file and a Uniswap V4 flash-borrow path. It does not use indexed Strategy State, queues, REST operations, or durable execution records.
 
-The production arbitrageur must discover Aqua Strategies on Base, evaluate them with indexed balances and oracle events, execute an atomic Aave V3 and Fynd trade, and operate from one shared wallet.
+The production arbitrageur must discover Aqua Strategies on Base, evaluate them with indexed balances and oracle events, execute an atomic Uniswap V4 flash-loan and Fynd trade, and operate from one shared wallet.
 
 ## Decision
 
-Run one Base-only arbitrageur application. It uses Postgres, Redis and BullMQ, Envio, local Fynd, Base RPC, Chainlink feeds, and Aave V3. It starts in dry-run mode. A configuration change enables transaction submission.
+Run one Base-only arbitrageur application. It uses Postgres, Redis and BullMQ, Envio, local Fynd, Base RPC, Chainlink feeds, and Uniswap V4's PoolManager. It starts in dry-run mode. A configuration change enables transaction submission.
 
-The token allow list contains USDC, USDT, WETH, and WBTC. Each token record contains its address, decimals, Chainlink feed, and Aave V3 reserve status. The service records unsupported Strategies but does not trade them.
+The token allow list contains USDC, USDT, WETH, and WBTC. Each token record contains its address, decimals, and Chainlink feed. The service records unsupported Strategies but does not trade them.
+
+Uniswap V4's PoolManager charges no flash-loan fee, and it is already the flash-loan source in the existing arbitrageur experiment (see References). Aave V3 was considered instead: it would let Fynd route the Market Leg through Uniswap V4 pools without restriction, since Aave's flash loan does not hold the PoolManager's own lock. It was not chosen because it adds a fee and a second borrowing protocol to operate. Instead, Fynd's route selection excludes Uniswap V4 pools for the Market Leg -- see the Fynd Route rule under Candidate evaluation.
 
 ## System topology
 
@@ -41,7 +43,7 @@ Envio and Fynd are local dependencies. They are not parts of the arbitrageur app
 | Balance State | Store supported-token balances for each Strategy Wallet. | Envio, Base RPC, and Postgres |
 | Price State | Store usable Chainlink Price Snapshots. | Envio and Postgres |
 | Candidate Evaluation | Screen a Strategy State, find a Fynd Route, solve the input size, and rank Candidates. | Fynd, Postgres, Redis, and shared math |
-| Transaction Simulation | Validate a Candidate against current Base state. | Base RPC, Aave V3, executor, and Postgres |
+| Transaction Simulation | Validate a Candidate against current Base state. | Base RPC, Uniswap V4 PoolManager, executor, and Postgres |
 | Execution | Serialize nonces, send transactions, track results, and retry. | Base RPC, Redis, Postgres, and Slack |
 | Operations API | Return authenticated, read-only operational data. | Postgres and health checks |
 | Notification | Send transaction and critical-fault messages. | Slack |
@@ -148,9 +150,9 @@ A Strategy, balance, or oracle event starts evaluation. A low-rate recovery job 
 
 The evaluator first uses Price Snapshots and TypeScript contract math. It excludes a Strategy State when the possible price difference cannot meet fees and the Profit Floor. It calls Fynd only for remaining inputs.
 
-The evaluator tests exact input amounts within Strategy limits, Strategy Wallet balance, Aave V3 liquidity, and route liquidity. It selects the amount with the highest Profit Headroom. `ProfitHeadroom` is expected return after principal less the return-token value of the Profit Floor.
+The evaluator tests exact input amounts within Strategy limits, Strategy Wallet balance, Uniswap V4 PoolManager liquidity, and route liquidity. It selects the amount with the highest Profit Headroom. `ProfitHeadroom` is expected return after principal less the return-token value of the Profit Floor.
 
-Fynd finds the allowed market pools and returns an executable Fynd Route. The service configures its timeout and minimum response count. A route that cannot run in the executor is not eligible.
+Fynd finds the allowed market pools and returns an executable Fynd Route. The service configures its timeout, minimum response count, and pool allow list. The pool allow list excludes Uniswap V4: the PoolManager allows only one active `unlock` session at a time, and the executor's own flash loan already holds that session for the full trade, so a Fynd Route that opens a second `unlock` session (Fynd's Uniswap V4 execution path does this per swap group) reverts with `AlreadyUnlocked`. A route that cannot run in the executor is not eligible.
 
 ## Price and slippage rules
 
@@ -164,14 +166,14 @@ TypeScript quote code must match Solidity integer math. Shared test vectors and 
 
 ## Atomic execution
 
-Each executor version is an immutable Aave V3 contract. Postgres stores its address and version with every Execution Attempt.
+Each executor version is an immutable contract that borrows from Uniswap V4's PoolManager. Postgres stores its address and version with every Execution Attempt.
 
 ```mermaid
 sequenceDiagram
     participant App as Arbitrageur application
     participant RPC as Base RPC
-    participant Executor as Aave executor
-    participant Aave as Aave V3
+    participant Executor as V4 executor
+    participant PoolManager as Uniswap V4 PoolManager
     participant Strategy as Aqua Strategy
     participant Fynd as Fynd settlement
 
@@ -179,20 +181,20 @@ sequenceDiagram
     RPC->>Executor: Simulate call
     App->>RPC: Submit transaction
     RPC->>Executor: Execute call
-    Executor->>Aave: Borrow input asset
-    Aave->>Executor: Flash-loan callback
+    Executor->>PoolManager: unlock and take input asset
+    PoolManager->>Executor: unlockCallback
     Executor->>Strategy: Run Strategy Leg
     Strategy-->>Executor: Output asset
     Executor->>Fynd: Run encoded Market Leg
     Fynd-->>Executor: Borrowed asset
-    Executor->>Aave: Repay principal and fee
+    Executor->>PoolManager: sync, transfer, and settle (no fee)
     Executor->>Executor: Check minProfit
     Executor-->>RPC: Commit or revert
 ```
 
-The executor borrows one input asset, runs the Strategy Leg, runs the Fynd Route, repays Aave V3, and checks `minProfit`. A failed step reverts the full transaction.
+The executor borrows one input asset, runs the Strategy Leg, runs the Fynd Route, repays the PoolManager, and checks `minProfit`. A failed step reverts the full transaction.
 
-The executor has only required ERC-20 approvals for the approved Fynd settlement contract and supported tokens. It must call the Fynd Route in the Aave callback. It must not use a separate EOA swap.
+The executor has only required ERC-20 approvals for the approved Fynd settlement contract and supported tokens. It must call the Fynd Route inside the PoolManager's `unlockCallback`. It must not use a separate EOA swap.
 
 The application rebuilds the transaction and runs `eth_call` against the latest Base state before submission. The contract also checks oracle freshness and `minProfit` during simulation and execution.
 
@@ -204,7 +206,7 @@ The service records a submitted transaction and sends a Slack message. It marks 
 
 A failed Execution Attempt records its reason and enters the retry flow. The service never submits the same parameters again.
 
-The service pauses new submissions when Envio, Price State, Fynd, Base RPC, Aave V3 simulation, or token configuration is unhealthy. It continues to index data and record Candidates. It resumes after healthy checks pass.
+The service pauses new submissions when Envio, Price State, Fynd, Base RPC, Uniswap V4 simulation, or token configuration is unhealthy. It continues to index data and record Candidates. It resumes after healthy checks pass.
 
 Configuration contains freshness limits, Fynd limits, slippage limits, Profit Floor, retry count, confirmation depth, and recovery interval.
 
@@ -227,9 +229,9 @@ The API does not return secrets.
 
 The service requires Envio, Fynd, Postgres, Redis, and a Base RPC provider. It does not require application-level horizontal scaling. BullMQ separates work and protects the single shared wallet from nonce conflicts.
 
-The service must validate Aave V3 reserve support, Fynd route encoding, and executor approvals for each allow-listed token before it enables transaction submission.
+The service must validate Uniswap V4 PoolManager liquidity, Fynd route encoding and pool-allow-list enforcement, and executor approvals for each allow-listed token before it enables transaction submission.
 
-Transaction submission is allowed only when the service discovers supported Strategies without restart, builds current Strategy State from indexed data, proves quote parity, simulates the full Aave V3 and Fynd transaction, bounds retries, pauses on stale dependencies, and stores every Execution Attempt.
+Transaction submission is allowed only when the service discovers supported Strategies without restart, builds current Strategy State from indexed data, proves quote parity, simulates the full Uniswap V4 flash-loan and Fynd transaction, bounds retries, pauses on stale dependencies, and stores every Execution Attempt.
 
 ## References
 
