@@ -482,10 +482,51 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     // ===== Fuzz: depeg divergence inside a multi-token group =====
 
-    /// @notice Fuzzes independently-diverging group0 prices (a depeg) through the real
-    /// `OracleAdapter` path; accepts `PortfolioManagerSwapInsufficientMemberBalance` or a
-    /// zero-amount second leg as non-violating reverts.
-    function testFuzz_DepegDivergenceWithinGroupNeverProfitsRoundTripTrader(
+    /// @notice Narrow-bound counterpart to the wide-bound test below. Balances stay large and
+    /// even, and the depeg stays modest, so both legs always complete -- this is what actually
+    /// proves round-trip non-profitability (ADR-0007). The wide-bound test only proves the check
+    /// does not panic.
+    /// @dev No try/catch: a revert here is a real finding, not an accepted outcome.
+    function testFuzz_DepegDivergenceWithinGroupGuaranteedRoundTripNeverProfits(
+        uint256 balA,
+        uint256 balB,
+        uint256 balC,
+        uint256 priceA,
+        uint256 priceB,
+        uint256 amountIn
+    ) public {
+        balA = bound(balA, 100_000e18, 1_000_000e18);
+        balB = bound(balB, 100_000e18, 1_000_000e18);
+        balC = bound(balC, 100_000e18, 1_000_000e18);
+        // Modest depeg -- still genuine price divergence, tight enough that a member's raw-
+        // balance share can't fall far enough behind its group-value share to trip
+        // InsufficientMemberBalance at these balance ranges.
+        priceA = bound(priceA, 0.5e18, 2e18);
+        priceB = bound(priceB, 0.5e18, 2e18);
+        feedA.setAnswer(int256(priceA), block.timestamp);
+        feedB.setAnswer(int256(priceB), block.timestamp);
+
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, balA, balB, balC);
+
+        // A real fraction of balC, not near-dust -- large enough that neither leg rounds to zero.
+        amountIn = bound(amountIn, balC / 1000, balC / 100);
+
+        (, uint256 amountOutA) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
+        (, uint256 amountBackC) = _swapExactIn(order, address(tokenA), address(tokenC), amountOutA);
+
+        assertLe(
+            amountBackC, amountIn, "round-tripping through a depegged multi-token group must not profit the trader"
+        );
+    }
+
+    /// @notice Wide-bound stress test: group0 prices diverge up to a 90% haircut or 10x blowup.
+    /// Extreme skew makes `InsufficientMemberBalance` and zero-amount reverts common, so this
+    /// mainly checks the guard does not panic, not the round-trip invariant itself (see the
+    /// narrow-bound test above for that).
+    /// @dev Accepts `PortfolioManagerSwapInsufficientMemberBalance` or a zero-amount second leg
+    ///      as non-violating reverts, asserted by selector, not caught blindly.
+    function testFuzz_DepegDivergenceWithinGroupNeverPanicsAcrossExtremeSkew(
         uint256 balA,
         uint256 balB,
         uint256 balC,
