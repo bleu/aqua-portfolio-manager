@@ -51,18 +51,16 @@ export interface FlashExecuteResult {
   txHash: Hex;
 }
 
-/// Submits `executeFlashArbitrage` and waits for it to be mined -- this never touches the owner
-/// EOA's own token balance or allowances: the traded token is borrowed and repaid entirely
-/// inside the one transaction, on-chain (see Arbitrageur.sol's own doc comments on
-/// `receiveFlashLoan`). No TS wrapper for the contract's self-funded `executeArbitrage`: the
-/// bot's loop runs exclusively via this flash-loan path.
-export async function executeFlashArbitrage(
-  clients: ReturnType<typeof makeClients>,
+/// Transaction Simulation domain (ADR-0014): `eth_call`s `executeFlashArbitrage` without
+/// submitting anything -- no gas spent, safe to run on every Candidate. Returns the exact
+/// request `submitFlashArbitrage` below can replay, or throws (a revert reason from the real
+/// contract, not a guess) if the Candidate wouldn't actually succeed right now.
+export async function simulateFlashArbitrage(
+  publicClient: PublicClient,
+  account: ReturnType<typeof privateKeyToAccount>,
   arbitrageurAddress: Address,
   params: FlashArbParams,
-): Promise<FlashExecuteResult> {
-  const { account, publicClient, walletClient } = clients;
-
+) {
   const { request } = await publicClient.simulateContract({
     address: arbitrageurAddress,
     abi: arbitrageurAbi,
@@ -70,9 +68,34 @@ export async function executeFlashArbitrage(
     args: [params],
     account,
   });
+  return request;
+}
 
+/// Execution domain (ADR-0014): submits an already-simulated request and waits for it to be
+/// mined. Split from simulation deliberately -- Transaction Simulation and Execution are
+/// separate domains with separate queues (simulate-candidate, execute-candidate), and only
+/// Execution's worker (concurrency 1, per the ADR's "one wallet owns all nonces" rule) should
+/// ever actually submit.
+export async function submitFlashArbitrage(
+  walletClient: ReturnType<typeof makeClients>["walletClient"],
+  publicClient: PublicClient,
+  request: Awaited<ReturnType<typeof simulateFlashArbitrage>>,
+): Promise<FlashExecuteResult> {
   const txHash = await walletClient.writeContract(request);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
-
   return { txHash };
+}
+
+/// Convenience wrapper combining both steps -- kept for the static-config experiment's own
+/// single-process loop (src/index.ts), which simulates and submits in the same tick with no
+/// separate queue in between. New code should call simulateFlashArbitrage/submitFlashArbitrage
+/// separately, through their own queues.
+export async function executeFlashArbitrage(
+  clients: ReturnType<typeof makeClients>,
+  arbitrageurAddress: Address,
+  params: FlashArbParams,
+): Promise<FlashExecuteResult> {
+  const { account, publicClient, walletClient } = clients;
+  const request = await simulateFlashArbitrage(publicClient, account, arbitrageurAddress, params);
+  return submitFlashArbitrage(walletClient, publicClient, request);
 }
