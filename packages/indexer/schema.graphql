@@ -37,3 +37,29 @@ type WalletBalanceChange {
   transactionHash: String!
   logIndex: Int!
 }
+
+# Maps a live Chainlink aggregator address to the feed proxy it currently backs. The well-known
+# feed addresses (the ones this repo's contracts and tests use) are `EACAggregatorProxy`
+# contracts that never emit `AnswerUpdated` themselves -- only their current underlying
+# aggregator does, and Chainlink can swap that aggregator over time. `AnswerUpdated` only
+# identifies the emitting aggregator, not which feed it's for, so this table is how the handler
+# recovers that. Seeded with each feed's aggregator as of setup (see config.yaml); updated
+# whenever a proxy's `AggregatorConfirmed` fires.
+type ChainlinkAggregatorFeed {
+  id: ID! # the aggregator address, lowercase
+  feedProxy: String! @index # the well-known feed (proxy) address this aggregator currently backs
+}
+
+# One row per Chainlink price update for an allow-listed token's feed -- ADR-0014's "Oracle
+# Price" record. `feedProxy` is the well-known, stable feed address, not the (swappable)
+# aggregator that actually emitted the event -- see ChainlinkAggregatorFeed.
+type PriceSnapshot {
+  id: ID! # `${transactionHash}-${logIndex}`
+  feedProxy: String! @index
+  answer: BigInt!
+  updatedAt: BigInt! # Chainlink's own reported update time, from AnswerUpdated's own arg
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: String!
+  logIndex: Int!
+}
