@@ -22,3 +22,4 @@ Follow the [documentation style](../STYLE.md).
 | [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Accepted |
 | [0013](0013-build-parameter-attestation-gate.md) | Require parameter attestation before trading | Accepted |
 | [0014](0014-production-arbitrageur-design.md) | Run the production arbitrageur on Base | Proposed |
+| [0015](0015-two-program-builders-for-the-resolver-kyc-gate.md) | Ship both a gated and an ungated PM strategy builder | Accepted |
