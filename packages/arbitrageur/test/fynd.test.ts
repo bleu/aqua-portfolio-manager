@@ -33,8 +33,40 @@ describe("getFyndSwapCalldata", () => {
 
     expect(quoteMock).toHaveBeenCalledWith({
       order: { tokenIn: TOKEN_A, tokenOut: TOKEN_B, amount: 1000n, side: "sell", sender: SENDER },
-      options: { encodingOptions: expect.objectContaining({ slippage: 0.005, transferType: "transfer_from" }) },
+      options: {
+        encodingOptions: expect.objectContaining({ slippage: 0.005, transferType: "transfer_from" }),
+        routeFilter: { excludeProtocols: ["uniswap_v4"] },
+        minResponses: undefined,
+        timeoutMs: undefined,
+      },
     });
+  });
+
+  it("passes minResponses and timeoutMs through when the caller sets them", async () => {
+    const quoteMock = vi.fn(async () => ({
+      transaction: { to: ROUTER, value: 0n, data: "0xdead" },
+      amountOut: 999n,
+    }));
+    const client = fakeClient({ quote: quoteMock, info: vi.fn(async () => ({ routerAddress: ROUTER })) });
+
+    await getFyndSwapCalldata(client, { ...baseParams, minResponses: 3, timeoutMs: 5000 });
+
+    expect(quoteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ options: expect.objectContaining({ minResponses: 3, timeoutMs: 5000 }) }),
+    );
+  });
+
+  it("throws FyndError when the route uses an excluded protocol despite routeFilter", async () => {
+    const client = fakeClient({
+      quote: vi.fn(async () => ({
+        transaction: { to: ROUTER, value: 0n, data: "0xdead" },
+        amountOut: 999n,
+        route: { swaps: [{ componentId: "c1", protocol: "uniswap_v4", tokenIn: TOKEN_A, tokenOut: TOKEN_B }] },
+      })),
+      info: vi.fn(async () => ({ routerAddress: ROUTER })),
+    });
+
+    await expect(getFyndSwapCalldata(client, baseParams)).rejects.toThrow(FyndError);
   });
 
   it("throws FyndError when the quote has no transaction (encodingOptions not honored)", async () => {

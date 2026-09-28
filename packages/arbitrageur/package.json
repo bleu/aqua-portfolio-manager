@@ -3,20 +3,31 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Off-chain taker that fills trades on a deployed PM strategy's orders, exercising it against the real chain",
+  "description": "Off-chain taker that discovers Aqua strategies via the indexer, evaluates arbitrage against them, and executes profitable trades",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
     "@kayibal/fynd-client": "^0.107.1",
+    "bullmq": "^6.3.9",
+    "drizzle-orm": "^0.45.3",
+    "graphql-request": "^7.4.0",
+    "hono": "^4.13.10",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
     "viem": "^2.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^5.6.0",
     "tsx": "^4.19.0",
     "vitest": "^2.1.0"

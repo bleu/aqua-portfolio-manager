@@ -1,0 +1,113 @@
+import { pgTable, text, boolean, bigint, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
+
+/// One row per indexed Aqua strategy, mirrored from `packages/indexer`'s `Strategy` entity via
+/// the `sync-indexer` job (see `src/sync/indexer.ts`). ADR-0014's Strategy Catalog domain.
+/// `id` matches the indexer's own composite id (`${maker}-${app}-${strategyHash}`, lowercase) so
+/// syncing is a plain upsert, never a lookup-then-insert.
+export const strategies = pgTable("strategies", {
+  id: text("id").primaryKey(),
+  maker: text("maker").notNull(),
+  app: text("app").notNull(),
+  strategyHash: text("strategy_hash").notNull(),
+  tokens: jsonb("tokens").$type<string[]>().notNull(),
+  isActive: boolean("is_active").notNull(),
+  // Populated once the Strategy Catalog domain decodes `program` (see `src/domains/strategyCatalog.ts`)
+  // -- null until then, and permanently null for a Strategy this bot can't trade (see `eligibility`).
+  program: text("program"),
+  resolverKycToken: text("resolver_kyc_token"),
+  // null while still eligible; set to a short machine-readable reason otherwise (e.g.
+  // "unsupported-token", "decode-failed") -- ADR-0014's "malformed or unsupported Strategy stays
+  // in the catalog with an eligibility reason" rule. A Strategy Catalog row always exists once
+  // Shipped fires; eligibility is evaluated, and can change, independently of that.
+  ineligibilityReason: text("ineligibility_reason"),
+  shippedAt: bigint("shipped_at", { mode: "bigint" }).notNull(),
+  dockedAt: bigint("docked_at", { mode: "bigint" }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/// Materialized current balance per (wallet, token) -- ADR-0014's Balance State domain. Not a
+/// history table: seeded by a one-time multicall at Strategy discovery, then kept current by
+/// applying each new indexed `WalletBalanceChange` delta as `sync-indexer` pulls it in. See that
+/// job for why a materialized total, not stored deltas, is the right shape here.
+export const strategyWalletBalances = pgTable(
+  "strategy_wallet_balances",
+  {
+    wallet: text("wallet").notNull(),
+    token: text("token").notNull(),
+    balance: bigint("balance", { mode: "bigint" }).notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.wallet, table.token] })],
+);
+
+/// Latest usable price per feed -- ADR-0014's Price State domain. Not a history table: Candidate
+/// Evaluation only ever wants "the newest usable Price Snapshot" (ADR-0014's own Price and
+/// slippage rules section), so this holds exactly that, one row per feed, overwritten on every
+/// new indexed `PriceSnapshot` `sync-indexer` pulls in. Full history stays in the indexer itself.
+export const feedPrices = pgTable("feed_prices", {
+  feedProxy: text("feed_proxy").primaryKey(),
+  priceWad: bigint("price_wad", { mode: "bigint" }).notNull(), // 18-decimal normalized, matches src/oracle.ts's own normalization
+  updatedAt: bigint("updated_at", { mode: "bigint" }).notNull(), // Chainlink's own reported update time
+  blockTimestamp: bigint("block_timestamp", { mode: "bigint" }).notNull(),
+});
+
+/// Durable cursor for `sync-indexer` -- one row per synced Envio entity type, so a restart
+/// resumes each independently instead of re-pulling everything or blocking on the slowest one.
+export const syncCursors = pgTable("sync_cursors", {
+  entity: text("entity").primaryKey(), // "Strategy" | "WalletBalanceChange" | "PriceSnapshot"
+  cursor: text("cursor").notNull(), // opaque: the last-synced row's own id, used as a `> cursor` filter
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/// One row per ranked Candidate a Candidate Evaluation tick produced -- ADR-0014's Candidate
+/// Evaluation output, consumed by `simulate-candidate` and read by the Operations API.
+export const candidates = pgTable("candidates", {
+  id: text("id").primaryKey(), // `${strategyId}-${tokenIn}-${tokenOut}-${stateVersion}`
+  strategyId: text("strategy_id")
+    .notNull()
+    .references(() => strategies.id),
+  tokenIn: text("token_in").notNull(),
+  tokenOut: text("token_out").notNull(),
+  amountIn: bigint("amount_in", { mode: "bigint" }).notNull(),
+  quotedOut: bigint("quoted_out", { mode: "bigint" }).notNull(),
+  fairOut: bigint("fair_out", { mode: "bigint" }).notNull(),
+  profitUsdWad: bigint("profit_usd_wad", { mode: "bigint" }).notNull(),
+  profitHeadroomUsdWad: bigint("profit_headroom_usd_wad", { mode: "bigint" }).notNull(),
+  stateVersion: text("state_version").notNull(),
+  // null until `simulate-candidate` runs; "eligible" | "simulated" | "simulation_failed" |
+  // "executed" | "execution_failed" | "superseded" (a newer State Version replaced this one
+  // before it reached execution -- see `evaluate-strategy`'s "replace an older State Version" rule).
+  status: text("status").notNull().default("eligible"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/// One row per `execute-candidate` attempt -- ADR-0014's Execution domain output and Operations
+/// API `/v1/execution-attempts` source. A retried Candidate produces multiple rows here, one per
+/// attempt, per the ADR's "the service never submits the same parameters again" rule (a retry
+/// re-evaluates and re-simulates, producing a new Candidate and a new attempt, not a resubmission
+/// of this same row).
+export const executionAttempts = pgTable("execution_attempts", {
+  id: text("id").primaryKey(),
+  candidateId: text("candidate_id")
+    .notNull()
+    .references(() => candidates.id),
+  executorAddress: text("executor_address").notNull(),
+  executorVersion: text("executor_version").notNull(),
+  txHash: text("tx_hash"),
+  // "submitted" | "confirmed" | "final" | "failed" -- "final" only once the indexer itself
+  // reaches the configured confirmation depth (ADR-0014's Operations section), not just one
+  // on-chain confirmation.
+  status: text("status").notNull(),
+  failureReason: text("failure_reason"),
+  submittedAt: timestamp("submitted_at"),
+  confirmedAt: timestamp("confirmed_at"),
+  finalizedAt: timestamp("finalized_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type StrategyRow = typeof strategies.$inferSelect;
+export type StrategyWalletBalanceRow = typeof strategyWalletBalances.$inferSelect;
+export type FeedPriceRow = typeof feedPrices.$inferSelect;
+export type CandidateRow = typeof candidates.$inferSelect;
+export type ExecutionAttemptRow = typeof executionAttempts.$inferSelect;

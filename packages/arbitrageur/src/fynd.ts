@@ -20,7 +20,16 @@ export interface FyndQuoteParams {
   amountIn: bigint;
   sender: Address;
   slippageBps: bigint;
+  minResponses?: number;
+  timeoutMs?: number;
 }
+
+/// Uniswap V4's PoolManager allows only one active `unlock` session at a time. The executor's
+/// own flash loan already holds that session for the full trade (see ADR-0014's Decision), so a
+/// Fynd-routed Market Leg that itself opens a second one -- Fynd's Uniswap V4 execution path
+/// does this per swap group -- would revert with `AlreadyUnlocked`. Excluded here, not worked
+/// around, since the executor has no way to nest into an already-open session.
+const EXCLUDED_PROTOCOLS = ["uniswap_v4"];
 
 /// One quote call to a locally-running Fynd server, via `@kayibal/fynd-client`. `sender` must be
 /// the `Arbitrageur` contract's own address, not the EOA running this server -- it's the
@@ -29,12 +38,17 @@ export interface FyndQuoteParams {
 /// `approve()`, never Permit2 -- a contract holding funds mid-transaction has no EOA available
 /// to produce a Permit2 signature with.
 export async function getFyndSwapCalldata(client: FyndClient, params: FyndQuoteParams): Promise<FyndQuote> {
-  const { tokenIn, tokenOut, amountIn, sender, slippageBps } = params;
+  const { tokenIn, tokenOut, amountIn, sender, slippageBps, minResponses, timeoutMs } = params;
 
   const [quote, info] = await Promise.all([
     client.quote({
       order: { tokenIn, tokenOut, amount: amountIn, side: "sell", sender },
-      options: { encodingOptions: encodingOptions(Number(slippageBps) / 10_000) },
+      options: {
+        encodingOptions: encodingOptions(Number(slippageBps) / 10_000),
+        routeFilter: { excludeProtocols: EXCLUDED_PROTOCOLS },
+        minResponses,
+        timeoutMs,
+      },
     }),
     client.info(),
   ]);
@@ -49,6 +63,15 @@ export async function getFyndSwapCalldata(client: FyndClient, params: FyndQuoteP
   }
   if (!info.routerAddress) {
     throw FyndError.config("Fynd instance has no routerAddress -- quote-only chain?");
+  }
+  // Defense in depth: `routeFilter` is a request, not a guarantee the solver honors it. A route
+  // that touches the excluded protocol anyway must never reach the executor, since it would
+  // revert the whole flash-loan transaction rather than just this leg.
+  const usedExcludedProtocol = quote.route?.swaps.some((swap) => EXCLUDED_PROTOCOLS.includes(swap.protocol));
+  if (usedExcludedProtocol) {
+    throw FyndError.config(
+      `Fynd route used an excluded protocol despite routeFilter (route: ${JSON.stringify(quote.route?.swaps.map((s) => s.protocol))})`,
+    );
   }
 
   return {
