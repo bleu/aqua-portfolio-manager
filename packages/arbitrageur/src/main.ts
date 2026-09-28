@@ -20,7 +20,14 @@ async function main() {
   const queues = makeQueues(redis);
   const clients = makeClients(config);
   const indexerClient = makeIndexerClient({ graphqlUrl: config.indexerGraphqlUrl, adminSecret: config.indexerAdminSecret });
-  const fyndClient = new FyndClient({ baseUrl: config.fyndUrl, chain: config.fyndChain, timeoutMs: config.fyndTimeoutMs });
+  // No `chain` here: FyndClient's per-chain routing is URL-rewriting middleware for
+  // PropellerHeads' hosted multi-chain gateway (e.g. https://gateway/<chain>/v1/quote). This
+  // README's own "Running a local Fynd server" section runs a self-hosted, single-chain instance
+  // (`fynd serve --chain base`), which serves plain, unprefixed paths (/v1/quote, /v1/info) --
+  // confirmed live: passing `chain` here made every real request 404 against a real local
+  // server, even though FYND_CHAIN is still real, correct config for which `--chain` flag to
+  // start that local server with.
+  const fyndClient = new FyndClient({ baseUrl: config.fyndUrl, timeoutMs: config.fyndTimeoutMs });
 
   console.log(
     `arbitrageur starting: executor=${config.arbitrageurAddress} allowedTokens=${config.allowedTokens.length} ` +

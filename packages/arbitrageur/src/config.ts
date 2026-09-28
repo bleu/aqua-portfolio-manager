@@ -119,7 +119,7 @@ export function loadConfig(): Config {
 
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL,
 
-    operationsApiPort: optionalInt("OPERATIONS_API_PORT", 3_000),
+    operationsApiPort: optionalInt("OPERATIONS_API_PORT", 3_001), // not 3000: Fynd's own local server default
     operationsApiToken: required("OPERATIONS_API_TOKEN"),
 
     dryRun: process.env.DRY_RUN === "true",

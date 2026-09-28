@@ -128,7 +128,8 @@ pnpm db:generate && pnpm db:migrate
 DRY_RUN=true pnpm dev
 ```
 
-Watch `/health` and `/v1/candidates` on the Operations API (`OPERATIONS_API_PORT`, default 3000)
+Watch `/health` and `/v1/candidates` on the Operations API (`OPERATIONS_API_PORT`, default 3001 --
+not 3000, since that's Fynd's own default port)
 to confirm it's discovering strategies and finding opportunities before setting `DRY_RUN=false`.
 
 ## Scripts

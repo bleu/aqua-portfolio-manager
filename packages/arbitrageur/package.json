@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Off-chain taker that discovers Aqua strategies via the indexer, evaluates arbitrage against them, and executes profitable trades",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "node dist/main.js",
+    "dev": "tsx watch --env-file=.env src/main.ts",
+    "start": "node --env-file=.env dist/main.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
