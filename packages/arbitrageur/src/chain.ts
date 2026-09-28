@@ -20,8 +20,17 @@ export async function tokenDecimals(client: PublicClient, token: Address): Promi
 
 /// Reads `Arbitrageur.quoteExactIn` via `eth_call` -- no transaction, no gas spent, safe to call
 /// on every search step.
+///
+/// `account` matters, not just style: `runLoop` executes every instruction in the program for a
+/// `quote()` call exactly like it does for a real `swap()`, so a resolver-KYC-gated strategy
+/// (ADR-0015) checks `tx.origin` here too, not only at execution time -- confirmed on a real Base
+/// fork while adding E2E coverage for the gate (packages/contracts/test/e2e/ArbitrageurFlashE2E.t.sol).
+/// An `eth_call`'s own `from` field is both msg.sender and tx.origin for that simulated call, so
+/// omitting `account` here would make every quote against a gated strategy revert, not just
+/// execution -- this isn't optional for gated strategies, even though it's inert for ungated ones.
 export async function quoteExactIn(
   publicClient: PublicClient,
+  account: ReturnType<typeof privateKeyToAccount>,
   arbitrageurAddress: Address,
   order: DecodedOrder,
   tokenIn: Address,
@@ -30,6 +39,7 @@ export async function quoteExactIn(
 ): Promise<bigint> {
   return publicClient.readContract({
     address: arbitrageurAddress,
+    account,
     abi: arbitrageurAbi,
     functionName: "quoteExactIn",
     args: [order, tokenIn, tokenOut, amountIn],

@@ -1,5 +1,5 @@
 {
-  "id": "617c2299-04ef-4001-8b88-92597b1366fb",
+  "id": "6f8c6190-39ca-46bb-b83f-645d6c4b0788",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -97,6 +97,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "retry_count": {
+          "name": "retry_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "status": {
           "name": "status",

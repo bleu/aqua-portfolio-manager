@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, bigint, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, bigint, integer, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
 
 /// One row per indexed Aqua strategy, mirrored from `packages/indexer`'s `Strategy` entity via
 /// the `sync-indexer` job (see `src/sync/indexer.ts`). ADR-0014's Strategy Catalog domain.
@@ -84,6 +84,11 @@ export const candidates = pgTable("candidates", {
   minCurveAmountOut: bigint("min_curve_amount_out", { mode: "bigint" }).notNull(),
   deadline: bigint("deadline", { mode: "bigint" }).notNull(), // unix seconds
   stateVersion: text("state_version").notNull(),
+  // Carried from the evaluate-strategy job that produced this Candidate, so a simulation or
+  // execution failure knows how many retries this Strategy State has already used (ADR-0014:
+  // "allows three retries for one Strategy State") without threading it through every downstream
+  // queue job payload.
+  retryCount: integer("retry_count").notNull().default(0),
   // null until `simulate-candidate` runs; "eligible" | "simulated" | "simulation_failed" |
   // "executed" | "execution_failed" | "superseded" (a newer State Version replaced this one
   // before it reached execution -- see `evaluate-strategy`'s "replace an older State Version" rule).

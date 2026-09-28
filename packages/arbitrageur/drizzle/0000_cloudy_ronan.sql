@@ -14,6 +14,7 @@ CREATE TABLE "candidates" (
 	"min_curve_amount_out" bigint NOT NULL,
 	"deadline" bigint NOT NULL,
 	"state_version" text NOT NULL,
+	"retry_count" integer DEFAULT 0 NOT NULL,
 	"status" text DEFAULT 'eligible' NOT NULL,
 	"rejection_reason" text,
 	"created_at" timestamp DEFAULT now() NOT NULL

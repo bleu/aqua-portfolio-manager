@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Address, Hex, PublicClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import type { Db } from "../db/client.js";
 import { strategies, feedPrices, candidates } from "../db/schema.js";
 import { decodeProgram, type DecodedGroup } from "./programDecoder.js";
@@ -86,9 +87,11 @@ export interface CandidateEvaluationConfig {
 export async function evaluateStrategy(
   db: Db,
   publicClient: PublicClient,
+  account: ReturnType<typeof privateKeyToAccount>,
   fyndClient: FyndClient,
   strategyId: string,
   stateVersion: string,
+  retryCount: number,
   config: CandidateEvaluationConfig,
 ): Promise<string | undefined> {
   const strategy = await db.query.strategies.findFirst({ where: eq(strategies.id, strategyId) });
@@ -127,7 +130,7 @@ export async function evaluateStrategy(
       priceOutWad: priceOut.priceWad,
       decimalsOut,
       quote: (amountIn) =>
-        quoteExactIn(publicClient, config.arbitrageurAddress, order, leg.tokenIn, leg.tokenOut, amountIn),
+        quoteExactIn(publicClient, account, config.arbitrageurAddress, order, leg.tokenIn, leg.tokenOut, amountIn),
     });
 
     if (opportunity && (!best || opportunity.profitUsdWad > best.opportunity.profitUsdWad)) {
@@ -180,6 +183,7 @@ export async function evaluateStrategy(
       minCurveAmountOut,
       deadline,
       stateVersion,
+      retryCount,
       status: "eligible",
     })
     .onConflictDoNothing();
