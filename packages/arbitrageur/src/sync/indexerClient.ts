@@ -16,7 +16,7 @@ export interface IndexedStrategy {
   maker: string;
   app: string;
   strategyHash: string;
-  program: string;
+  encodedOrder: string;
   tokens: string[];
   isActive: boolean;
   shippedAt: string; // BigInt serializes as a numeric string over GraphQL
@@ -30,7 +30,7 @@ const STRATEGIES_QUERY = gql`
       maker
       app
       strategyHash
-      program
+      encodedOrder
       tokens
       isActive
       shippedAt

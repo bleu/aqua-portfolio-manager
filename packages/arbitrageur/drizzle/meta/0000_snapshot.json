@@ -1,5 +1,5 @@
 {
-  "id": "e02e2678-d48e-4cac-959f-ce6c81f6d16f",
+  "id": "617c2299-04ef-4001-8b88-92597b1366fb",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -56,8 +56,38 @@
           "primaryKey": false,
           "notNull": true
         },
-        "profit_headroom_usd_wad": {
-          "name": "profit_headroom_usd_wad",
+        "profit_headroom": {
+          "name": "profit_headroom",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fynd_target": {
+          "name": "fynd_target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fynd_spender": {
+          "name": "fynd_spender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fynd_calldata": {
+          "name": "fynd_calldata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_curve_amount_out": {
+          "name": "min_curve_amount_out",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline": {
+          "name": "deadline",
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
@@ -282,11 +312,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "program": {
-          "name": "program",
+        "encoded_order": {
+          "name": "encoded_order",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "resolver_kyc_token": {
           "name": "resolver_kyc_token",

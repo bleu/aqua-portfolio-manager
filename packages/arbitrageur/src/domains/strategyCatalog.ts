@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import type { Db } from "../db/client.js";
 import { strategies, type StrategyRow } from "../db/schema.js";
 import { decodeProgram, ProgramDecodeError } from "./programDecoder.js";
+import { decodeOrder, extractProgram } from "./orderDecoder.js";
 
 export interface EligibilityResult {
   eligible: boolean;
@@ -25,29 +26,34 @@ export function evaluateEligibility(
   return { eligible: true, reason: undefined };
 }
 
-/// Strategy Catalog domain: decodes one Strategy row's raw `program` and writes back its
-/// resolver KYC token (if gated, per ADR-0015) and eligibility reason (if any). Idempotent --
-/// safe to re-run for a Strategy whose program hasn't changed (it can't: Aqua strategies are
-/// immutable once shipped), so a re-run after a crash just recomputes the same result.
+/// Strategy Catalog domain: decodes one Strategy row's `encodedOrder` (the ABI-encoded Order --
+/// see src/domains/orderDecoder.ts for why that's not the bare program bytes) down to its
+/// program, and writes back the resolver KYC token (if gated, per ADR-0015) and eligibility
+/// reason (if any). Idempotent -- safe to re-run for a Strategy whose order hasn't changed (it
+/// can't: Aqua strategies are immutable once shipped), so a re-run after a crash just recomputes
+/// the same result.
 export async function evaluateStrategyCatalog(
   db: Db,
   strategy: StrategyRow,
   allowedTokens: ReadonlySet<Address>,
 ): Promise<void> {
   try {
-    const decoded = decodeProgram(strategy.program as `0x${string}`);
+    const order = decodeOrder(strategy.encodedOrder as Hex);
+    const program = extractProgram(order.traits, order.data);
+    const decoded = decodeProgram(program);
     const { reason } = evaluateEligibility(decoded, allowedTokens);
     await db
       .update(strategies)
       .set({ resolverKycToken: decoded.resolverKycToken ?? null, ineligibilityReason: reason ?? null })
       .where(eq(strategies.id, strategy.id));
   } catch (err) {
-    // A malformed program should be structurally impossible for anything actually reachable
-    // from `Shipped` (PortfolioManagerStrategyValidator.attestBuildParameters gates real trading,
-    // per ADR-0013) -- but the indexer mirrors every Shipped event regardless of whether it was
-    // ever attested, so this path is real, not defensive dead code. ADR-0014's own rule: "stays
-    // in the catalog with an eligibility reason. It cannot create a Candidate."
-    const reason = err instanceof ProgramDecodeError ? `decode-failed:${err.message}` : `decode-failed:unknown`;
+    // A malformed order/program should be structurally impossible for anything actually
+    // reachable from `Shipped` (PortfolioManagerStrategyValidator.attestBuildParameters gates
+    // real trading, per ADR-0013) -- but the indexer mirrors every Shipped event regardless of
+    // whether it was ever attested, so this path is real, not defensive dead code. ADR-0014's own
+    // rule: "stays in the catalog with an eligibility reason. It cannot create a Candidate."
+    const message = err instanceof ProgramDecodeError ? err.message : err instanceof Error ? err.message : "unknown";
+    const reason = `decode-failed:${message}`;
     await db.update(strategies).set({ ineligibilityReason: reason }).where(eq(strategies.id, strategy.id));
   }
 }

@@ -6,7 +6,12 @@ type Strategy {
   maker: String! @index
   app: String! @index
   strategyHash: String!
-  program: String! # Shipped's own opaque program bytes -- ADR-0014's Strategy Payload "raw program data"
+  # Shipped's own `strategy` bytes -- ADR-0014's Strategy Payload "raw program data". Note this
+  # is `abi.encode(ISwapVM.Order)` (maker, packed traits, and the program bytecode buried inside
+  # `data`), not the bare SwapVM program bytecode alone -- Aqua hashes and emits exactly this blob
+  # (`strategyHash = keccak256(strategy)`, matching `ISwapVM.hash`'s "keccak256(abi.encode(order))
+  # for Aqua orders"). Consumers need to ABI-decode the Order first.
+  encodedOrder: String!
   tokens: [String!]! # declared at ship() time, via same-tx Pushed events (see EventHandlers.ts)
   isActive: Boolean! @index # true from Shipped; flips false on the matching Docked
   shippedAt: BigInt! # unix timestamp

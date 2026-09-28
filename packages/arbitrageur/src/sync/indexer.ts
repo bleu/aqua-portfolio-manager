@@ -40,7 +40,7 @@ export async function syncStrategies(db: Db, indexerClient: GraphQLClient): Prom
           maker: row.maker,
           app: row.app,
           strategyHash: row.strategyHash,
-          program: row.program,
+          encodedOrder: row.encodedOrder,
           tokens: row.tokens,
           isActive: row.isActive,
           shippedAt: BigInt(row.shippedAt),

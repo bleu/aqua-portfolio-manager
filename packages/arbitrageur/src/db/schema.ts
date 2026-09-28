@@ -11,9 +11,10 @@ export const strategies = pgTable("strategies", {
   strategyHash: text("strategy_hash").notNull(),
   tokens: jsonb("tokens").$type<string[]>().notNull(),
   isActive: boolean("is_active").notNull(),
-  // Populated once the Strategy Catalog domain decodes `program` (see `src/domains/strategyCatalog.ts`)
-  // -- null until then, and permanently null for a Strategy this bot can't trade (see `eligibility`).
-  program: text("program"),
+  // `abi.encode(ISwapVM.Order)` -- what Aqua's Shipped event actually carries (see
+  // src/domains/orderDecoder.ts's own doc comment for why this isn't the bare program bytes).
+  // Always set at sync time; src/domains/strategyCatalog.ts decodes it, doesn't wait for it.
+  encodedOrder: text("encoded_order").notNull(),
   resolverKycToken: text("resolver_kyc_token"),
   // null while still eligible; set to a short machine-readable reason otherwise (e.g.
   // "unsupported-token", "decode-failed") -- ADR-0014's "malformed or unsupported Strategy stays
@@ -69,10 +70,19 @@ export const candidates = pgTable("candidates", {
   tokenIn: text("token_in").notNull(),
   tokenOut: text("token_out").notNull(),
   amountIn: bigint("amount_in", { mode: "bigint" }).notNull(),
-  quotedOut: bigint("quoted_out", { mode: "bigint" }).notNull(),
+  quotedOut: bigint("quoted_out", { mode: "bigint" }).notNull(), // the PM curve's own quoted output, from the pre-filter pass
   fairOut: bigint("fair_out", { mode: "bigint" }).notNull(),
-  profitUsdWad: bigint("profit_usd_wad", { mode: "bigint" }).notNull(),
-  profitHeadroomUsdWad: bigint("profit_headroom_usd_wad", { mode: "bigint" }).notNull(),
+  profitUsdWad: bigint("profit_usd_wad", { mode: "bigint" }).notNull(), // pre-filter estimate: curve quote vs. oracle fair value
+  // ADR-0014's Profit Headroom: the real Fynd route's expected return, less principal, less the
+  // return-token (tokenIn) value of the Profit Floor -- ranks Candidates that passed the
+  // pre-filter and got a real Fynd quote. In tokenIn's own decimals, not USD: it's what the
+  // executor actually needs (amountIn) more/less than, not a dollar figure.
+  profitHeadroom: bigint("profit_headroom", { mode: "bigint" }).notNull(),
+  fyndTarget: text("fynd_target").notNull(),
+  fyndSpender: text("fynd_spender").notNull(),
+  fyndCalldata: text("fynd_calldata").notNull(),
+  minCurveAmountOut: bigint("min_curve_amount_out", { mode: "bigint" }).notNull(),
+  deadline: bigint("deadline", { mode: "bigint" }).notNull(), // unix seconds
   stateVersion: text("state_version").notNull(),
   // null until `simulate-candidate` runs; "eligible" | "simulated" | "simulation_failed" |
   // "executed" | "execution_failed" | "superseded" (a newer State Version replaced this one

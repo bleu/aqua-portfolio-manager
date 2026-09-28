@@ -1,7 +1,7 @@
 # Aqua strategy indexer
 
 Collects Aqua's `Shipped`, `Docked`, and `Pushed` events across all apps with Envio HyperIndex.
-Each `Strategy` records the maker wallet, app, raw program bytes, supported tokens, active status, and the transaction that registered (shipped) or disabled (docked) it.
+Each `Strategy` records the maker wallet, app, the encoded order (Aqua's own `Shipped.strategy` bytes -- `abi.encode(ISwapVM.Order)`, not bare program bytecode), supported tokens, active status, and the transaction that registered (shipped) or disabled (docked) it.
 
 Also collects `Transfer` events for the token allow list (USDC, USDT, WETH, WBTC on Base) into `WalletBalanceChange`, filtered to transfers touching a known Strategy Wallet (a maker with at least one indexed `Strategy`). Each row is a signed balance delta, not a running total -- a wallet's current balance for a token is the sum of its rows plus the one-time balance read taken at Strategy discovery (see [ADR-0014](../../docs/adr/0014-production-arbitrageur-design.md)). `StrategyWallet` is an internal lookup table only, marking known maker addresses so the `Transfer` handler can check membership without scanning every `Strategy`.
 
