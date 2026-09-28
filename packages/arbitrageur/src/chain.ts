@@ -1,7 +1,8 @@
 import { createPublicClient, createWalletClient, http, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrageurAbi, erc20Abi } from "./abi.js";
-import type { Config, Order } from "./config.js";
+import type { Config } from "./config.js";
+import type { DecodedOrder } from "./domains/orderDecoder.js";
 
 export function makeClients(config: Config) {
   const account = privateKeyToAccount(config.privateKey);
@@ -22,7 +23,7 @@ export async function tokenDecimals(client: PublicClient, token: Address): Promi
 export async function quoteExactIn(
   publicClient: PublicClient,
   arbitrageurAddress: Address,
-  order: Order,
+  order: DecodedOrder,
   tokenIn: Address,
   tokenOut: Address,
   amountIn: bigint,
@@ -36,7 +37,7 @@ export async function quoteExactIn(
 }
 
 export interface FlashArbParams {
-  order: Order;
+  order: DecodedOrder;
   tokenIn: Address;
   tokenOut: Address;
   amountIn: bigint;
@@ -84,18 +85,4 @@ export async function submitFlashArbitrage(
   const txHash = await walletClient.writeContract(request);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return { txHash };
-}
-
-/// Convenience wrapper combining both steps -- kept for the static-config experiment's own
-/// single-process loop (src/index.ts), which simulates and submits in the same tick with no
-/// separate queue in between. New code should call simulateFlashArbitrage/submitFlashArbitrage
-/// separately, through their own queues.
-export async function executeFlashArbitrage(
-  clients: ReturnType<typeof makeClients>,
-  arbitrageurAddress: Address,
-  params: FlashArbParams,
-): Promise<FlashExecuteResult> {
-  const { account, publicClient, walletClient } = clients;
-  const request = await simulateFlashArbitrage(publicClient, account, arbitrageurAddress, params);
-  return submitFlashArbitrage(walletClient, publicClient, request);
 }

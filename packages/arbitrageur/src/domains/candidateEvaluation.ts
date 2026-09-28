@@ -6,7 +6,7 @@ import { decodeProgram, type DecodedGroup } from "./programDecoder.js";
 import { decodeOrder, extractProgram } from "./orderDecoder.js";
 import { findBestOpportunity, type Opportunity } from "../pricing.js";
 import { getFyndSwapCalldata, type FyndClient } from "../fynd.js";
-import { quoteExactIn } from "../chain.js";
+import { quoteExactIn, tokenDecimals } from "../chain.js";
 
 export interface Leg {
   tokenIn: Address;
@@ -15,10 +15,9 @@ export interface Leg {
   feedOut: Address;
 }
 
-/// Same rule as the current experiment's buildLegsForStrategy (src/index.ts, kept there for the
-/// static-config path): every member of one group traded against every member of the other,
-/// both directions -- the PM curve only ever prices a trade between two *different* declared
-/// groups (PortfolioManagerSwap._resolve's groupInIdx != groupOutIdx check).
+/// Every member of one group traded against every member of the other, both directions -- the PM
+/// curve only ever prices a trade between two *different* declared groups
+/// (PortfolioManagerSwap._resolve's groupInIdx != groupOutIdx check).
 export function buildLegs(groups: DecodedGroup[]): Leg[] {
   const legs: Leg[] = [];
   for (let i = 0; i < groups.length; i++) {
@@ -114,16 +113,8 @@ export async function evaluateStrategy(
     if (!priceIn || !priceOut) continue; // one bad/missing feed skips only this leg, per #16b
 
     const [decimalsIn, decimalsOut] = await Promise.all([
-      publicClient.readContract({
-        address: leg.tokenIn,
-        abi: [{ name: "decimals", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] }],
-        functionName: "decimals",
-      }) as Promise<number>,
-      publicClient.readContract({
-        address: leg.tokenOut,
-        abi: [{ name: "decimals", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] }],
-        functionName: "decimals",
-      }) as Promise<number>,
+      tokenDecimals(publicClient, leg.tokenIn),
+      tokenDecimals(publicClient, leg.tokenOut),
     ]);
 
     const opportunity = await findBestOpportunity({
@@ -161,11 +152,7 @@ export async function evaluateStrategy(
   // is denominated in the return token (ADR-0014's Price and slippage rules), not USD.
   const priceIn = await readUsablePrice(db, leg.feedIn, nowSeconds, config.maxPriceStalenessSeconds);
   if (!priceIn) return undefined; // the feed went stale between the pre-filter pass and here
-  const decimalsIn = (await publicClient.readContract({
-    address: leg.tokenIn,
-    abi: [{ name: "decimals", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] }],
-    functionName: "decimals",
-  })) as number;
+  const decimalsIn = await tokenDecimals(publicClient, leg.tokenIn);
   const profitFloorInTokenIn = (config.minProfitUsdWad * 10n ** BigInt(decimalsIn)) / priceIn.priceWad;
   const profitHeadroom = fyndQuote.expectedAmountOut - opportunity.amountIn - profitFloorInTokenIn;
   if (profitHeadroom <= 0n) return undefined;
