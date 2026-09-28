@@ -6,6 +6,7 @@ type Strategy {
   maker: String! @index
   app: String! @index
   strategyHash: String!
+  program: String! # Shipped's own opaque program bytes -- ADR-0014's Strategy Payload "raw program data"
   tokens: [String!]! # declared at ship() time, via same-tx Pushed events (see EventHandlers.ts)
   isActive: Boolean! @index # true from Shipped; flips false on the matching Docked
   shippedAt: BigInt! # unix timestamp

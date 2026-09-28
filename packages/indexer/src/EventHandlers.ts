@@ -22,6 +22,7 @@ indexer.onEvent({ contract: "Aqua", event: "Shipped" }, async ({ event, context 
     maker: event.params.maker,
     app: event.params.app,
     strategyHash: event.params.strategyHash,
+    program: event.params.strategy,
     tokens: [], // filled in as this same transaction's Pushed events arrive, below
     isActive: true,
     shippedAt: BigInt(event.block.timestamp),
