@@ -6,6 +6,7 @@
   "description": "Off-chain taker that discovers Aqua strategies via the indexer, evaluates arbitrage against them, and executes profitable trades",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/main.ts",
+    "dev:resilient": "./run-resilient.sh",
     "start": "node --env-file=.env dist/main.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",

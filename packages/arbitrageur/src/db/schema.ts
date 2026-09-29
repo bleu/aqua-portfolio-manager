@@ -1,4 +1,10 @@
-import { pgTable, text, boolean, bigint, integer, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, bigint, numeric, integer, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
+
+/// Postgres `bigint` is a signed int64 (max ~9.22e18) -- too small for an 18-decimal WAD value
+/// representing anything above ~$9.22 (e.g. one ETH's WAD price, ~2.69e21, overflows it outright).
+/// `numeric` has no such ceiling; `{ mode: "bigint" }` still round-trips as a JS bigint like the
+/// `bigint` columns elsewhere in this file, so callers don't need to know which one a field uses.
+const usdWad = (name: string) => numeric(name, { mode: "bigint" });
 
 /// One row per indexed Aqua strategy, mirrored from `packages/indexer`'s `Strategy` entity via
 /// the `sync-indexer` job (see `src/sync/indexer.ts`). ADR-0014's Strategy Catalog domain.
@@ -47,7 +53,7 @@ export const strategyWalletBalances = pgTable(
 /// new indexed `PriceSnapshot` `sync-indexer` pulls in. Full history stays in the indexer itself.
 export const feedPrices = pgTable("feed_prices", {
   feedProxy: text("feed_proxy").primaryKey(),
-  priceWad: bigint("price_wad", { mode: "bigint" }).notNull(), // 18-decimal normalized, matches src/oracle.ts's own normalization
+  priceWad: usdWad("price_wad").notNull(), // 18-decimal normalized, matches src/oracle.ts's own normalization
   updatedAt: bigint("updated_at", { mode: "bigint" }).notNull(), // Chainlink's own reported update time
   blockTimestamp: bigint("block_timestamp", { mode: "bigint" }).notNull(),
 });
@@ -72,7 +78,7 @@ export const candidates = pgTable("candidates", {
   amountIn: bigint("amount_in", { mode: "bigint" }).notNull(),
   quotedOut: bigint("quoted_out", { mode: "bigint" }).notNull(), // the PM curve's own quoted output, from the pre-filter pass
   fairOut: bigint("fair_out", { mode: "bigint" }).notNull(),
-  profitUsdWad: bigint("profit_usd_wad", { mode: "bigint" }).notNull(), // pre-filter estimate: curve quote vs. oracle fair value
+  profitUsdWad: usdWad("profit_usd_wad").notNull(), // pre-filter estimate: curve quote vs. oracle fair value
   // ADR-0014's Profit Headroom: the real Fynd route's expected return, less principal, less the
   // return-token (tokenIn) value of the Profit Floor -- ranks Candidates that passed the
   // pre-filter and got a real Fynd quote. In tokenIn's own decimals, not USD: it's what the

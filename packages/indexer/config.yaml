@@ -60,28 +60,33 @@ contracts:
             - hash
 chains:
   - id: 8453 # Base -- matches Deploy.s.sol's AQUA_MAINNET default already in use for local dev.
-    # Aqua's real deployment block on Base, found via binary search on eth_getCode (empty at
-    # 38281776, present at 38281777) -- avoids wasting sync time indexing from genesis.
-    start_block: 38281777
+    # This Portfolio Manager Router's own deployment block on Base (packages/contracts/script/
+    # Deploy.s.sol's broadcast receipt), not Aqua's -- nothing could have shipped through this
+    # Router before it existed, so indexing Aqua's full history from its own 38281777 deployment
+    # block wastes sync time on strategies from other apps we'll never touch. The handler doesn't
+    # filter Shipped by `app` (see src/EventHandlers.ts), so other apps' strategies shipped after
+    # this block still get indexed -- only the ones before it are skipped.
+    start_block: 51925518
     contracts:
       - name: Aqua
         address:
           - "0x499943e74fb0ce105688beee8ef2abec5d936d31"
       - name: ERC20
         # Base mainnet addresses, matching the constants PortfolioManagerMultiTokenBasketE2E.t.sol
-        # already verifies against a real fork.
+        # already verifies against a real fork, except cbBTC replaces WBTC as the real basket's
+        # BTC leg (cbBTC is the more liquid, more actively traded BTC exposure on Base).
         address:
           - "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" # USDC
           - "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" # USDT
           - "0x4200000000000000000000000000000000000006" # WETH
-          - "0x1ceA84203673764244E05693e42E6Ace62bE9BA5" # WBTC
+          - "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf" # cbBTC
       - name: ChainlinkProxy
         # Base mainnet feed addresses, matching the constants PortfolioManagerMultiTokenBasketE2E.t.sol
-        # already verifies against a real fork. All four feeds are 8-decimal, USD-quoted (verified
-        # via decimals()).
+        # already verifies against a real fork, except cbBTC/USD replaces BTC/USD (see ERC20 above).
+        # All four feeds are 8-decimal, USD-quoted (verified via decimals()).
         address:
           - "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70" # ETH/USD, WETH's feed
-          - "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F" # BTC/USD, WBTC's feed
+          - "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D" # cbBTC/USD, cbBTC's feed
           - "0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9" # USDT/USD
           - "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B" # USDC/USD
       - name: ChainlinkAggregator
@@ -92,6 +97,6 @@ chains:
         # Every swap from here forward is, via ChainlinkProxy's AggregatorConfirmed handler.
         address:
           - "0x05c84a58FE042275b37db038bAAcD15F410c7bB0" # ETH/USD
-          - "0xe5ec87a39445b8D5b751b116802A53C5ae7e9Df1" # BTC/USD
+          - "0x51cE3091Cf646587E02Cad83b580992f8723e718" # cbBTC/USD
           - "0x84640bB7b71B0963E8EB57AD379A0B204eb2fdc8" # USDT/USD
           - "0x68bE4C50235205Ede361ac8244B1ee221CDDA5E2" # USDC/USD

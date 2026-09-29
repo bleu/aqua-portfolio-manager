@@ -100,17 +100,29 @@ for the full setup.
 
 ## Opportunity search
 
-Candidate Evaluation's pre-filter (`findBestOpportunity` in `pricing.ts`) probes `SEARCH_STEPS`
-geometrically-spaced trade sizes between `MIN_TRADE_AMOUNT` and `MAX_TRADE_AMOUNT` and picks
-whichever size clears `MIN_PROFIT_USD` by the widest margin against the *oracle's* fair value --
-a cheap screen using a live `quoteExactIn` eth_call, not a TypeScript reimplementation of the
-curve's own pricing formula (a real, separate optimization, not done here -- see
-`candidateEvaluation.ts`'s own doc comment). Only a leg that passes this screen gets a real Fynd
-quote, ranked by Profit Headroom: the Fynd route's actual expected return, less principal, less
-the return-token value of the Profit Floor.
+Candidate Evaluation's pre-filter computes each leg's optimal trade size directly instead of
+searching for it. The curve prices a swap on the two groups' total oracle value, not per-token
+balances (`PortfolioManagerSwap._groupValueWad`), and that's exactly Balancer's weighted constant-
+product AMM applied to group values (`PortfolioManagerPricing.sol`'s `spotPrice`/`exactIn` mirror
+the Balancer whitepaper's eq.2/eq.15 formulas). Balancer's own closed-form "In-Given-Price" formula
+(eq.21) gives the trade size that brings a weighted pool's spot price to a target directly, with no
+search: `pricing.ts`'s `inGivenPriceValueWad` is that formula, adapted for this curve's group-level
+values and its fee-on-input (the whitepaper's base formula excludes fees). The target is always
+perfect group-weight equilibrium -- this design's own definition of "fair" (see the price-deviation
+circuit breaker, which checks the same ratio against 1), not an external market price.
+
+`MIN_TRADE_USD`/`MAX_TRADE_USD` no longer scope a search; they gate the analytic result instead --
+`MIN_TRADE_USD` skips an optimum too small to be worth a quote and gas, `MAX_TRADE_USD` caps risk
+per trade even when the curve math favors a bigger one. Whichever direction the formula returns a
+positive size for gets exactly one real `quoteExactIn` verification (not the dozen a geometric
+search used to cost), scored against the *oracle's* fair value the same way as before. Only a leg
+that passes gets a real Fynd quote, ranked by Profit Headroom: the Fynd route's actual expected
+return, less principal, less the return-token value of the Profit Floor.
 
 **Oracle pre-filter isolates one bad feed.** A leg whose feed is stale or missing in Postgres is
-skipped for that evaluation; a healthy leg on a different feed is never affected.
+skipped for that evaluation -- and since a group's value is the sum of every member's own value,
+one bad feed disqualifies every leg touching that member's *group*, not just that one token pair.
+A healthy leg on an unrelated group is never affected.
 
 ## Running the full stack
 
@@ -135,6 +147,10 @@ to confirm it's discovering strategies and finding opportunities before setting 
 ## Scripts
 
 - `pnpm dev` -- runs `src/main.ts` directly (via `tsx`), restarting on file change.
+- `pnpm dev:resilient` -- `pnpm dev` wrapped in a loop that restarts it if the process exits for
+  any reason, including an OS-level low-memory kill. Safe against double-submitting a trade on
+  restart: job state lives in Redis, not the process, and `execute-candidate` never resubmits
+  parameters that already went out (see `run-resilient.sh`).
 - `pnpm build` / `pnpm start` -- compiles to `dist/` and runs the compiled output.
 - `pnpm typecheck` -- `tsc --noEmit`.
 - `pnpm db:generate` / `pnpm db:migrate` -- Drizzle migration generation/application.

@@ -93,9 +93,8 @@ function makeEvaluateStrategyWorker(deps: WorkerDeps): Worker<EvaluateStrategyJo
         stateVersion,
         retryCount,
         {
-          minTradeAmount: deps.config.minTradeAmount,
-          maxTradeAmount: deps.config.maxTradeAmount,
-          searchSteps: deps.config.searchSteps,
+          minTradeUsdWad: deps.config.minTradeUsdWad,
+          maxTradeUsdWad: deps.config.maxTradeUsdWad,
           minProfitUsdWad: deps.config.minProfitUsdWad,
           maxPriceStalenessSeconds: deps.config.maxPriceStalenessSeconds,
           fyndSlippageBps: deps.config.fyndSlippageBps,

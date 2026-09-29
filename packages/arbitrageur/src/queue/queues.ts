@@ -56,9 +56,13 @@ export function makeQueues(connection: IORedis): Queues {
 
 /// "Keep one queued job per Strategy. Replace an older State Version." (ADR-0014's Queue rules).
 /// BullMQ's `add` with an existing `jobId` leaves the existing job untouched rather than updating
-/// it, so replacement is explicit here: drop a still-waiting/delayed job for this Strategy before
-/// adding the new State Version under the same id. A job already `active` is left alone -- its
-/// worker reads current Strategy/Balance/Price state itself when it runs, so an in-flight
+/// it -- including a *completed* or *failed* one, not just waiting/delayed -- so replacement is
+/// explicit here: drop any prior job for this Strategy before adding the new State Version under
+/// the same id. Without this, a Strategy's first evaluation would be its last: every later tick's
+/// `add` would silently no-op against the same jobId forever once it reached a terminal state
+/// (found live -- a real Strategy evaluated exactly once across hundreds of successful
+/// sync-indexer ticks before this fix). A job already `active` is the one exception, left alone --
+/// its worker reads current Strategy/Balance/Price state itself when it runs, so an in-flight
 /// evaluation on a now-stale State Version wastes at most one evaluation, never trades on stale
 /// data.
 export async function enqueueEvaluateStrategy(
@@ -70,7 +74,7 @@ export async function enqueueEvaluateStrategy(
   const existing = await queues.evaluateStrategy.getJob(strategyId);
   if (existing) {
     const state = await existing.getState();
-    if (state === "waiting" || state === "delayed") {
+    if (state !== "active") {
       await existing.remove();
     }
   }

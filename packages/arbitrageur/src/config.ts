@@ -20,9 +20,8 @@ export interface Config {
   fyndMinResponses: number;
   fyndTimeoutMs: number;
 
-  minTradeAmount: bigint;
-  maxTradeAmount: bigint;
-  searchSteps: number;
+  minTradeUsdWad: bigint;
+  maxTradeUsdWad: bigint;
   minProfitUsdWad: bigint;
   maxPriceStalenessSeconds: bigint;
   slippageBufferBps: bigint;
@@ -64,12 +63,17 @@ function optionalString(name: string, fallback: string): string {
 }
 
 /// Comma-separated token addresses -- ADR-0014's Decision section: "The token allow list
-/// contains USDC, USDT, WETH, and WBTC." Any strategy declaring a token outside this list is
-/// recorded but not traded (Strategy Catalog's own eligibility check).
+/// contains USDC, USDT, WETH, and WBTC" (cbBTC replaces WBTC here -- more liquid on Base). Any
+/// strategy declaring a token outside this list is recorded but not traded (Strategy Catalog's
+/// own eligibility check).
 function requiredTokenList(name: string): Address[] {
+  // Lowercased so every consumer (Strategy Catalog's eligibility check in particular, which
+  // already lowercases a strategy's own declared tokens) compares consistently -- an address with
+  // no hex letters (like WETH's) survives a checksum-case mismatch by luck; every other one
+  // silently fails a case-sensitive Set membership check otherwise.
   const tokens = required(name)
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   if (tokens.length === 0) {
     throw new Error(`${name} must declare at least one token`);
@@ -78,10 +82,18 @@ function requiredTokenList(name: string): Address[] {
 }
 
 export function loadConfig(): Config {
-  const minTradeAmount = optionalBigInt("MIN_TRADE_AMOUNT", 10n ** 15n);
-  const maxTradeAmount = optionalBigInt("MAX_TRADE_AMOUNT", 10n ** 19n);
-  if (maxTradeAmount <= minTradeAmount) {
-    throw new Error("MAX_TRADE_AMOUNT must be greater than MIN_TRADE_AMOUNT");
+  // USD-denominated, not a raw token-unit amount -- a fixed raw-unit bound can't sensibly apply
+  // to every leg's trade size when the basket spans tokens with different decimals (18 for WETH,
+  // 8 for cbBTC, 6 for USDC/USDT); each leg converts against its own oracle price at evaluation
+  // time (see pricing.ts's amountForUsdWad). The in-given-price formula computes the exact
+  // optimal trade size directly, not a range to search -- these two bounds now gate that result
+  // instead of scoping a search: MIN_TRADE_USD skips an optimum too small to be worth a quote and
+  // gas, MAX_TRADE_USD caps risk per trade even when the curve math says a bigger one would be
+  // more profitable still.
+  const minTradeUsdWad = parseUnits(optionalString("MIN_TRADE_USD", "1"), 18);
+  const maxTradeUsdWad = parseUnits(optionalString("MAX_TRADE_USD", "1000"), 18);
+  if (maxTradeUsdWad <= minTradeUsdWad) {
+    throw new Error("MAX_TRADE_USD must be greater than MIN_TRADE_USD");
   }
 
   return {
@@ -104,9 +116,8 @@ export function loadConfig(): Config {
     fyndMinResponses: optionalInt("FYND_MIN_RESPONSES", 1),
     fyndTimeoutMs: optionalInt("FYND_TIMEOUT_MS", 5_000),
 
-    minTradeAmount,
-    maxTradeAmount,
-    searchSteps: optionalInt("SEARCH_STEPS", 12),
+    minTradeUsdWad,
+    maxTradeUsdWad,
     minProfitUsdWad: parseUnits(optionalString("MIN_PROFIT_USD", "5"), 18),
     maxPriceStalenessSeconds: optionalBigInt("MAX_PRICE_STALENESS_SECONDS", 3600n),
     slippageBufferBps: optionalBigInt("SLIPPAGE_BUFFER_BPS", 50n),

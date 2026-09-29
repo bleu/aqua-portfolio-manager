@@ -1,8 +1,43 @@
-import { indexer } from "envio";
+import { indexer, createEffect, S } from "envio";
+import { createPublicClient, http, erc20Abi, type Address } from "viem";
 
 function strategyId(maker: string, app: string, strategyHash: string): string {
   return `${maker}-${app}-${strategyHash}`.toLowerCase();
 }
+
+/// This deployment's own Portfolio Manager Router (packages/contracts/script/Deploy.s.sol's
+/// broadcast receipt on Base) -- the balance seed below only ever runs for strategies shipped
+/// through this specific app, never for another app's strategy sharing the same Aqua registry.
+const PM_ROUTER = "0x02a11927b0a1c701feb589ca86886f4ae1f85f02";
+
+const publicClient = createPublicClient({
+  transport: http(process.env.BASE_RPC_URL ?? "https://mainnet.base.org"),
+});
+
+/// A wallet's balance for a PM strategy's declared token, at the moment it was shipped.
+/// Balance State (ADR-0014) only ever sees a Transfer once its wallet is already a known Strategy
+/// Wallet -- so tokens funded into the Safe *before* shipping (the normal case) are otherwise
+/// invisible: WalletBalanceChange only carries deltas, with nothing to seed the running sum. This
+/// effect fills exactly that gap with one real `balanceOf` read, cached so a rerun never repeats
+/// it (see the Pushed handler below for where and how often this actually runs).
+const getErc20Balance = createEffect(
+  {
+    name: "getErc20Balance",
+    input: { token: S.string, wallet: S.string, blockNumber: S.bigint },
+    output: S.bigint,
+    rateLimit: { calls: 5, per: "second" },
+    cache: true,
+  },
+  async ({ input }) => {
+    return publicClient.readContract({
+      address: input.token as Address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [input.wallet as Address],
+      blockNumber: input.blockNumber,
+    });
+  },
+);
 
 // Each proxy's `aggregator()` result as of 2026-09-28 (see config.yaml's ChainlinkAggregator
 // seed comment) -- covers the AnswerUpdated handler below for the case where an aggregator's
@@ -10,7 +45,7 @@ function strategyId(maker: string, app: string, strategyHash: string): string {
 // pointed a AggregatorConfirmed at it yet, because it was already the live one at indexer setup).
 const SEED_AGGREGATOR_TO_PROXY: Record<string, string> = {
   "0x05c84a58fe042275b37db038baacd15f410c7bb0": "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70", // ETH/USD
-  "0xe5ec87a39445b8d5b751b116802a53c5ae7e9df1": "0x64c911996d3c6ac71f9b455b1e8e7266bcbd848f", // BTC/USD
+  "0x51ce3091cf646587e02cad83b580992f8723e718": "0x07da0e54543a844a80abe69c8a12f22b3aa59f9d", // cbBTC/USD
   "0x84640bb7b71b0963e8eb57ad379a0b204eb2fdc8": "0xf19d560eb8d2adf07bd6d13ed03e1d11215721f9", // USDT/USD
   "0x68be4c50235205ede361ac8244b1ee221cdda5e2": "0x7e860098f58bbfc8648a4311b374b1d669a2bc6b", // USDC/USD
 };
@@ -45,6 +80,33 @@ indexer.onEvent({ contract: "Aqua", event: "Pushed" }, async ({ event, context }
   if (strategy.shippedAtTxHash !== event.transaction.hash) return;
   if (strategy.tokens.includes(event.params.token)) return;
   context.Strategy.set({ ...strategy, tokens: [...strategy.tokens, event.params.token] });
+
+  // Balance seed: only for this deployment's own PM Router, and only once per token, right here
+  // at shipping -- never for another app's strategy, and never again on a later trade-time Pushed
+  // (excluded above by the shippedAtTxHash check). See getErc20Balance's own doc comment for why
+  // this is needed at all.
+  if (event.params.app.toLowerCase() === PM_ROUTER) {
+    const balance = await context.effect(getErc20Balance, {
+      token: event.params.token,
+      wallet: event.params.maker,
+      blockNumber: BigInt(event.block.number),
+    });
+    context.WalletBalanceChange.set({
+      id: `${event.transaction.hash}-seed-${event.params.token.toLowerCase()}`,
+      wallet: event.params.maker.toLowerCase(),
+      token: event.params.token,
+      // Synthetic, not a real Transfer's delta -- the wallet's whole balance as of this block,
+      // applied as one lump delta onto a starting sum of zero so the existing accumulation in
+      // packages/arbitrageur's syncWalletBalanceChanges (`balance = balance + delta`) needs no
+      // change to consume it. Always the first row for this wallet+token (shipping is the very
+      // first block this token could have become balance-relevant), so this ordering is safe.
+      change: balance,
+      blockNumber: BigInt(event.block.number),
+      blockTimestamp: BigInt(event.block.timestamp),
+      transactionHash: event.transaction.hash,
+      logIndex: -1, // sorts before the shipping transaction's own real logIndex-0-or-later rows
+    });
+  }
 });
 
 indexer.onEvent({ contract: "Aqua", event: "Docked" }, async ({ event, context }) => {

@@ -9,6 +9,14 @@ export interface ApiDeps {
   config: Config;
 }
 
+/// Drizzle's `bigint` columns (shippedAt, amountIn, profitUsdWad, ...) come back as native
+/// JS BigInt, which JSON.stringify -- and so Hono's c.json() -- cannot serialize on its own.
+/// Round-trips through a replacer so every other type (Date, nested objects/arrays) keeps
+/// JSON.stringify's own default handling instead of a hand-rolled walk re-implementing it.
+function toJsonSafe<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v)));
+}
+
 /// Operations API (ADR-0014): "Return authenticated, read-only operational data." No write
 /// endpoints, no secrets in any response -- /v1/config below is the one endpoint that could leak
 /// something if built carelessly, so it lists safe fields explicitly rather than spreading
@@ -36,19 +44,19 @@ export function makeApiServer(deps: ApiDeps): Hono {
 
   app.get("/v1/strategies", async (c) => {
     const rows = await deps.db.query.strategies.findMany({ orderBy: desc(strategies.shippedAt) });
-    return c.json({ strategies: rows });
+    return c.json(toJsonSafe({ strategies: rows }));
   });
 
   app.get("/v1/strategy-wallets", async (c) => {
     const rows = await deps.db.query.strategyWalletBalances.findMany({
       orderBy: desc(strategyWalletBalances.updatedAt),
     });
-    return c.json({ balances: rows });
+    return c.json(toJsonSafe({ balances: rows }));
   });
 
   app.get("/v1/candidates", async (c) => {
     const rows = await deps.db.query.candidates.findMany({ orderBy: desc(candidates.createdAt), limit: 200 });
-    return c.json({ candidates: rows });
+    return c.json(toJsonSafe({ candidates: rows }));
   });
 
   app.get("/v1/execution-attempts", async (c) => {
@@ -56,7 +64,7 @@ export function makeApiServer(deps: ApiDeps): Hono {
       orderBy: desc(executionAttempts.createdAt),
       limit: 200,
     });
-    return c.json({ executionAttempts: rows });
+    return c.json(toJsonSafe({ executionAttempts: rows }));
   });
 
   app.get("/v1/config", (c) => {
@@ -66,8 +74,8 @@ export function makeApiServer(deps: ApiDeps): Hono {
       executorVersion: config.executorVersion,
       allowedTokens: config.allowedTokens,
       fyndChain: config.fyndChain,
-      minTradeAmount: config.minTradeAmount.toString(),
-      maxTradeAmount: config.maxTradeAmount.toString(),
+      minTradeUsdWad: config.minTradeUsdWad.toString(),
+      maxTradeUsdWad: config.maxTradeUsdWad.toString(),
       minProfitUsdWad: config.minProfitUsdWad.toString(),
       maxPriceStalenessSeconds: config.maxPriceStalenessSeconds.toString(),
       slippageBufferBps: config.slippageBufferBps.toString(),

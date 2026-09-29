@@ -15,7 +15,36 @@ export function makeClients(config: Config) {
 }
 
 export async function tokenDecimals(client: PublicClient, token: Address): Promise<number> {
-  return client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" });
+  return withRateLimitRetry(() => client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }));
+}
+
+/// Live balance, not the indexer's synced copy -- the curve itself prices off `balanceOf` at
+/// quote time (PortfolioManagerSwap._groupValueWad), so a group-value computation meant to match
+/// it reads the same real-time source, not a snapshot that can lag by a sync interval.
+export async function tokenBalance(client: PublicClient, token: Address, owner: Address): Promise<bigint> {
+  return withRateLimitRetry(() =>
+    client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [owner] }),
+  );
+}
+
+/// Base's public RPC returns a non-standard JSON-RPC error code (-32016, "over rate limit") for
+/// throttling -- viem's own default retry logic only recognizes the standard codes (-32005,
+/// -32603, 429), so it never retries this one on its own (confirmed live: concurrent quote calls
+/// during the old geometric-step search routinely tripped this and failed the whole
+/// evaluate-strategy tick outright, discovered by watching the real Redis job state).
+function isRateLimitError(err: unknown): boolean {
+  return String(err).toLowerCase().includes("rate limit");
+}
+
+async function withRateLimitRetry<T>(fn: () => Promise<T>, tries = 3, delayMs = 500): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= tries - 1 || !isRateLimitError(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }
 
 /// Reads `Arbitrageur.quoteExactIn` via `eth_call` -- no transaction, no gas spent, safe to call
@@ -37,13 +66,15 @@ export async function quoteExactIn(
   tokenOut: Address,
   amountIn: bigint,
 ): Promise<bigint> {
-  return publicClient.readContract({
-    address: arbitrageurAddress,
-    account,
-    abi: arbitrageurAbi,
-    functionName: "quoteExactIn",
-    args: [order, tokenIn, tokenOut, amountIn],
-  });
+  return withRateLimitRetry(() =>
+    publicClient.readContract({
+      address: arbitrageurAddress,
+      account,
+      abi: arbitrageurAbi,
+      functionName: "quoteExactIn",
+      args: [order, tokenIn, tokenOut, amountIn],
+    }),
+  );
 }
 
 export interface FlashArbParams {
