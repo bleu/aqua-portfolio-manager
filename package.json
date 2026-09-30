@@ -6,6 +6,9 @@
   "description": "1inch Aqua Incubator grant monorepo: contracts + supporting tooling",
   "scripts": {
     "contracts:build": "pnpm --filter @aqua-portfolio-manager/contracts build",
-    "contracts:test": "pnpm --filter @aqua-portfolio-manager/contracts test"
+    "contracts:test": "pnpm --filter @aqua-portfolio-manager/contracts test",
+    "web:dev": "pnpm --filter @aqua-portfolio-manager/web dev",
+    "web:build": "pnpm --filter @aqua-portfolio-manager/web build",
+    "web:storybook": "pnpm --filter @aqua-portfolio-manager/web storybook"
   }
 }
