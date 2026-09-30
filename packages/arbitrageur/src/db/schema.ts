@@ -69,7 +69,7 @@ export const syncCursors = pgTable("sync_cursors", {
 /// One row per ranked Candidate a Candidate Evaluation tick produced -- ADR-0014's Candidate
 /// Evaluation output, consumed by `simulate-candidate` and read by the Operations API.
 export const candidates = pgTable("candidates", {
-  id: text("id").primaryKey(), // `${strategyId}-${tokenIn}-${tokenOut}-${stateVersion}`
+  id: text("id").primaryKey(), // `${strategyId}-${tokenIn}-${tokenOut}-${stateVersion}-${retryCount}`
   strategyId: text("strategy_id")
     .notNull()
     .references(() => strategies.id),
@@ -116,7 +116,7 @@ export const executionAttempts = pgTable("execution_attempts", {
   executorAddress: text("executor_address").notNull(),
   executorVersion: text("executor_version").notNull(),
   txHash: text("tx_hash"),
-  // "submitted" | "confirmed" | "final" | "failed" -- "final" only once the indexer itself
+  // "simulating" | "confirmed" | "final" | "failed" -- "final" only once the indexer itself
   // reaches the configured confirmation depth (ADR-0014's Operations section), not just one
   // on-chain confirmation.
   status: text("status").notNull(),

@@ -10,7 +10,7 @@ export type ExecutionResult =
   | { ok: false; executionAttemptId: string; reason: string };
 
 /// Execution domain (ADR-0014): the only place that ever submits a transaction, and (via the
-/// `execute-candidate` queue's own concurrency: 1, wired in src/workers/executeCandidate.ts) the
+/// `execute-candidate` queue's own concurrency: 1, wired in src/workers.ts) the
 /// only place that ever does so more than once at a time -- one wallet owns all nonces.
 ///
 /// Re-simulates immediately before submitting rather than reusing simulate-candidate's earlier
@@ -54,11 +54,12 @@ export async function executeCandidate(
 
   try {
     const request = await simulateFlashArbitrage(clients.publicClient, clients.account, arbitrageurAddress, built.params);
-    await db
-      .update(executionAttempts)
-      .set({ status: "submitted", submittedAt: new Date() })
-      .where(eq(executionAttempts.id, executionAttemptId));
 
+    // submitFlashArbitrage broadcasts and waits for the receipt in one call -- there's no
+    // observable "broadcast but not yet confirmed" point to record between those two steps, so
+    // the status stays "simulating" until this actually resolves. Writing "submitted" before this
+    // call would leave a permanently misleading row (no txHash, status "submitted") if the
+    // process crashed before the transaction was ever sent.
     const result = await submitFlashArbitrage(clients.walletClient, clients.publicClient, request);
 
     await db.update(candidates).set({ status: "executed" }).where(eq(candidates.id, candidateId));

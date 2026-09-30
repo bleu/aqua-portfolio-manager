@@ -229,7 +229,11 @@ export async function evaluateStrategy(
   const minCurveAmountOut =
     opportunity.quotedOut - (opportunity.quotedOut * config.slippageBufferBps) / 10_000n;
   const deadline = BigInt(Math.floor(Date.now() / 1000) + config.deadlineBufferSeconds);
-  const candidateId = `${strategyId}-${leg.tokenIn}-${leg.tokenOut}-${stateVersion}`;
+  // retryCount is part of the id, not just a column: maybeRetry re-enqueues evaluation under the
+  // same stateVersion, only incrementing retryCount, so omitting it here would make a retry's
+  // fresh amountIn/quotedOut/fyndCalldata/deadline silently lost to onConflictDoNothing below,
+  // leaving simulate-candidate re-simulating the original (likely now-stale) attempt forever.
+  const candidateId = `${strategyId}-${leg.tokenIn}-${leg.tokenOut}-${stateVersion}-${retryCount}`;
 
   await db
     .insert(candidates)
