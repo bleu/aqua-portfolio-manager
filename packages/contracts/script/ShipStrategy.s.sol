@@ -42,6 +42,12 @@ contract ShipStrategy is Script {
     uint32 internal constant LP_FEE_BPS = 200_000; // 2bps on the 1e9 scale, matching this repo's existing default
     uint256 internal constant GROUP_WEIGHT = 0.5e18;
 
+    /// @dev 5% (1IP-103 scale, PM_BPS=1e9). 0 disables the check entirely (PortfolioManagerProgramBuilder's
+    /// own doc comment) -- the first shipped strategy used 0, which let a stale stablecoin price (see the
+    /// live 12h MAX_STALENESS above) drain majors-group tokens with nothing blocking the resulting curve
+    /// skew (packages/contracts/test/security/PMDrainPoC.t.sol quantifies this against a real fork).
+    uint32 internal constant MAX_DEVIATION_BPS = 50_000_000; // 5% of PM_BPS's 1e9 scale
+
     function run() external {
         uint256 ownerKey = vm.envUint("PRIVATE_KEY");
         address owner = vm.addr(ownerKey);
@@ -52,7 +58,7 @@ contract ShipStrategy is Script {
         groups[0] = _majors();
         groups[1] = _stables();
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, LP_FEE_BPS, 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, LP_FEE_BPS, MAX_DEVIATION_BPS);
         ISwapVM.Order memory order = MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: safeAddr,
