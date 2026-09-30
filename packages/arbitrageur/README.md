@@ -75,8 +75,8 @@ plus a defense-in-depth check that a returned route didn't use it anyway.
 `runLoop` executes every instruction in a strategy's program for a `quote()` call exactly like it
 does for a real `swap()` -- so a strategy carrying the resolver KYC gate ([ADR-0015](../../docs/adr/0015-two-program-builders-for-the-resolver-kyc-gate.md))
 checks `tx.origin` during quoting too. `chain.ts`'s `quoteExactIn` passes the bot's own account as
-the `eth_call`'s `from`, or every quote against a gated strategy would fail outright (found while
-adding E2E coverage for this -- see `packages/contracts/test/e2e/ArbitrageurFlashE2E.t.sol`).
+the `eth_call`'s `from`, or every quote against a gated strategy would fail outright -- see
+`packages/contracts/test/e2e/ArbitrageurFlashE2E.t.sol`.
 
 **Why Fynd, and why self-hosted.** [Fynd](https://github.com/propeller-heads/fynd) (PropellerHeads,
 built on their Tycho engine) is an open-source, real-time DEX routing engine. It runs as a small

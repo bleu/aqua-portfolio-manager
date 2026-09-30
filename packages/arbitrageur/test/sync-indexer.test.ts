@@ -3,7 +3,7 @@ import { normalizeToWad, parseCursor, formatCursor } from "../src/sync/indexer.j
 
 describe("normalizeToWad", () => {
   it("scales an 8-decimal Chainlink answer up to 18-decimal WAD", () => {
-    // $83,545.15 at 8 decimals, matching a real BTC/USD read this session verified on Base.
+    // $83,545.15 at 8 decimals, a realistic BTC/USD Chainlink reading.
     expect(normalizeToWad(8354515784949n, 8)).toBe(83545157849490000000000n);
   });
 

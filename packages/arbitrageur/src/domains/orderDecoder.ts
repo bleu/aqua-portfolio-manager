@@ -39,9 +39,8 @@ function getOffset(traits: bigint, sliceNumber: bigint): number {
   return Number((traits >> ORDER_DATA_SLICES_INDEXES_BIT_OFFSET >> bitShift) & ORDER_DATA_SLICES_INDEX_BIT_MASK);
 }
 
-/// Mirrors `MakerTraitsLib.program(traits, data)` exactly (verified against real Solidity output
-/// -- see programDecoder.test.ts's OrderFixture-derived cases): the program slice is always the
-/// last one in `data`, starting right after the fourth hook slice's own end offset and running to
+/// Mirrors `MakerTraitsLib.program(traits, data)` exactly: the program slice is always the last
+/// one in `data`, starting right after the fourth hook slice's own end offset and running to
 /// `data`'s end. A strategy with no maker hooks has that offset at 0, so `data` is the program
 /// bytes directly in that case -- but this reads the real offset the order declares rather than
 /// assuming it.

@@ -29,9 +29,7 @@ export async function tokenBalance(client: PublicClient, token: Address, owner: 
 
 /// Base's public RPC returns a non-standard JSON-RPC error code (-32016, "over rate limit") for
 /// throttling -- viem's own default retry logic only recognizes the standard codes (-32005,
-/// -32603, 429), so it never retries this one on its own (confirmed live: concurrent quote calls
-/// during the old geometric-step search routinely tripped this and failed the whole
-/// evaluate-strategy tick outright, discovered by watching the real Redis job state).
+/// -32603, 429), so it never retries this one on its own.
 function isRateLimitError(err: unknown): boolean {
   return String(err).toLowerCase().includes("rate limit");
 }
@@ -52,9 +50,9 @@ async function withRateLimitRetry<T>(fn: () => Promise<T>, tries = 3, delayMs = 
 ///
 /// `account` matters, not just style: `runLoop` executes every instruction in the program for a
 /// `quote()` call exactly like it does for a real `swap()`, so a resolver-KYC-gated strategy
-/// (ADR-0015) checks `tx.origin` here too, not only at execution time -- confirmed on a real Base
-/// fork while adding E2E coverage for the gate (packages/contracts/test/e2e/ArbitrageurFlashE2E.t.sol).
-/// An `eth_call`'s own `from` field is both msg.sender and tx.origin for that simulated call, so
+/// (ADR-0015) checks `tx.origin` here too, not only at execution time (see
+/// packages/contracts/test/e2e/ArbitrageurFlashE2E.t.sol). An `eth_call`'s own `from` field is
+/// both msg.sender and tx.origin for that simulated call, so
 /// omitting `account` here would make every quote against a gated strategy revert, not just
 /// execution -- this isn't optional for gated strategies, even though it's inert for ungated ones.
 export async function quoteExactIn(

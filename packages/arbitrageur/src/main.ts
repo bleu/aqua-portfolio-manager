@@ -11,8 +11,7 @@ import { makeApiServer } from "./api/server.js";
 
 /// ADR-0014's production arbitrageur: an Envio-backed indexer sync, six BullMQ queues wiring
 /// Strategy Catalog through Execution and Tracking (see src/workers.ts), and a read-only
-/// Operations API -- replacing the static-config, single-tick experiment this package used to
-/// run (see BLEUDEV-393's own PR history for that migration).
+/// Operations API -- replacing the static-config, single-tick experiment this package used to run.
 async function main() {
   const config = loadConfig();
   const db = makeDb(config.databaseUrl);
@@ -24,9 +23,8 @@ async function main() {
   // PropellerHeads' hosted multi-chain gateway (e.g. https://gateway/<chain>/v1/quote). This
   // README's own "Running a local Fynd server" section runs a self-hosted, single-chain instance
   // (`fynd serve --chain base`), which serves plain, unprefixed paths (/v1/quote, /v1/info) --
-  // confirmed live: passing `chain` here made every real request 404 against a real local
-  // server, even though FYND_CHAIN is still real, correct config for which `--chain` flag to
-  // start that local server with.
+  // passing `chain` here would 404 against that local server. FYND_CHAIN is still real, correct
+  // config for which `--chain` flag to start that local server with.
   const fyndClient = new FyndClient({ baseUrl: config.fyndUrl, timeoutMs: config.fyndTimeoutMs });
 
   console.log(
