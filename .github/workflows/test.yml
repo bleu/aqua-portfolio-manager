@@ -78,3 +78,35 @@ jobs:
 
       - name: Test
         run: pnpm --filter @aqua-portfolio-manager/arbitrageur test
+
+  check-web:
+    name: Web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --filter @aqua-portfolio-manager/web
+
+      - name: Lint
+        run: pnpm --filter @aqua-portfolio-manager/web lint
+
+      - name: Typecheck and build
+        run: pnpm --filter @aqua-portfolio-manager/web build
+
+      - name: Install Playwright's Chromium (for the Storybook Vitest addon)
+        run: pnpm --filter @aqua-portfolio-manager/web exec playwright install --with-deps chromium
+
+      - name: Run component/story tests
+        run: pnpm --filter @aqua-portfolio-manager/web exec vitest run
