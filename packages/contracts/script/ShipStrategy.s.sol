@@ -96,8 +96,9 @@ contract ShipStrategy is Script {
 
         bytes memory batch = "";
         for (uint256 i = 0; i < 4; i++) {
-            batch =
-                abi.encodePacked(batch, _encodeMultiSendTx(tokens[i], abi.encodeCall(IERC20.approve, (AQUA_BASE, type(uint256).max))));
+            batch = abi.encodePacked(
+                batch, _encodeMultiSendTx(tokens[i], abi.encodeCall(IERC20.approve, (AQUA_BASE, type(uint256).max)))
+            );
         }
         batch = abi.encodePacked(
             batch,
