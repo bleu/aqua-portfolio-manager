@@ -1,0 +1,1 @@
+CREATE INDEX "strategies_is_active_ineligibility_reason_idx" ON "strategies" USING btree ("is_active","ineligibility_reason");

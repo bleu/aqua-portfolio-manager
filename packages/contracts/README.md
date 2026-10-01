@@ -3,9 +3,6 @@
 Foundry package for the PM router, pricing instruction, validator, and Safe Guard.
 See [architecture](../../docs/ARCHITECTURE.md) for responsibilities and [pricing](../../docs/PRICING.md) for formulas.
 
-`BasketXYCSwap`, `PoCOpcodes`, and `PoCRouter` are reference prototypes.
-`BasketXYCSwap` adds raw Aqua ledger balances without converting them through price feeds. It is not the production pricing path.
-
 ## Build and test
 
 Run from this directory:

@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, bigint, numeric, integer, jsonb, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, bigint, numeric, integer, jsonb, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
 
 /// Postgres `bigint` is a signed int64 (max ~9.22e18) -- too small for an 18-decimal WAD value
 /// representing anything above ~$9.22 (e.g. one ETH's WAD price, ~2.69e21, overflows it outright).
@@ -10,28 +10,34 @@ const usdWad = (name: string) => numeric(name, { mode: "bigint" });
 /// the `sync-indexer` job (see `src/sync/indexer.ts`). ADR-0014's Strategy Catalog domain.
 /// `id` matches the indexer's own composite id (`${maker}-${app}-${strategyHash}`, lowercase) so
 /// syncing is a plain upsert, never a lookup-then-insert.
-export const strategies = pgTable("strategies", {
-  id: text("id").primaryKey(),
-  maker: text("maker").notNull(),
-  app: text("app").notNull(),
-  strategyHash: text("strategy_hash").notNull(),
-  tokens: jsonb("tokens").$type<string[]>().notNull(),
-  isActive: boolean("is_active").notNull(),
-  // `abi.encode(ISwapVM.Order)` -- what Aqua's Shipped event actually carries (see
-  // @aqua-portfolio-manager/decoding's orderDecoder.ts doc comment for why this isn't the bare
-  // program bytes).
-  // Always set at sync time; src/domains/strategyCatalog.ts decodes it, doesn't wait for it.
-  encodedOrder: text("encoded_order").notNull(),
-  resolverKycToken: text("resolver_kyc_token"),
-  // null while still eligible; set to a short machine-readable reason otherwise (e.g.
-  // "unsupported-token", "decode-failed") -- ADR-0014's "malformed or unsupported Strategy stays
-  // in the catalog with an eligibility reason" rule. A Strategy Catalog row always exists once
-  // Shipped fires; eligibility is evaluated, and can change, independently of that.
-  ineligibilityReason: text("ineligibility_reason"),
-  shippedAt: bigint("shipped_at", { mode: "bigint" }).notNull(),
-  dockedAt: bigint("docked_at", { mode: "bigint" }),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const strategies = pgTable(
+  "strategies",
+  {
+    id: text("id").primaryKey(),
+    maker: text("maker").notNull(),
+    app: text("app").notNull(),
+    strategyHash: text("strategy_hash").notNull(),
+    tokens: jsonb("tokens").$type<string[]>().notNull(),
+    isActive: boolean("is_active").notNull(),
+    // `abi.encode(ISwapVM.Order)` -- what Aqua's Shipped event actually carries (see
+    // @aqua-portfolio-manager/decoding's orderDecoder.ts doc comment for why this isn't the bare
+    // program bytes).
+    // Always set at sync time; src/domains/strategyCatalog.ts decodes it, doesn't wait for it.
+    encodedOrder: text("encoded_order").notNull(),
+    resolverKycToken: text("resolver_kyc_token"),
+    // null while still eligible; set to a short machine-readable reason otherwise (e.g.
+    // "unsupported-token", "decode-failed") -- ADR-0014's "malformed or unsupported Strategy stays
+    // in the catalog with an eligibility reason" rule. A Strategy Catalog row always exists once
+    // Shipped fires; eligibility is evaluated, and can change, independently of that.
+    ineligibilityReason: text("ineligibility_reason"),
+    shippedAt: bigint("shipped_at", { mode: "bigint" }).notNull(),
+    dockedAt: bigint("docked_at", { mode: "bigint" }),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  // sync-indexer's makeSyncIndexerWorker filters on exactly this pair every tick to find
+  // eligible strategies -- without it, that query is a full table scan.
+  (table) => [index("strategies_is_active_ineligibility_reason_idx").on(table.isActive, table.ineligibilityReason)],
+);
 
 /// Materialized current balance per (wallet, token) -- ADR-0014's Balance State domain. Not a
 /// history table: seeded by a one-time multicall at Strategy discovery, then kept current by
