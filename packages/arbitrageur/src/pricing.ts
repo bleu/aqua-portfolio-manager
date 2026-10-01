@@ -61,29 +61,14 @@ export interface Opportunity {
   profitUsdWad: bigint;
 }
 
-/// Balancer's closed-form "In-Given-Price" formula (whitepaper eq. 21: `A_i = B_i * ((SP'/SP)^
-/// (W_o/(W_o+W_i)) - 1)`), adapted for this curve's own group-level pricing (PortfolioManagerSwap
-/// prices cross-group trades on each GROUP's total oracle value, not per-token balances -- see
-/// PortfolioManagerPricing.sol's `spotPrice`, `SP = (B_i/W_i)/(B_o/W_o)`, which is exactly
-/// Balancer's own weighted-pool spot price applied to group values) and for the fee this curve
-/// applies to input before it enters the invariant (`exactIn`'s `amountInEff`), which the
-/// whitepaper's base formula doesn't include.
+/// Balancer's closed-form "In-Given-Price" formula (whitepaper eq. 21), adapted for this curve's
+/// group-level pricing (PortfolioManagerPricing.sol's `spotPrice`) and its fee-on-input. Target is
+/// always perfect group-weight equilibrium (`SP' = WAD`), this design's own definition of "fair"
+/// (PortfolioManagerSwap's price-deviation check). Returns 0 when this direction moves further
+/// from equilibrium instead of closer; `evaluateStrategy` tries both legs of every group pair.
 ///
-/// Target is always perfect group-weight equilibrium (`SP' = WAD`): both groups exactly at their
-/// configured target share of total portfolio value. That's this design's own definition of
-/// "fair" (see PortfolioManagerSwap's price-deviation check, which tests the same ratio against
-/// 1), not an external market price the way a generic Balancer pool's arbitrageur would use --
-/// this system has no such external reference for two arbitrary groups.
-///
-/// Replaces a geometric-step search entirely: computes the exact trade value directly instead of
-/// sampling candidate sizes and picking the best. Uses floating point, not WAD-exact fixed-point
-/// math -- deliberately: the result is a starting point for exactly one real `quoteExactIn`
-/// verification (see candidateEvaluation.ts), not the trade's final source of truth, so it
-/// doesn't need to replicate the contract's own rounding.
-///
-/// Returns 0 when trading `groupIn` for `groupOut` would push the price further from equilibrium,
-/// not closer -- the profitable direction is always the opposite leg (which `evaluateStrategy`
-/// also evaluates, since every group pair is tried both ways).
+/// Floating point, not fixed-point, deliberately: the result seeds exactly one real `quoteExactIn`
+/// verification, never the trade's final source of truth.
 export function inGivenPriceValueWad(params: {
   groupInValueWad: bigint;
   groupOutValueWad: bigint;
