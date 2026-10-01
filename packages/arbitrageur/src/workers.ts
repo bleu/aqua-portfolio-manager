@@ -63,7 +63,7 @@ function makeSyncIndexerWorker(deps: WorkerDeps): Worker {
     "sync-indexer",
     async () => {
       const result = await runIndexerSync(deps.db, deps.indexerClient);
-      await evaluateAllStrategyCatalog(deps.db, new Set(deps.config.allowedTokens));
+      await evaluateAllStrategyCatalog(deps.db, new Set(deps.config.allowedTokens), new Set(deps.config.allowedFeeds));
 
       const eligible = await deps.db.query.strategies.findMany({
         where: and(eq(strategies.isActive, true), isNull(strategies.ineligibilityReason)),

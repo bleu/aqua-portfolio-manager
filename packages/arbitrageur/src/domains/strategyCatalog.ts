@@ -10,19 +10,30 @@ export interface EligibilityResult {
   reason: string | undefined;
 }
 
-/// A Strategy is eligible only if every declared token is on the allow list -- ADR-0014's
-/// Decision section: "The service records unsupported Strategies but does not trade them."
-/// Reasons are short and machine-readable (matched by exact string elsewhere, e.g. the
-/// Operations API), not prose.
+/// A Strategy is eligible only if every declared token AND every declared feed is on its own
+/// allow list -- ADR-0014's Decision section: "The service records unsupported Strategies but
+/// does not trade them," extended to feeds so a strategy can't pair a real allowed token with an
+/// attacker-controlled feed address. Reasons are short and machine-readable (matched by exact
+/// string elsewhere, e.g. the Operations API), not prose.
 export function evaluateEligibility(
-  decoded: { groups: { members: { token: Address }[] }[] },
+  decoded: { groups: { members: { token: Address; feed: Address }[] }[] },
   allowedTokens: ReadonlySet<Address>,
+  allowedFeeds: ReadonlySet<Address>,
 ): EligibilityResult {
-  const tokens = decoded.groups.flatMap((g) => g.members.map((m) => m.token.toLowerCase() as Address));
-  const unsupported = [...new Set(tokens.filter((t) => !allowedTokens.has(t)))];
-  if (unsupported.length > 0) {
-    return { eligible: false, reason: `unsupported-token:${unsupported.join(",")}` };
+  const members = decoded.groups.flatMap((g) => g.members);
+
+  const tokens = members.map((m) => m.token.toLowerCase() as Address);
+  const unsupportedTokens = [...new Set(tokens.filter((t) => !allowedTokens.has(t)))];
+  if (unsupportedTokens.length > 0) {
+    return { eligible: false, reason: `unsupported-token:${unsupportedTokens.join(",")}` };
   }
+
+  const feeds = members.map((m) => m.feed.toLowerCase() as Address);
+  const unsupportedFeeds = [...new Set(feeds.filter((f) => !allowedFeeds.has(f)))];
+  if (unsupportedFeeds.length > 0) {
+    return { eligible: false, reason: `unsupported-feed:${unsupportedFeeds.join(",")}` };
+  }
+
   return { eligible: true, reason: undefined };
 }
 
@@ -36,12 +47,13 @@ export async function evaluateStrategyCatalog(
   db: Db,
   strategy: StrategyRow,
   allowedTokens: ReadonlySet<Address>,
+  allowedFeeds: ReadonlySet<Address>,
 ): Promise<void> {
   try {
     const order = decodeOrder(strategy.encodedOrder as Hex);
     const program = extractProgram(order.traits, order.data);
     const decoded = decodeProgram(program);
-    const { reason } = evaluateEligibility(decoded, allowedTokens);
+    const { reason } = evaluateEligibility(decoded, allowedTokens, allowedFeeds);
     await db
       .update(strategies)
       .set({ resolverKycToken: decoded.resolverKycToken ?? null, ineligibilityReason: reason ?? null })
@@ -62,8 +74,12 @@ export async function evaluateStrategyCatalog(
 /// since a Strategy's program (and so its eligibility) never changes after Shipped. Matches
 /// syncStrategies' own full-rescan tradeoff (src/sync/indexer.ts): correct and simple at today's
 /// scale, a real follow-up (skip rows already evaluated) once the catalog grows enough to matter.
-export async function evaluateAllStrategyCatalog(db: Db, allowedTokens: ReadonlySet<Address>): Promise<number> {
+export async function evaluateAllStrategyCatalog(
+  db: Db,
+  allowedTokens: ReadonlySet<Address>,
+  allowedFeeds: ReadonlySet<Address>,
+): Promise<number> {
   const rows = await db.query.strategies.findMany();
-  await Promise.all(rows.map((row) => evaluateStrategyCatalog(db, row, allowedTokens)));
+  await Promise.all(rows.map((row) => evaluateStrategyCatalog(db, row, allowedTokens, allowedFeeds)));
   return rows.length;
 }

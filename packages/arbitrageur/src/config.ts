@@ -13,6 +13,7 @@ export interface Config {
   indexerAdminSecret: string | undefined;
 
   allowedTokens: Address[];
+  allowedFeeds: Address[];
 
   fyndUrl: string;
   fyndChain: string;
@@ -62,23 +63,19 @@ function optionalString(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
 
-/// Comma-separated token addresses -- ADR-0014's Decision section: "The token allow list
-/// contains USDC, USDT, WETH, and WBTC" (cbBTC replaces WBTC here -- more liquid on Base). Any
-/// strategy declaring a token outside this list is recorded but not traded (Strategy Catalog's
-/// own eligibility check).
-function requiredTokenList(name: string): Address[] {
-  // Lowercased so every consumer (Strategy Catalog's eligibility check in particular, which
-  // already lowercases a strategy's own declared tokens) compares consistently -- an address with
-  // no hex letters (like WETH's) survives a checksum-case mismatch by luck; every other one
-  // silently fails a case-sensitive Set membership check otherwise.
-  const tokens = required(name)
+/// Comma-separated addresses, lowercased so every consumer (Strategy Catalog's eligibility check
+/// in particular, which already lowercases a strategy's own declared tokens/feeds) compares
+/// consistently -- an address with no hex letters (like WETH's) survives a checksum-case mismatch
+/// by luck; every other one silently fails a case-sensitive Set membership check otherwise.
+function requiredAddressList(name: string): Address[] {
+  const addresses = required(name)
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  if (tokens.length === 0) {
-    throw new Error(`${name} must declare at least one token`);
+  if (addresses.length === 0) {
+    throw new Error(`${name} must declare at least one address`);
   }
-  return tokens as Address[];
+  return addresses as Address[];
 }
 
 export function loadConfig(): Config {
@@ -108,7 +105,14 @@ export function loadConfig(): Config {
     indexerGraphqlUrl: required("INDEXER_GRAPHQL_URL"),
     indexerAdminSecret: process.env.INDEXER_ADMIN_SECRET,
 
-    allowedTokens: requiredTokenList("ALLOWED_TOKENS"),
+    // ADR-0014's Decision section: "The token allow list contains USDC, USDT, WETH, and WBTC"
+    // (cbBTC replaces WBTC here -- more liquid on Base). Any strategy declaring a token outside
+    // this list is recorded but not traded (Strategy Catalog's own eligibility check).
+    allowedTokens: requiredAddressList("ALLOWED_TOKENS"),
+    // Defense in depth against a strategy declaring a real allowed token with an
+    // attacker-controlled feed address. Must match packages/indexer/config.yaml's ChainlinkProxy
+    // list exactly.
+    allowedFeeds: requiredAddressList("ALLOWED_FEEDS"),
 
     fyndUrl: required("FYND_URL"),
     fyndChain: optionalString("FYND_CHAIN", "base"),
