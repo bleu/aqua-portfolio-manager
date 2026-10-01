@@ -30,7 +30,7 @@ Set `BASE_RPC_URL` in `.env` to use your own blockchain data service (RPC endpoi
 - [Decision records](docs/adr/README.md): design choices and tradeoffs.
 - [Writing style](docs/STYLE.md): rules for docs and code comments.
 - [Wallet setup](docs/guides/fresh-wallet-setup.md): funding, approvals, and registering strategies.
-- [Contracts](packages/contracts/README.md), [indexer](packages/indexer/README.md), and [simulation](simulation/README.md): package instructions.
+- [Contracts](packages/contracts/README.md), [indexer](packages/indexer/README.md), [web](apps/web/README.md), and [simulation](simulation/README.md): package instructions.
 
 ## License
 
