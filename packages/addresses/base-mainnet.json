@@ -1,0 +1,36 @@
+{
+  "$comment": "Single source of truth for Base mainnet addresses this repo hardcodes in 4 places (BLEUDEV-398). Edit this file, then run `pnpm --filter @aqua-portfolio-manager/addresses generate` to regenerate every consumer. See README.md.",
+  "aqua": "0x499943E74FB0cE105688beeE8Ef2ABec5D936d31",
+  "multiSendCallOnly": "0x9641d764fc13c8B624c04430C7356C1C7C8102e2",
+  "maxStalenessSeconds": 43200,
+  "tokens": [
+    {
+      "symbol": "WETH",
+      "address": "0x4200000000000000000000000000000000000006",
+      "feedPair": "ETH/USD",
+      "feedProxy": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+      "seedAggregator": "0x05c84a58FE042275b37db038bAAcD15F410c7bB0"
+    },
+    {
+      "symbol": "CBBTC",
+      "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+      "feedPair": "cbBTC/USD",
+      "feedProxy": "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D",
+      "seedAggregator": "0x51cE3091Cf646587E02Cad83b580992f8723e718"
+    },
+    {
+      "symbol": "USDC",
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "feedPair": "USDC/USD",
+      "feedProxy": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B",
+      "seedAggregator": "0x68bE4C50235205Ede361ac8244B1ee221CDDA5E2"
+    },
+    {
+      "symbol": "USDT",
+      "address": "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",
+      "feedPair": "USDT/USD",
+      "feedProxy": "0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9",
+      "seedAggregator": "0x84640bB7b71B0963E8EB57AD379A0B204eb2fdc8"
+    }
+  ]
+}

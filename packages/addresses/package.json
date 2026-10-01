@@ -1,0 +1,16 @@
+{
+  "name": "@aqua-portfolio-manager/addresses",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single source of truth for the Base mainnet addresses this repo hardcodes in Solidity, Envio's config.yaml, and the arbitrageur's TS/env config -- generates all of them from base-mainnet.json (BLEUDEV-398).",
+  "scripts": {
+    "generate": "tsx scripts/generate.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

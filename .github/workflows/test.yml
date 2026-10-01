@@ -53,6 +53,41 @@ jobs:
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
         run: forge test -vvv
 
+  check-generated-addresses:
+    name: Generated addresses
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --filter @aqua-portfolio-manager/addresses
+
+      - name: Typecheck generator
+        run: pnpm --filter @aqua-portfolio-manager/addresses typecheck
+
+      # Regenerates every consumer from base-mainnet.json and fails if the result doesn't match
+      # what's committed -- the enforcement for BLEUDEV-398's single source of truth. A hand-edit
+      # to a generated file, or an edit to base-mainnet.json without regenerating, fails here.
+      - name: Regenerate and diff
+        run: |
+          pnpm --filter @aqua-portfolio-manager/addresses generate
+          git diff --exit-code -- \
+            packages/contracts/script/generated/BaseMainnetAddresses.sol \
+            apps/indexer/src/generated/baseMainnetAddresses.ts \
+            apps/indexer/config.yaml \
+            apps/arbitrageur/.env.example
+
   check-arbitrageur:
     name: Arbitrageur
     runs-on: ubuntu-latest
