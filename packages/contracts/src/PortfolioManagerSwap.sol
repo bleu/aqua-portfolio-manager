@@ -108,13 +108,28 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         );
 
         // Preserve swap availability when fee collection fails, matching Fee.sol (OpenZeppelin M-09, Theori #10).
-        // Quotes skip the transfer.
+        // Quotes skip the transfer. The protocol-fee cut splits 50/50 between the DAO and Bleu
+        // (agreed separately between Bleu and 1inch, outside 1IP-103); each half is pulled
+        // independently so one recipient's failure never blocks the other or the swap. The DAO
+        // gets the extra unit on an odd split.
         if (daoAmount != 0 && !ctx.vm.isStaticContext) {
-            address recipient = PortfolioManagerFee.DAO_TREASURY_ADDRESS;
-            try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoAmount, recipient) {
-                ctx.swap.amountNetPulled += daoAmount;
+            uint256 bleuAmount = daoAmount / 2;
+            uint256 daoShare = daoAmount - bleuAmount;
+
+            address daoRecipient = PortfolioManagerFee.DAO_TREASURY_ADDRESS;
+            try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoShare, daoRecipient) {
+                ctx.swap.amountNetPulled += daoShare;
             } catch {
-                emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, recipient, daoAmount);
+                emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, daoRecipient, daoShare);
+            }
+
+            if (bleuAmount != 0) {
+                address bleuRecipient = PortfolioManagerFee.BLEU_TREASURY_ADDRESS;
+                try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, bleuAmount, bleuRecipient) {
+                    ctx.swap.amountNetPulled += bleuAmount;
+                } catch {
+                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, bleuRecipient, bleuAmount);
+                }
             }
         }
     }
