@@ -12,3 +12,4 @@ packages/contracts/broadcast/
 
 # Node
 node_modules/
+dist/
