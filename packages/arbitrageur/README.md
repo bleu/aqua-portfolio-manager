@@ -88,14 +88,19 @@ mid-transaction, not something an EOA signs.
 ### Running a local Fynd server
 
 ```
-cargo install fynd          # or: docker pull propellerheads/fynd
-export TYCHO_API_KEY=...    # ask PropellerHeads / whoever issued yours
-export RUST_LOG=fynd=info
-fynd serve --chain base
+cargo install fynd    # or: docker pull propellerheads/fynd
+cp .env.fynd.example .env.fynd   # fill in TYCHO_API_KEY -- ask PropellerHeads / whoever issued yours
+./run-fynd.sh
 ```
 
-Point `FYND_URL` (see `.env.example`) at wherever this ends up listening (`http://127.0.0.1:4000`
-by default). See [Fynd's own quickstart](https://github.com/propeller-heads/fynd/tree/main/docs/get-started/quickstart)
+`run-fynd.sh` wraps `fynd serve --chain base` with two fixes for real problems found running this
+locally (BLEUDEV-400): it binds Fynd's metrics server to `9899`, not Fynd's own default `9898`,
+which collides with the Envio indexer's own metrics port when both run at once; and it checks
+`TYCHO_API_KEY` is actually set before starting Fynd, since a missing key otherwise surfaces as a
+bare "Missing authorization token" response body, not an obvious env-var error.
+
+`FYND_URL` (see `.env.example`) already matches Fynd's real default HTTP port, `3000`. See
+[Fynd's own quickstart](https://github.com/propeller-heads/fynd/tree/main/docs/get-started/quickstart)
 for the full setup.
 
 ## Opportunity search
