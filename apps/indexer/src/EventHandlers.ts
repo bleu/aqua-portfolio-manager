@@ -97,7 +97,7 @@ indexer.onEvent({ contract: "Aqua", event: "Pushed" }, async ({ event, context }
       token: event.params.token,
       // Synthetic, not a real Transfer's delta -- the wallet's whole balance as of this block,
       // applied as one lump delta onto a starting sum of zero so the existing accumulation in
-      // packages/arbitrageur's syncWalletBalanceChanges (`balance = balance + delta`) needs no
+      // apps/arbitrageur's syncWalletBalanceChanges (`balance = balance + delta`) needs no
       // change to consume it. Always the first row for this wallet+token (shipping is the very
       // first block this token could have become balance-relevant), so this ordering is safe.
       change: balance,

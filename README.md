@@ -31,7 +31,7 @@ Set `BASE_RPC_URL` in `.env` to use your own blockchain data service (RPC endpoi
 - [Writing style](docs/STYLE.md): rules for docs and code comments.
 - [Monorepo conventions](docs/MONOREPO-CONVENTIONS.md): what counts as an app vs. a shared package.
 - [Wallet setup](docs/guides/fresh-wallet-setup.md): funding, approvals, and registering strategies.
-- [Contracts](packages/contracts/README.md), [indexer](packages/indexer/README.md), [arbitrageur](packages/arbitrageur/README.md), [decoding](packages/decoding/README.md), and [simulation](simulation/README.md): package instructions.
+- [Contracts](packages/contracts/README.md), [indexer](apps/indexer/README.md), [arbitrageur](apps/arbitrageur/README.md), [decoding](packages/decoding/README.md), and [simulation](simulation/README.md): package instructions.
 
 ## License
 

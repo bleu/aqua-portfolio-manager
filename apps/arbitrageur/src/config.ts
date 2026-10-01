@@ -110,7 +110,7 @@ export function loadConfig(): Config {
     // this list is recorded but not traded (Strategy Catalog's own eligibility check).
     allowedTokens: requiredAddressList("ALLOWED_TOKENS"),
     // Defense in depth against a strategy declaring a real allowed token with an
-    // attacker-controlled feed address. Must match packages/indexer/config.yaml's ChainlinkProxy
+    // attacker-controlled feed address. Must match apps/indexer/config.yaml's ChainlinkProxy
     // list exactly.
     allowedFeeds: requiredAddressList("ALLOWED_FEEDS"),
 

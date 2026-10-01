@@ -9,7 +9,7 @@ Pathfinder is closed-source with **no self-hosted or forked-mainnet-testable equ
 (`docs/ARCHITECTURE.md`'s Milestone 1 section). Every real trade against a live PM strategy is
 meant to come from *some* external taker or solver calling the router directly -- Pathfinder is
 one path to that, but not the only one, and not one we can test against ourselves. This service is
-that external taker, discovering strategies from [`packages/indexer`](../indexer) instead of a
+that external taker, discovering strategies from [`apps/indexer`](../indexer) instead of a
 fixed list, and executing through `packages/contracts/src/Arbitrageur.sol`.
 
 ## Architecture
@@ -126,10 +126,10 @@ A healthy leg on an unrelated group is never affected.
 
 ## Running the full stack
 
-Needs Postgres, Redis, a running `packages/indexer` instance, and a local Fynd server (above).
+Needs Postgres, Redis, a running `apps/indexer` instance, and a local Fynd server (above).
 
 ```sh
-# 1. Start the indexer (separate terminal, see packages/indexer/README.md)
+# 1. Start the indexer (separate terminal, see apps/indexer/README.md)
 cd ../indexer && pnpm dev
 
 # 2. Migrate this service's own Postgres schema

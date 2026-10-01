@@ -8,7 +8,7 @@ import {
   fetchPriceSnapshotsAfter,
 } from "./indexerClient.js";
 
-/// All four feeds this service currently watches (see packages/indexer/config.yaml's
+/// All four feeds this service currently watches (see apps/indexer/config.yaml's
 /// ChainlinkProxy comment) are 8-decimal, USD-quoted -- verified via each feed's own decimals()
 /// call, not assumed. A feed with a different decimals count would need this made per-feed
 /// (carried alongside the feed address in config, the way src/oracle.ts's caller already does

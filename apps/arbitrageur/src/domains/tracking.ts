@@ -10,7 +10,7 @@ export type TrackingStatus = "pending" | "final" | "not-found";
 /// confirmation depth."
 ///
 /// Deliberate simplification: this checks confirmation depth against the live chain
-/// (`publicClient.getBlockNumber()`), not against how far `packages/indexer`'s own sync has
+/// (`publicClient.getBlockNumber()`), not against how far `apps/indexer`'s own sync has
 /// progressed. The ADR's literal design waits for the *indexer* to catch up, so a downstream
 /// consumer reading Postgres never sees an execution as final before its own effects (balance
 /// changes, etc.) are indexed and synced. Chain-depth confirmation is what's implemented here --

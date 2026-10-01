@@ -6,7 +6,7 @@ import { pgTable, text, boolean, bigint, numeric, integer, jsonb, timestamp, pri
 /// `bigint` columns elsewhere in this file, so callers don't need to know which one a field uses.
 const usdWad = (name: string) => numeric(name, { mode: "bigint" });
 
-/// One row per indexed Aqua strategy, mirrored from `packages/indexer`'s `Strategy` entity via
+/// One row per indexed Aqua strategy, mirrored from `apps/indexer`'s `Strategy` entity via
 /// the `sync-indexer` job (see `src/sync/indexer.ts`). ADR-0014's Strategy Catalog domain.
 /// `id` matches the indexer's own composite id (`${maker}-${app}-${strategyHash}`, lowercase) so
 /// syncing is a plain upsert, never a lookup-then-insert.

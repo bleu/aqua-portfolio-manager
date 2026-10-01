@@ -13,7 +13,7 @@ import {IArbitrageur} from "./interfaces/IArbitrageur.sol";
 
 /// @title Arbitrageur — a minimal, owner-controlled taker for any SwapVM router
 /// @notice Executes SwapVM orders on the owner's behalf; sizing and profitability decisions live
-///         off-chain in `packages/arbitrageur`.
+///         off-chain in `apps/arbitrageur`.
 /// @dev Every swap uses `_takerTraits` with both transfer callbacks left `false`, so the owner
 ///      can be a plain EOA. `executeFlashArbitrage` borrows `amountIn` from Uniswap V4's
 ///      PoolManager and, by design, leaves any profit on this contract -- `sweep` collects it
@@ -45,7 +45,7 @@ contract Arbitrageur is Ownable, IArbitrageur {
     ///         borrowed from Uniswap V4's PoolManager (no flash-loan fee at all -- see
     ///         `IUniswapV4PoolManager.sol`) and repaid within the same transaction -- the owner
     ///         never needs to hold or approve `tokenIn` at all. `params.fyndCalldata`, built off-chain
-    ///         by `packages/arbitrageur` against a running Fynd instance, converts the curve's
+    ///         by `apps/arbitrageur` against a running Fynd instance, converts the curve's
     ///         `tokenOut` proceeds back into `tokenIn` on the open market so the loan can be
     ///         repaid within the same transaction -- see `unlockCallback`.
     function executeFlashArbitrage(FlashArbParams calldata params) external onlyOwner {

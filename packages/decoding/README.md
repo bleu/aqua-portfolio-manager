@@ -2,9 +2,10 @@
 
 Decodes Aqua's `abi.encode(Order)` bytes (`orderDecoder.ts`) and a Portfolio Manager strategy's
 program wire format (`programDecoder.ts`) -- the logic any app working with a shipped strategy's
-*decoded* form needs, not just one of them. Extracted from `packages/arbitrageur` (see
-[BLEUDEV-398](https://linear.app/bleu-builders/issue/BLEUDEV-398)) so `packages/indexer` and a
-future web UI can depend on the same decode logic instead of reimplementing it.
+*decoded* form needs, not just one of them. Extracted from `apps/arbitrageur` (see
+[BLEUDEV-398](https://linear.app/bleu-builders/issue/BLEUDEV-398)), the only current consumer --
+`apps/indexer` and a future web UI can depend on the same decode logic instead of reimplementing
+it once either actually needs a strategy's decoded form (neither does today).
 
 See `../../docs/MONOREPO-CONVENTIONS.md` for what makes this a "package" rather than an "app."
 
