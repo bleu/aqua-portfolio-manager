@@ -1,4 +1,4 @@
-# See thoughts/indexer-architecture.md for the design this implements.
+# See docs/adr/0014-production-arbitrageur-design.md for the design this implements.
 #
 # Indexes the real Aqua registry contract -- one deterministic address, identical across every
 # chain Aqua is live on (lib/aqua/README.md's deployment table) -- not something we deploy.
@@ -29,12 +29,74 @@ contracts:
         field_selection:
           transaction_fields:
             - hash
+  # ADR-0014's token allow list (USDC, USDT, WETH, WBTC) -- one contract definition since every
+  # ERC20 shares the same Transfer event, listed once per address under `chains` below. The
+  # handler filters to Transfers touching a known Strategy Wallet; every other Transfer on these
+  # tokens (the vast majority) is indexed too and discarded in-handler, not filtered at the
+  # source, since the wallet set is only known from already-indexed Strategy data.
+  - name: ERC20
+    handler: src/EventHandlers.ts
+    events:
+      - event: "Transfer(address indexed from, address indexed to, uint256 value)"
+        field_selection:
+          transaction_fields:
+            - hash
+  # ADR-0014's Oracle Price record. Each feed's well-known address (listed under ChainlinkProxy
+  # below) is an `EACAggregatorProxy` that never emits `AnswerUpdated` itself -- only its current
+  # underlying aggregator does, and Chainlink can swap that aggregator over time. ChainlinkProxy's
+  # AggregatorConfirmed handler registers the new aggregator
+  # (see EventHandlers.ts's `contractRegister`) so ChainlinkAggregator keeps following the live
+  # one; ChainlinkAggregator itself carries no static addresses beyond its seed list below.
+  - name: ChainlinkProxy
+    handler: src/EventHandlers.ts
+    events:
+      - event: "AggregatorConfirmed(address indexed previous, address indexed latest)"
+  - name: ChainlinkAggregator
+    handler: src/EventHandlers.ts
+    events:
+      - event: "AnswerUpdated(int256 indexed current, uint256 indexed roundId, uint256 updatedAt)"
+        field_selection:
+          transaction_fields:
+            - hash
 chains:
   - id: 8453 # Base -- matches Deploy.s.sol's AQUA_MAINNET default already in use for local dev.
-    # Aqua's real deployment block on Base, found via binary search on eth_getCode (empty at
-    # 38281776, present at 38281777) -- avoids wasting sync time indexing from genesis.
-    start_block: 38281777
+    # This Portfolio Manager Router's own deployment block on Base (packages/contracts/script/
+    # Deploy.s.sol's broadcast receipt), not Aqua's -- nothing could have shipped through this
+    # Router before it existed, so indexing Aqua's full history from its own 38281777 deployment
+    # block wastes sync time on strategies from other apps we'll never touch. The handler doesn't
+    # filter Shipped by `app` (see src/EventHandlers.ts), so other apps' strategies shipped after
+    # this block still get indexed -- only the ones before it are skipped.
+    start_block: 51925518
     contracts:
       - name: Aqua
         address:
           - "0x499943e74fb0ce105688beee8ef2abec5d936d31"
+      - name: ERC20
+        # Base mainnet addresses, matching the constants PortfolioManagerMultiTokenBasketE2E.t.sol
+        # already verifies against a real fork, except cbBTC replaces WBTC as the real basket's
+        # BTC leg (cbBTC is the more liquid, more actively traded BTC exposure on Base).
+        address:
+          - "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" # USDC
+          - "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" # USDT
+          - "0x4200000000000000000000000000000000000006" # WETH
+          - "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf" # cbBTC
+      - name: ChainlinkProxy
+        # Base mainnet feed addresses, matching the constants PortfolioManagerMultiTokenBasketE2E.t.sol
+        # already verifies against a real fork, except cbBTC/USD replaces BTC/USD (see ERC20 above).
+        # All four feeds are 8-decimal, USD-quoted (verified via decimals()).
+        address:
+          - "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70" # ETH/USD, WETH's feed
+          - "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D" # cbBTC/USD, cbBTC's feed
+          - "0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9" # USDT/USD
+          - "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B" # USDC/USD
+      - name: ChainlinkAggregator
+        # Each proxy's `aggregator()` result as of 2026-09-28 (see EventHandlers.ts's seed map).
+        # A swap between `start_block` and whenever a feed's first `AggregatorConfirmed` lands
+        # after this file's own commit is not covered: AnswerUpdated history from a
+        # still-earlier aggregator than this seed is not indexed.
+        # Every swap from here forward is, via ChainlinkProxy's AggregatorConfirmed handler.
+        address:
+          - "0x05c84a58FE042275b37db038bAAcD15F410c7bB0" # ETH/USD
+          - "0x51cE3091Cf646587E02Cad83b580992f8723e718" # cbBTC/USD
+          - "0x84640bB7b71B0963E8EB57AD379A0B204eb2fdc8" # USDT/USD
+          - "0x68bE4C50235205Ede361ac8244B1ee221CDDA5E2" # USDC/USD

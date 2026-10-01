@@ -7,6 +7,18 @@ export function valueWad(amountIn: bigint, priceInWad: bigint, decimalsIn: numbe
   return (amountIn * priceInWad) / 10n ** BigInt(decimalsIn);
 }
 
+/// Inverse of `valueWad`: how many of a `decimalsIn`-decimal token, priced at `priceInWad`, are
+/// worth `usdWad`. Used to turn a USD-denominated search bound into a raw tokenIn amount per leg
+/// -- a single raw-unit bound can't sensibly cover tokens spanning different decimals (e.g. an
+/// 18-decimal WETH leg and a 6-decimal USDC leg in the same basket), so bounds are configured in
+/// USD and converted here, per leg, instead.
+export function amountForUsdWad(usdWad: bigint, priceInWad: bigint, decimalsIn: number): bigint {
+  if (priceInWad === 0n) {
+    throw new Error("priceInWad must be non-zero");
+  }
+  return (usdWad * 10n ** BigInt(decimalsIn)) / priceInWad;
+}
+
 /// The `tokenOut` amount that would exactly preserve `amountIn`'s oracle value -- the "fair",
 /// no-arbitrage exchange rate PM's own curve is supposed to track (see PM's own price-deviation
 /// circuit breaker, which checks exactly this ratio on-chain).
@@ -26,8 +38,8 @@ export function fairAmountOut(
 
 /// Profit as basis points (1/10_000) of the fair value of the trade -- standard bps, distinct
 /// from PM's own on-chain `PM_BPS` (1e9) convention, since this is a plain off-chain comparison,
-/// not something encoded into strategy args. Kept for logging/diagnostics; `findBestOpportunity`
-/// itself selects on `profitUsdWad`, not this.
+/// not something encoded into strategy args. Kept for logging/diagnostics; candidate selection
+/// itself ranks on `profitUsdWad`, not this.
 export function profitBps(quotedOut: bigint, fairOut: bigint): bigint {
   if (fairOut === 0n) return 0n;
   return ((quotedOut - fairOut) * BPS_SCALE) / fairOut;
@@ -49,67 +61,39 @@ export interface Opportunity {
   profitUsdWad: bigint;
 }
 
-/// Samples `steps` geometrically-spaced trade sizes between `minAmount` and `maxAmount` (log-
-/// scale, so a wide min/max range still gets even coverage across orders of magnitude) and
-/// returns whichever size cleared `minProfitBps` by the widest margin, or `undefined` if none
-/// did. An approximation, not the true optimum -- see README's "Opportunity search" section for
-/// why geometric sampling over a tighter search (e.g. ternary) was the right tradeoff here.
-export async function findBestOpportunity(params: {
-  minAmount: bigint;
-  maxAmount: bigint;
-  steps: number;
-  minProfitUsdWad: bigint;
-  priceInWad: bigint;
-  decimalsIn: number;
-  priceOutWad: bigint;
-  decimalsOut: number;
-  quote: (amountIn: bigint) => Promise<bigint>;
-}): Promise<Opportunity | undefined> {
-  const { minAmount, maxAmount, steps, minProfitUsdWad, priceInWad, decimalsIn, priceOutWad, decimalsOut, quote } =
-    params;
+/// Balancer's closed-form "In-Given-Price" formula (whitepaper eq. 21), adapted for this curve's
+/// group-level pricing (PortfolioManagerPricing.sol's `spotPrice`) and its fee-on-input. Target is
+/// always perfect group-weight equilibrium (`SP' = WAD`), this design's own definition of "fair"
+/// (PortfolioManagerSwap's price-deviation check). Returns 0 when this direction moves further
+/// from equilibrium instead of closer; `evaluateStrategy` tries both legs of every group pair.
+///
+/// Floating point, not fixed-point, deliberately: the result seeds exactly one real `quoteExactIn`
+/// verification, never the trade's final source of truth.
+export function inGivenPriceValueWad(params: {
+  groupInValueWad: bigint;
+  groupOutValueWad: bigint;
+  weightInWad: bigint;
+  weightOutWad: bigint;
+  feeWad: bigint;
+}): bigint {
+  const { groupInValueWad, groupOutValueWad, weightInWad, weightOutWad, feeWad } = params;
+  if (groupInValueWad <= 0n || groupOutValueWad <= 0n || weightInWad <= 0n || weightOutWad <= 0n) return 0n;
 
-  if (minAmount <= 0n || maxAmount <= minAmount || steps < 2) {
-    throw new Error("invalid search bounds");
-  }
+  // ratio = SP'/SP, with SP' = 1 (WAD) and SP = (B_i/W_i)/(B_o/W_o):
+  // ratio = B_o * W_i / (B_i * W_o)
+  const ratio = (Number(groupOutValueWad) * Number(weightInWad)) / (Number(groupInValueWad) * Number(weightOutWad));
+  if (!Number.isFinite(ratio) || ratio <= 0) return 0n;
 
-  const sizes = geometricSteps(minAmount, maxAmount, steps);
-  // Each size's quote is an independent read-only eth_call -- fetched concurrently rather than
-  // one at a time, since `steps` sequential RPC round trips per leg adds up fast across a basket
-  // with several legs.
-  const quotedOuts = await Promise.all(sizes.map(quote));
+  const exponent = Number(weightOutWad) / (Number(weightOutWad) + Number(weightInWad));
+  const poweredRatio = ratio ** exponent;
+  if (poweredRatio <= 1) return 0n; // this direction moves the price further from equilibrium
 
-  let best: Opportunity | undefined;
+  const amountInEffective = Number(groupInValueWad) * (poweredRatio - 1);
+  const feeFraction = Number(feeWad) / Number(WAD);
+  const amountInGross = amountInEffective / (1 - feeFraction);
+  if (!Number.isFinite(amountInGross) || amountInGross <= 0) return 0n;
 
-  for (let i = 0; i < sizes.length; i++) {
-    const amountIn = sizes[i]!;
-    const quotedOut = quotedOuts[i]!;
-    const fairOut = fairAmountOut(amountIn, priceInWad, decimalsIn, priceOutWad, decimalsOut);
-    const usdProfit = profitUsdWad(quotedOut, fairOut, priceOutWad, decimalsOut);
-
-    if (usdProfit >= minProfitUsdWad && (best === undefined || usdProfit > best.profitUsdWad)) {
-      best = { amountIn, quotedOut, fairOut, profitBps: profitBps(quotedOut, fairOut), profitUsdWad: usdProfit };
-    }
-  }
-
-  return best;
-}
-
-/// `steps` bigint sizes spaced evenly on a log scale between `min` and `max`, inclusive of both
-/// endpoints. Interpolates in floating point (trade sizes are approximate search points, not
-/// values requiring WAD-exact precision) and rounds back to bigint.
-export function geometricSteps(min: bigint, max: bigint, steps: number): bigint[] {
-  if (steps < 2) {
-    throw new Error("geometricSteps requires at least 2 steps");
-  }
-  const logMin = Math.log(Number(min));
-  const logMax = Math.log(Number(max));
-  const result: bigint[] = [];
-  for (let i = 0; i < steps; i++) {
-    const t = i / (steps - 1);
-    const value = Math.exp(logMin + t * (logMax - logMin));
-    result.push(BigInt(Math.round(value)));
-  }
-  return result;
+  return BigInt(Math.round(amountInGross));
 }
 
 export { WAD, BPS_SCALE };

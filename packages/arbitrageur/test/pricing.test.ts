@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fairAmountOut, findBestOpportunity, geometricSteps, profitBps, profitUsdWad, valueWad } from "../src/pricing.js";
+import { fairAmountOut, inGivenPriceValueWad, profitBps, profitUsdWad, valueWad } from "../src/pricing.js";
 
 const WAD = 10n ** 18n;
 
@@ -63,94 +63,113 @@ describe("profitUsdWad", () => {
   });
 });
 
-describe("geometricSteps", () => {
-  it("includes both endpoints and is monotonically increasing", () => {
-    const steps = geometricSteps(1_000n, 1_000_000n, 5);
-    expect(steps[0]).toBe(1_000n);
-    expect(steps[steps.length - 1]).toBe(1_000_000n);
-    for (let i = 1; i < steps.length; i++) {
-      expect(steps[i]).toBeGreaterThan(steps[i - 1]);
-    }
-  });
-
-  it("spans orders of magnitude evenly, not linearly", () => {
-    const steps = geometricSteps(1n, 1_000_000n, 7);
-    // Log-spaced over 6 orders of magnitude in 6 hops means each hop is ~10x, not ~166_666 apart.
-    const ratio = Number(steps[1]) / Number(steps[0]);
-    expect(ratio).toBeGreaterThan(5);
-    expect(ratio).toBeLessThan(20);
-  });
-
-  it("throws a clear error instead of dividing by zero for fewer than 2 steps", () => {
-    expect(() => geometricSteps(1n, 1_000n, 1)).toThrow(/at least 2 steps/);
-    expect(() => geometricSteps(1n, 1_000n, 0)).toThrow(/at least 2 steps/);
-  });
-});
-
-describe("findBestOpportunity", () => {
-  /// A synthetic constant-product-style quote function: amountOut = amountIn * k / (amountIn + c),
-  /// which concaves exactly like a real weighted-curve AMM's marginal price does -- good enough
-  /// to exercise the search's ability to find an interior maximum, without needing a live chain.
-  /// `k` and `c` must be on the same scale as `amountIn` (WAD, here) -- an unscaled `k` makes the
-  /// curve's large-amountIn asymptote negligible next to a WAD-scaled fair value, so every size
-  /// reads as unprofitable regardless of the curve's intended shape.
-  function syntheticQuote(k: bigint, c: bigint) {
-    return async (amountIn: bigint) => (amountIn * k) / (amountIn + c);
+describe("inGivenPriceValueWad", () => {
+  /// Independent check of what eq.21 (In-Given-Price) claims: trading the returned amount
+  /// actually brings the curve's own spot price to equilibrium. Implements the curve's exactIn
+  /// (whitepaper eq.15 / PortfolioManagerPricing.sol's exactIn, fee-exclusive here since the test
+  /// cases below use feeWad: 0n) independently of pricing.ts, so this isn't just re-checking the
+  /// same formula against itself -- it simulates the trade and re-measures the resulting price.
+  function simulateSpotPriceAfterTrade(
+    groupInValueWad: bigint,
+    groupOutValueWad: bigint,
+    weightInWad: bigint,
+    weightOutWad: bigint,
+    amountIn: bigint,
+  ): number {
+    const bIn = Number(groupInValueWad);
+    const bOut = Number(groupOutValueWad);
+    const wIn = Number(weightInWad);
+    const wOut = Number(weightOutWad);
+    const amountOut = bOut * (1 - (bIn / (bIn + Number(amountIn))) ** (wIn / wOut));
+    const newIn = bIn + Number(amountIn);
+    const newOut = bOut - amountOut;
+    return newIn / wIn / (newOut / wOut);
   }
 
-  it("finds a profitable size when the curve pays out above fair value", async () => {
-    // Fair rate is 1:1 (priceIn == priceOut, same decimals, so $1 == 1 WAD token here). Amounts
-    // are WAD-scaled (real 18-decimal token units), not raw integers -- a $1 profit floor is
-    // meaningless against amountIn values smaller than a wei-fraction of a token. The synthetic
-    // curve pays out more than amountIn for small trades (mispriced pool), tapering off as size
-    // grows; `c` is scaled alongside the amount range so the curve's shape (profitable-small,
-    // tapering-large) is preserved at this new scale.
-    const result = await findBestOpportunity({
-      minAmount: 10n * WAD,
-      maxAmount: 100_000n * WAD,
-      steps: 10,
-      minProfitUsdWad: 1n * WAD, // $1
-      priceInWad: WAD,
-      decimalsIn: 18,
-      priceOutWad: WAD,
-      decimalsOut: 18,
-      quote: syntheticQuote(1_500_000n * WAD, 1_000n * WAD), // pays > amountIn while amountIn is small
-    });
+  it("brings an underweight group's curve price to equilibrium (equal weights)", () => {
+    // groupIn ($15) is underweight relative to groupOut ($25) at equal 50/50 target weights --
+    // SP = (15/0.5)/(25/0.5) = 0.6, below the 1.0 equilibrium target, so trading into groupIn is
+    // the restoring direction.
+    const groupInValueWad = 15n * WAD;
+    const groupOutValueWad = 25n * WAD;
+    const weightInWad = WAD / 2n;
+    const weightOutWad = WAD / 2n;
 
-    expect(result).toBeDefined();
-    expect(result!.profitUsdWad).toBeGreaterThanOrEqual(1n * WAD);
+    const amountIn = inGivenPriceValueWad({ groupInValueWad, groupOutValueWad, weightInWad, weightOutWad, feeWad: 0n });
+
+    expect(amountIn).toBeGreaterThan(0n);
+    const newSp = simulateSpotPriceAfterTrade(groupInValueWad, groupOutValueWad, weightInWad, weightOutWad, amountIn);
+    expect(newSp).toBeCloseTo(1, 6);
   });
 
-  it("returns undefined when nothing clears the profit threshold", async () => {
-    const result = await findBestOpportunity({
-      minAmount: 10n * WAD,
-      maxAmount: 100_000n * WAD,
-      steps: 10,
-      minProfitUsdWad: 1n * WAD,
-      priceInWad: WAD,
-      decimalsIn: 18,
-      priceOutWad: WAD,
-      decimalsOut: 18,
-      // Pays out less than amountIn always -- never profitable in either direction.
-      quote: syntheticQuote(900_000n * WAD, 1_000_000n * WAD),
+  it("returns 0 for the direction that would move price further from equilibrium", () => {
+    // Same pool, opposite direction: groupOut ($25) is already overweight, so trading further
+    // into it (as tokenIn) would push its price even further from equilibrium, not toward it.
+    const amountIn = inGivenPriceValueWad({
+      groupInValueWad: 25n * WAD,
+      groupOutValueWad: 15n * WAD,
+      weightInWad: WAD / 2n,
+      weightOutWad: WAD / 2n,
+      feeWad: 0n,
     });
-
-    expect(result).toBeUndefined();
+    expect(amountIn).toBe(0n);
   });
 
-  it("rejects invalid search bounds", async () => {
-    await expect(
-      findBestOpportunity({
-        minAmount: 100n,
-        maxAmount: 10n, // max < min
-        steps: 5,
-        minProfitUsdWad: 0n,
-        priceInWad: WAD,
-        decimalsIn: 18,
-        priceOutWad: WAD,
-        decimalsOut: 18,
-        quote: syntheticQuote(1n, 1n),
-      }),
-    ).rejects.toThrow();
+  it("returns 0 when the pool is already at equilibrium", () => {
+    const amountIn = inGivenPriceValueWad({
+      groupInValueWad: 20n * WAD,
+      groupOutValueWad: 20n * WAD,
+      weightInWad: WAD / 2n,
+      weightOutWad: WAD / 2n,
+      feeWad: 0n,
+    });
+    expect(amountIn).toBe(0n);
+  });
+
+  it("still reaches equilibrium with unequal group weights", () => {
+    // 70/30 target instead of 50/50 -- equilibrium is B_i/W_i == B_o/W_o, not B_i == B_o.
+    const groupInValueWad = 10n * WAD;
+    const groupOutValueWad = 30n * WAD;
+    const weightInWad = (WAD * 7n) / 10n;
+    const weightOutWad = (WAD * 3n) / 10n;
+
+    const amountIn = inGivenPriceValueWad({ groupInValueWad, groupOutValueWad, weightInWad, weightOutWad, feeWad: 0n });
+
+    expect(amountIn).toBeGreaterThan(0n);
+    const newSp = simulateSpotPriceAfterTrade(groupInValueWad, groupOutValueWad, weightInWad, weightOutWad, amountIn);
+    expect(newSp).toBeCloseTo(1, 6);
+  });
+
+  it("grosses the amount up by the fee so the net effective trade still reaches equilibrium", () => {
+    // Same underweight pool as the first case, but with a 2% fee -- the curve charges the fee on
+    // input before it reaches the invariant (PortfolioManagerPricing.sol's exactIn), so the gross
+    // amount returned here must be larger than the fee-free case by exactly that margin.
+    const groupInValueWad = 15n * WAD;
+    const groupOutValueWad = 25n * WAD;
+    const weightInWad = WAD / 2n;
+    const weightOutWad = WAD / 2n;
+    const feeWad = WAD / 50n; // 2%
+
+    const grossAmountIn = inGivenPriceValueWad({ groupInValueWad, groupOutValueWad, weightInWad, weightOutWad, feeWad });
+    const feeFreeAmountIn = inGivenPriceValueWad({
+      groupInValueWad,
+      groupOutValueWad,
+      weightInWad,
+      weightOutWad,
+      feeWad: 0n,
+    });
+
+    expect(grossAmountIn).toBeGreaterThan(feeFreeAmountIn);
+    // netAmountIn = grossAmountIn * (1 - fee) should reproduce the fee-free effective amount.
+    const netAmountIn = (Number(grossAmountIn) * (1 - 0.02));
+    expect(netAmountIn).toBeCloseTo(Number(feeFreeAmountIn), -1);
+  });
+
+  it("returns 0 for any non-positive input", () => {
+    const base = { groupInValueWad: 15n * WAD, groupOutValueWad: 25n * WAD, weightInWad: WAD / 2n, weightOutWad: WAD / 2n, feeWad: 0n };
+    expect(inGivenPriceValueWad({ ...base, groupInValueWad: 0n })).toBe(0n);
+    expect(inGivenPriceValueWad({ ...base, groupOutValueWad: -1n })).toBe(0n);
+    expect(inGivenPriceValueWad({ ...base, weightInWad: 0n })).toBe(0n);
+    expect(inGivenPriceValueWad({ ...base, weightOutWad: 0n })).toBe(0n);
   });
 });

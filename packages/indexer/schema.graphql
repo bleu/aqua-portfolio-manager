@@ -1,15 +1,71 @@
-# See thoughts/indexer-architecture.md ("Database schema") for the full design and the
-# equivalent Postgres DDL Envio's codegen produces from this file.
+# See docs/adr/0014-production-arbitrageur-design.md ("Indexed state") for the design this
+# schema implements.
 
 type Strategy {
   id: ID! # `${maker}-${app}-${strategyHash}`, lowercase -- matches Aqua's own balance-state key
   maker: String! @index
   app: String! @index
   strategyHash: String!
+  # Shipped's own `strategy` bytes -- ADR-0014's Strategy Payload "raw program data". Note this
+  # is `abi.encode(ISwapVM.Order)` (maker, packed traits, and the program bytecode buried inside
+  # `data`), not the bare SwapVM program bytecode alone -- Aqua hashes and emits exactly this blob
+  # (`strategyHash = keccak256(strategy)`, matching `ISwapVM.hash`'s "keccak256(abi.encode(order))
+  # for Aqua orders"). Consumers need to ABI-decode the Order first.
+  encodedOrder: String!
   tokens: [String!]! # declared at ship() time, via same-tx Pushed events (see EventHandlers.ts)
   isActive: Boolean! @index # true from Shipped; flips false on the matching Docked
   shippedAt: BigInt! # unix timestamp
   shippedAtTxHash: String! # also used to tell ship-time Pushed events from later trade-time ones
   dockedAt: BigInt
   dockedAtTxHash: String
+}
+
+# Marks an address as a known Strategy Wallet (a maker with at least one indexed Strategy), set
+# alongside every Strategy row so the Transfer handler can check membership in O(1) instead of
+# scanning every indexed Strategy by its composite id.
+type StrategyWallet {
+  id: ID! # the maker address, lowercase
+}
+
+# One row per allow-listed-token Transfer touching a known Strategy Wallet (a maker with at
+# least one indexed Strategy) -- ADR-0014's "Wallet Balance Change" record. `change` is signed:
+# negative when the wallet is the Transfer's `from`, positive when it's the `to`. A wallet's
+# current balance for a token is the sum of its `change` rows plus the one-time balance read
+# taken at Strategy discovery (see the ADR's Indexed state section) -- this table only ever
+# stores deltas, never a running total, so re-processing never double-counts.
+type WalletBalanceChange {
+  id: ID! # `${transactionHash}-${logIndex}`
+  wallet: String! @index
+  token: String! @index
+  change: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: String!
+  logIndex: Int!
+}
+
+# Maps a live Chainlink aggregator address to the feed proxy it currently backs. The well-known
+# feed addresses (the ones this repo's contracts and tests use) are `EACAggregatorProxy`
+# contracts that never emit `AnswerUpdated` themselves -- only their current underlying
+# aggregator does, and Chainlink can swap that aggregator over time. `AnswerUpdated` only
+# identifies the emitting aggregator, not which feed it's for, so this table is how the handler
+# recovers that. Seeded with each feed's aggregator as of setup (see config.yaml); updated
+# whenever a proxy's `AggregatorConfirmed` fires.
+type ChainlinkAggregatorFeed {
+  id: ID! # the aggregator address, lowercase
+  feedProxy: String! @index # the well-known feed (proxy) address this aggregator currently backs
+}
+
+# One row per Chainlink price update for an allow-listed token's feed -- ADR-0014's "Oracle
+# Price" record. `feedProxy` is the well-known, stable feed address, not the (swappable)
+# aggregator that actually emitted the event -- see ChainlinkAggregatorFeed.
+type PriceSnapshot {
+  id: ID! # `${transactionHash}-${logIndex}`
+  feedProxy: String! @index
+  answer: BigInt!
+  updatedAt: BigInt! # Chainlink's own reported update time, from AnswerUpdated's own arg
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: String!
+  logIndex: Int!
 }
