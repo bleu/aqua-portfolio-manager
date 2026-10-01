@@ -1,0 +1,22 @@
+{
+  "name": "@aqua-portfolio-manager/decoding",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Decodes Aqua's abi.encode(Order) bytes and a PM strategy's program wire format -- shared between any app that needs a strategy's decoded form, not just one of them",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepare": "tsc",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

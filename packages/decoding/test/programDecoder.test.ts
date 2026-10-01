@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeProgram, ProgramDecodeError } from "../src/domains/programDecoder.js";
+import { decodeProgram, ProgramDecodeError } from "../src/programDecoder.js";
 
 // Real bytes from the actual Solidity builders (PortfolioManagerProgramBuilder.build /
 // GatedPortfolioManagerProgramBuilder.build), not hand-encoded -- generated once via a throwaway

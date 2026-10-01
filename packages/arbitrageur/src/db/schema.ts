@@ -18,7 +18,8 @@ export const strategies = pgTable("strategies", {
   tokens: jsonb("tokens").$type<string[]>().notNull(),
   isActive: boolean("is_active").notNull(),
   // `abi.encode(ISwapVM.Order)` -- what Aqua's Shipped event actually carries (see
-  // src/domains/orderDecoder.ts's own doc comment for why this isn't the bare program bytes).
+  // @aqua-portfolio-manager/decoding's orderDecoder.ts doc comment for why this isn't the bare
+  // program bytes).
   // Always set at sync time; src/domains/strategyCatalog.ts decodes it, doesn't wait for it.
   encodedOrder: text("encoded_order").notNull(),
   resolverKycToken: text("resolver_kyc_token"),

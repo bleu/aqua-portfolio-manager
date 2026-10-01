@@ -3,8 +3,7 @@ import type { Address, Hex, PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Db } from "../db/client.js";
 import { strategies, feedPrices, candidates } from "../db/schema.js";
-import { decodeProgram, type DecodedGroup } from "./programDecoder.js";
-import { decodeOrder, extractProgram } from "./orderDecoder.js";
+import { decodeProgram, type DecodedGroup, decodeOrder, extractProgram } from "@aqua-portfolio-manager/decoding";
 import { inGivenPriceValueWad, fairAmountOut, profitBps, profitUsdWad, amountForUsdWad, valueWad, WAD } from "../pricing.js";
 import { getFyndSwapCalldata, type FyndClient } from "../fynd.js";
 import { quoteExactIn, tokenDecimals, tokenBalance } from "../chain.js";
@@ -136,7 +135,7 @@ export async function evaluateStrategy(
   // The real Order, decoded from what Shipped actually carries -- not reconstructed or guessed.
   // `order.traits` in particular can't be inferred (it's a maker-chosen packed bitfield, not a PM
   // convention), so quoteExactIn's Order argument below uses this decode's own maker/traits/data
-  // directly, never a hand-built stand-in. See src/domains/orderDecoder.ts.
+  // directly, never a hand-built stand-in. See @aqua-portfolio-manager/decoding's orderDecoder.ts.
   const order = decodeOrder(strategy.encodedOrder as Hex);
   const program = extractProgram(order.traits, order.data);
   const decoded = decodeProgram(program);

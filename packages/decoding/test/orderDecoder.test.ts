@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeOrder, extractProgram } from "../src/domains/orderDecoder.js";
+import { decodeOrder, extractProgram } from "../src/orderDecoder.js";
 
 // Real bytes from an actual MakerTraitsLib.build(...) + abi.encode(order) call (a no-hooks PM
 // order: shouldUnwrapWeth=false, useAquaInsteadOfSignature=true, receiver=address(0)), generated

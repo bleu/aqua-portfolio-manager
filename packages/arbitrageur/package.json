@@ -15,6 +15,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@aqua-portfolio-manager/decoding": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "@kayibal/fynd-client": "^0.107.1",
     "bullmq": "^6.3.9",

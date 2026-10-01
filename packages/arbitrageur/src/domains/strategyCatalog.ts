@@ -2,8 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Address, Hex } from "viem";
 import type { Db } from "../db/client.js";
 import { strategies, type StrategyRow } from "../db/schema.js";
-import { decodeProgram, ProgramDecodeError } from "./programDecoder.js";
-import { decodeOrder, extractProgram } from "./orderDecoder.js";
+import { decodeProgram, ProgramDecodeError, decodeOrder, extractProgram } from "@aqua-portfolio-manager/decoding";
 
 export interface EligibilityResult {
   eligible: boolean;
@@ -38,11 +37,11 @@ export function evaluateEligibility(
 }
 
 /// Strategy Catalog domain: decodes one Strategy row's `encodedOrder` (the ABI-encoded Order --
-/// see src/domains/orderDecoder.ts for why that's not the bare program bytes) down to its
-/// program, and writes back the resolver KYC token (if gated, per ADR-0015) and eligibility
-/// reason (if any). Idempotent -- safe to re-run for a Strategy whose order hasn't changed (it
-/// can't: Aqua strategies are immutable once shipped), so a re-run after a crash just recomputes
-/// the same result.
+/// see @aqua-portfolio-manager/decoding's orderDecoder.ts for why that's not the bare program
+/// bytes) down to its program, and writes back the resolver KYC token (if gated, per ADR-0015)
+/// and eligibility reason (if any). Idempotent -- safe to re-run for a Strategy whose order
+/// hasn't changed (it can't: Aqua strategies are immutable once shipped), so a re-run after a
+/// crash just recomputes the same result.
 export async function evaluateStrategyCatalog(
   db: Db,
   strategy: StrategyRow,

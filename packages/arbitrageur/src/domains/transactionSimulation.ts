@@ -3,7 +3,7 @@ import type { Address, Hex, PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Db } from "../db/client.js";
 import { strategies, candidates } from "../db/schema.js";
-import { decodeOrder } from "./orderDecoder.js";
+import { decodeOrder } from "@aqua-portfolio-manager/decoding";
 import { simulateFlashArbitrage, type FlashArbParams } from "../chain.js";
 
 export interface BuiltFlashArbParams {

@@ -156,9 +156,9 @@ to confirm it's discovering strategies and finding opportunities before setting 
 - `pnpm db:generate` / `pnpm db:migrate` -- Drizzle migration generation/application.
 - `pnpm test` -- `vitest run`. No live Postgres, Redis, Fynd server, or chain needed: covers
   `pricing.ts`'s pure math, `fynd.ts`'s request-building and Uniswap V4 exclusion against a fake
-  client, `programDecoder.ts`/`orderDecoder.ts` against real bytes generated from the actual
-  Solidity encoders (not hand-derived fixtures), `sync/indexer.ts`'s cursor and price-normalization
-  logic, and `strategyCatalog.ts`'s eligibility check.
+  client, `sync/indexer.ts`'s cursor and price-normalization logic, and `strategyCatalog.ts`'s
+  eligibility check (order/program decoding itself is tested in
+  `@aqua-portfolio-manager/decoding`, see `packages/decoding/README.md`).
 
 ## Limits
 

@@ -70,8 +70,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The trailing `...` pulls in workspace dependencies (e.g. @aqua-portfolio-manager/decoding)
+      # too, not just this package itself -- needed so decoding's own `prepare` script (which
+      # builds it) actually runs; a bare `--filter arbitrageur` install skips it entirely.
       - name: Install dependencies
-        run: pnpm install --filter @aqua-portfolio-manager/arbitrageur
+        run: pnpm install --filter "@aqua-portfolio-manager/arbitrageur..."
 
       - name: Typecheck
         run: pnpm --filter @aqua-portfolio-manager/arbitrageur typecheck

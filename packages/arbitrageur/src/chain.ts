@@ -2,7 +2,7 @@ import { createPublicClient, createWalletClient, http, type Address, type Hex, t
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrageurAbi, erc20Abi } from "./abi.js";
 import type { Config } from "./config.js";
-import type { DecodedOrder } from "./domains/orderDecoder.js";
+import type { DecodedOrder } from "@aqua-portfolio-manager/decoding";
 
 export function makeClients(config: Config) {
   const account = privateKeyToAccount(config.privateKey);
