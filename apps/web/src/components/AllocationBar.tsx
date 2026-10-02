@@ -38,24 +38,29 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
       </div>
 
       <div className="relative mt-4 pt-3">
-        <div className="flex h-10 overflow-hidden rounded-lg border border-border bg-bg">
+        <div className="relative flex h-10 overflow-hidden rounded-lg border border-border bg-bg">
           <div className="bg-accent-muted" style={{ width: `${lower}%` }} />
           {gapWidth > 0 && (
             <div
-              className="flex items-center justify-center bg-accent text-text"
+              className={cn(
+                'flex items-center justify-center bg-accent text-text',
+                // The pin already marks the target-side edge; this hairline only draws on the
+                // other edge, so it never doubles up with the pin's own line.
+                isShrinking ? 'border-r-2 border-[#6D8CFF]' : 'border-l-2 border-[#6D8CFF]',
+              )}
               style={{ width: `${gapWidth}%` }}
             >
               {isShrinking ? <ArrowLeftIcon className="size-4" /> : <ArrowRightIcon className="size-4" />}
             </div>
           )}
+          {/* A child of the bar itself, inset to its own box -- matches the fill's rendered
+              height exactly, instead of a sibling element guessing that height from outside. */}
+          <div className="absolute inset-y-0 w-[3px] -translate-x-1/2 bg-text" style={{ left: `${targetPct}%` }} />
         </div>
-        <div
-          className="absolute top-0 flex -translate-x-1/2 flex-col items-center"
+        <PinIcon
+          className="absolute top-1.5 size-3 -translate-x-1/2 text-text"
           style={{ left: `${targetPct}%` }}
-        >
-          <PinIcon className="size-3 text-text" />
-          <div className="h-10 w-px bg-text/70" />
-        </div>
+        />
       </div>
 
       <div className="mt-3 flex items-center gap-2 text-sm text-text-muted">

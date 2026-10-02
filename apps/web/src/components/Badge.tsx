@@ -29,7 +29,7 @@ export function Badge({ children, variant = 'outline', className }: BadgeProps) 
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border border-accent-border bg-accent-soft px-3 py-1 text-xs font-semibold tracking-wide text-accent uppercase',
+        'inline-flex items-center rounded-full bg-accent-soft px-3 py-1 text-xs font-semibold tracking-wide text-accent uppercase',
         className,
       )}
     >
