@@ -2,7 +2,7 @@
 
 Single source of truth for the Base mainnet addresses this repo used to hardcode independently in
 4 places: `packages/contracts/script/ShipStrategy.s.sol`, `apps/indexer/config.yaml`,
-`apps/indexer/src/EventHandlers.ts`, and `apps/arbitrageur/.env.example` (BLEUDEV-398/399).
+`apps/indexer/src/EventHandlers.ts`, and `apps/arbitrageur/.env.example`.
 
 This package has no runtime code of its own -- it's data (`base-mainnet.json`) plus a generator.
 

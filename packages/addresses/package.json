@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Single source of truth for the Base mainnet addresses this repo hardcodes in Solidity, Envio's config.yaml, and the arbitrageur's TS/env config -- generates all of them from base-mainnet.json (BLEUDEV-398).",
+  "description": "Single source of truth for the Base mainnet addresses this repo hardcodes in Solidity, Envio's config.yaml, and the arbitrageur's TS/env config -- generates all of them from base-mainnet.json.",
   "scripts": {
     "generate": "tsx scripts/generate.ts",
     "typecheck": "tsc --noEmit"

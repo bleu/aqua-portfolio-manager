@@ -5,7 +5,7 @@ pragma solidity 0.8.30;
 
 /// @notice GENERATED FILE -- do not edit by hand.
 /// @dev Regenerate from packages/addresses/base-mainnet.json: run `pnpm generate`
-///      inside packages/addresses (BLEUDEV-398).
+///      inside packages/addresses.
 library BaseMainnetAddresses {
     address internal constant AQUA = 0x499943E74FB0cE105688beeE8Ef2ABec5D936d31;
     address internal constant MULTI_SEND_CALL_ONLY = 0x9641d764fc13c8B624c04430C7356C1C7C8102e2;

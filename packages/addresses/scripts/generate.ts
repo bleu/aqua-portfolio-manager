@@ -22,6 +22,36 @@ type Data = {
 };
 
 const data: Data = JSON.parse(readFileSync(resolve(repoRoot, "packages/addresses/base-mainnet.json"), "utf8"));
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+const REQUIRED_SYMBOLS = ["WETH", "CBBTC", "USDC", "USDT"];
+
+function validate(data: Data): void {
+  if (!ADDRESS_RE.test(data.aqua)) throw new Error(`base-mainnet.json: "aqua" is not a well-formed address`);
+  if (!ADDRESS_RE.test(data.multiSendCallOnly)) {
+    throw new Error(`base-mainnet.json: "multiSendCallOnly" is not a well-formed address`);
+  }
+
+  const seen = new Set<string>();
+  for (const t of data.tokens) {
+    if (seen.has(t.symbol)) throw new Error(`base-mainnet.json: duplicate token symbol "${t.symbol}"`);
+    seen.add(t.symbol);
+    for (const [field, value] of [
+      ["address", t.address],
+      ["feedProxy", t.feedProxy],
+      ["seedAggregator", t.seedAggregator],
+    ] as const) {
+      if (!ADDRESS_RE.test(value)) {
+        throw new Error(`base-mainnet.json: token "${t.symbol}"'s "${field}" is not a well-formed address`);
+      }
+    }
+  }
+  for (const symbol of REQUIRED_SYMBOLS) {
+    if (!seen.has(symbol)) throw new Error(`base-mainnet.json: missing required token "${symbol}"`);
+  }
+}
+
+validate(data);
 const bySymbol = Object.fromEntries(data.tokens.map((t) => [t.symbol, t])) as Record<string, Token>;
 
 function writeGenerated(path: string, content: string): void {
@@ -39,7 +69,7 @@ pragma solidity 0.8.30;
 
 /// @notice GENERATED FILE -- do not edit by hand.
 /// @dev Regenerate from packages/addresses/base-mainnet.json: run \`pnpm generate\`
-///      inside packages/addresses (BLEUDEV-398).
+///      inside packages/addresses.
 library BaseMainnetAddresses {
     address internal constant AQUA = ${data.aqua};
     address internal constant MULTI_SEND_CALL_ONLY = ${data.multiSendCallOnly};
@@ -72,7 +102,7 @@ const aggregatorEntries = [
 
 const ts = `// GENERATED FILE -- do not edit by hand.
 // Regenerate from packages/addresses/base-mainnet.json via
-// \`pnpm --filter @aqua-portfolio-manager/addresses generate\` (BLEUDEV-398).
+// \`pnpm --filter @aqua-portfolio-manager/addresses generate\`.
 
 // Each proxy's \`aggregator()\` result as of 2026-09-28 (see config.yaml's ChainlinkAggregator
 // seed comment) -- covers the AnswerUpdated handler for the case where an aggregator's very

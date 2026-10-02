@@ -77,8 +77,8 @@ jobs:
         run: pnpm --filter @aqua-portfolio-manager/addresses typecheck
 
       # Regenerates every consumer from base-mainnet.json and fails if the result doesn't match
-      # what's committed -- the enforcement for BLEUDEV-398's single source of truth. A hand-edit
-      # to a generated file, or an edit to base-mainnet.json without regenerating, fails here.
+      # what's committed. A hand-edit to a generated file, or an edit to base-mainnet.json
+      # without regenerating, fails here.
       - name: Regenerate and diff
         run: |
           pnpm --filter @aqua-portfolio-manager/addresses generate

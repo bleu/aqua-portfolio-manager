@@ -1,6 +1,6 @@
 # Monorepo conventions
 
-This repo splits its workspace into `apps/*` and `packages/*`. Pedro's review on PR #45 asked for this distinction to be written down, not just applied once (BLEUDEV-398).
+This repo splits its workspace into `apps/*` and `packages/*`. Pedro's review on PR #45 asked for this distinction to be written down, not just applied once.
 
 ## Apps
 
@@ -20,6 +20,8 @@ Write code inside the app that needs it first. Extract it into a package only on
 
 When extracting or moving a directory, move it with its git history (`git mv`), update every import site and every path reference (docs, other packages' comments, CI config), and keep the original tests running unchanged against the new location.
 
-## Known duplication not yet addressed
+## Address data lives in `packages/addresses`, not a library
 
-Well-known token and Chainlink-feed addresses are hardcoded independently in four places: `packages/contracts/script/ShipStrategy.s.sol`, `apps/indexer/config.yaml`, `apps/indexer/src/EventHandlers.ts`'s `SEED_AGGREGATOR_TO_PROXY` map, and `apps/arbitrageur/.env`'s `ALLOWED_TOKENS`/`ALLOWED_FEEDS`. This is the same root cause as the decoding duplication risk, but shipping a strategy and seeding an indexer config aren't quite the same shape of problem as a shared TypeScript function, so it's left as a separate decision rather than folded into the `decoding` package. See BLEUDEV-399.
+Well-known token and Chainlink-feed addresses used to be hardcoded independently across `ShipStrategy.s.sol`, `Deploy.s.sol`, `config.yaml`, `EventHandlers.ts`, and `.env.example` -- the same root cause as the decoding duplication, but shipping a strategy and seeding an indexer config aren't the same shape of problem as a shared TypeScript function, so a single TS module couldn't solve the Solidity or YAML cases directly.
+
+`packages/addresses` is a deliberate second exception to this doc's own "package = library two or more apps need" rule, alongside `packages/contracts`: it has no runtime consumer and no app depends on it in `package.json`. It's a dev-time data file (`base-mainnet.json`) plus a generator that writes the Solidity constants, the TS seed map, the full `config.yaml`, and the `.env.example` address lines, enforced by CI regenerating and diffing on every push rather than by any app importing it.

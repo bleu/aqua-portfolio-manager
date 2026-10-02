@@ -1,5 +1,5 @@
 {
-  "$comment": "Single source of truth for Base mainnet addresses this repo hardcodes in 4 places (BLEUDEV-398). Edit this file, then run `pnpm --filter @aqua-portfolio-manager/addresses generate` to regenerate every consumer. See README.md.",
+  "$comment": "Single source of truth for Base mainnet addresses this repo hardcodes in 4 places. Edit this file, then run `pnpm --filter @aqua-portfolio-manager/addresses generate` to regenerate every consumer. See README.md.",
   "aqua": "0x499943E74FB0cE105688beeE8Ef2ABec5D936d31",
   "multiSendCallOnly": "0x9641d764fc13c8B624c04430C7356C1C7C8102e2",
   "maxStalenessSeconds": 43200,

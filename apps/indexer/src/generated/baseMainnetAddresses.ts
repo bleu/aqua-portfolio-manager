@@ -1,6 +1,6 @@
 // GENERATED FILE -- do not edit by hand.
 // Regenerate from packages/addresses/base-mainnet.json via
-// `pnpm --filter @aqua-portfolio-manager/addresses generate` (BLEUDEV-398).
+// `pnpm --filter @aqua-portfolio-manager/addresses generate`.
 
 // Each proxy's `aggregator()` result as of 2026-09-28 (see config.yaml's ChainlinkAggregator
 // seed comment) -- covers the AnswerUpdated handler for the case where an aggregator's very
