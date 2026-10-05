@@ -20,7 +20,7 @@ Section 5.2 requires a Commercial License when either threshold is exceeded:
 - Charged Fees above US$100,000 in a rolling 12-month period.
 - Liquidity Under Control above US$10,000,000 at any time.
 
-The grant's recorded six-month base case is US$30 million under management, above the liquidity threshold.
+Current Liquidity Under Control is US$0 -- the Portfolio Manager has not launched. The 1inch Aqua Incubator grant application's own six-month projection (month 6 after Milestone 4) is US$2.5M TVL across the two initial pools, well under the threshold.
 
 Section 5.3 waives enforcement for specified Volume Activities.
 This strategy may qualify, but the waiver is not a license and creates no reliance rights.
