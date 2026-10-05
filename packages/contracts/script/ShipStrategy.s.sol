@@ -22,6 +22,8 @@ import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategy
 ///         PortfolioManagerMultiTokenBasketE2E.t.sol's `_shipOnly`, but against a real Safe via
 ///         `execTransaction` + an approved-hash signature instead of `vm.prank`).
 contract ShipStrategy is Script {
+    // This deployment's own router/validator, not a well-known external address -- unlike the
+    // token/feed addresses below, there's nothing else in the repo to deduplicate this against.
     address internal constant ROUTER = 0x02a11927B0a1c701FEB589Ca86886F4ae1F85f02;
     address internal constant VALIDATOR = 0x88F52Fe4A35aD046f37BcF3eB01E99551aa7dA92;
 
@@ -31,8 +33,19 @@ contract ShipStrategy is Script {
     function run() external {
         // Base mainnet addresses live in packages/addresses/base-mainnet.json, shared with the
         // TypeScript side (packages/addresses/src/index.ts) -- read live, nothing to regenerate.
+        // Run this script with `FOUNDRY_PROFILE=deploy forge script ...`: reading outside this
+        // project's own root needs foundry.toml's [profile.deploy] fs_permissions.
         string memory addresses = vm.readFile("../addresses/base-mainnet.json");
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
+        uint256 maxStaleness = vm.parseJsonUint(addresses, ".maxStalenessSeconds");
+
+        // Parsed once here, threaded through to _majors/_stables and reused below for the
+        // approve/ship batch -- not re-parsed from the same JSON paths a second time.
+        address[] memory tokens = new address[](4);
+        tokens[0] = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
+        tokens[1] = vm.parseJsonAddress(addresses, ".tokens.CBBTC.address");
+        tokens[2] = vm.parseJsonAddress(addresses, ".tokens.USDC.address");
+        tokens[3] = vm.parseJsonAddress(addresses, ".tokens.USDT.address");
 
         uint256 ownerKey = vm.envUint("PRIVATE_KEY");
         address owner = vm.addr(ownerKey);
@@ -40,8 +53,8 @@ contract ShipStrategy is Script {
         Safe safe = Safe(payable(safeAddr));
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = _majors(addresses);
-        groups[1] = _stables(addresses);
+        groups[0] = _majors(addresses, maxStaleness, tokens[0], tokens[1]);
+        groups[1] = _stables(addresses, maxStaleness, tokens[2], tokens[3]);
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, LP_FEE_BPS, 0);
         ISwapVM.Order memory order = MakerTraitsLib.build(
@@ -66,12 +79,6 @@ contract ShipStrategy is Script {
                 program: program
             })
         );
-
-        address[] memory tokens = new address[](4);
-        tokens[0] = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
-        tokens[1] = vm.parseJsonAddress(addresses, ".tokens.CBBTC.address");
-        tokens[2] = vm.parseJsonAddress(addresses, ".tokens.USDC.address");
-        tokens[3] = vm.parseJsonAddress(addresses, ".tokens.USDT.address");
 
         uint256[] memory amounts = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
@@ -118,34 +125,32 @@ contract ShipStrategy is Script {
         console.logBytes32(strategyHash);
     }
 
-    function _majors(string memory addresses) internal pure returns (PortfolioManagerArgsCodec.Group memory) {
-        uint256 maxStaleness = vm.parseJsonUint(addresses, ".maxStalenessSeconds");
+    function _majors(string memory addresses, uint256 maxStaleness, address weth, address cbbtc)
+        internal
+        pure
+        returns (PortfolioManagerArgsCodec.Group memory)
+    {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
         members[0] = PortfolioManagerArgsCodec.Member({
-            token: vm.parseJsonAddress(addresses, ".tokens.WETH.address"),
-            feed: vm.parseJsonAddress(addresses, ".tokens.WETH.feedProxy"),
-            maxStaleness: maxStaleness
+            token: weth, feed: vm.parseJsonAddress(addresses, ".tokens.WETH.feedProxy"), maxStaleness: maxStaleness
         });
         members[1] = PortfolioManagerArgsCodec.Member({
-            token: vm.parseJsonAddress(addresses, ".tokens.CBBTC.address"),
-            feed: vm.parseJsonAddress(addresses, ".tokens.CBBTC.feedProxy"),
-            maxStaleness: maxStaleness
+            token: cbbtc, feed: vm.parseJsonAddress(addresses, ".tokens.CBBTC.feedProxy"), maxStaleness: maxStaleness
         });
         return PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: members});
     }
 
-    function _stables(string memory addresses) internal pure returns (PortfolioManagerArgsCodec.Group memory) {
-        uint256 maxStaleness = vm.parseJsonUint(addresses, ".maxStalenessSeconds");
+    function _stables(string memory addresses, uint256 maxStaleness, address usdc, address usdt)
+        internal
+        pure
+        returns (PortfolioManagerArgsCodec.Group memory)
+    {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
         members[0] = PortfolioManagerArgsCodec.Member({
-            token: vm.parseJsonAddress(addresses, ".tokens.USDC.address"),
-            feed: vm.parseJsonAddress(addresses, ".tokens.USDC.feedProxy"),
-            maxStaleness: maxStaleness
+            token: usdc, feed: vm.parseJsonAddress(addresses, ".tokens.USDC.feedProxy"), maxStaleness: maxStaleness
         });
         members[1] = PortfolioManagerArgsCodec.Member({
-            token: vm.parseJsonAddress(addresses, ".tokens.USDT.address"),
-            feed: vm.parseJsonAddress(addresses, ".tokens.USDT.feedProxy"),
-            maxStaleness: maxStaleness
+            token: usdt, feed: vm.parseJsonAddress(addresses, ".tokens.USDT.feedProxy"), maxStaleness: maxStaleness
         });
         return PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: members});
     }

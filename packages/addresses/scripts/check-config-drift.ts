@@ -22,7 +22,7 @@ function checkFile(relPath: string): string[] {
 let failed = false;
 for (const [relPath, expectAll] of [
   ["apps/indexer/config.yaml", true],
-  ["apps/arbitrageur/.env.example", false], // only the 4 token/feed addresses, not AQUA/aggregators
+  ["apps/arbitrageur/.env.example", false], // only token/feed addresses -- not AQUA, multiSendCallOnly, or aggregators
 ] as const) {
   const missing = checkFile(relPath).filter((addr) =>
     expectAll ? true : TOKENS.some((t) => t.address.toLowerCase() === addr || t.feedProxy.toLowerCase() === addr),

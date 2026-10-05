@@ -16,6 +16,8 @@ contract Deploy is Script {
     function run() external returns (PortfolioManagerRouter router, PortfolioManagerStrategyValidator validator) {
         // Base mainnet addresses live in packages/addresses/base-mainnet.json, shared with the
         // TypeScript side (packages/addresses/src/index.ts) -- read live, nothing to regenerate.
+        // Run this script with `FOUNDRY_PROFILE=deploy forge script ...`: reading outside this
+        // project's own root needs foundry.toml's [profile.deploy] fs_permissions.
         string memory addresses = vm.readFile("../addresses/base-mainnet.json");
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
         address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
