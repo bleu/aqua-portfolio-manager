@@ -3,14 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Single source of truth for the Base mainnet addresses this repo needs in more than one place -- a plain TS module, imported directly by TS consumers, plus a small generator for the one consumer that can't import TS (Solidity).",
+  "description": "Single source of truth for the Base mainnet addresses this repo needs in more than one place -- base-mainnet.json, imported directly by TS consumers and read live by Solidity scripts via vm.readFile. Nothing generated.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "prepare": "tsc",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "generate-solidity": "tsx scripts/generate-solidity.ts",
     "check-config-drift": "tsx scripts/check-config-drift.ts"
   },
   "devDependencies": {

@@ -20,8 +20,6 @@ Write code inside the app that needs it first. Extract it into a package only on
 
 When extracting or moving a directory, move it with its git history (`git mv`), update every import site and every path reference (docs, other packages' comments, CI config), and keep the original tests running unchanged against the new location.
 
-## Address data lives in `packages/addresses`, not a library
+## `packages/addresses`
 
-Well-known token and Chainlink-feed addresses used to be hardcoded independently across `ShipStrategy.s.sol`, `Deploy.s.sol`, `config.yaml`, `EventHandlers.ts`, and `.env.example` -- the same root cause as the decoding duplication, but shipping a strategy and seeding an indexer config aren't the same shape of problem as a shared TypeScript function, so a single TS module couldn't solve the Solidity or YAML cases directly.
-
-`packages/addresses` is a deliberate second exception to this doc's own "package = library two or more apps need" rule, alongside `packages/contracts`: it has no runtime consumer and no app depends on it in `package.json`. It's a dev-time data file (`base-mainnet.json`) plus a generator that writes the Solidity constants, the TS seed map, the full `config.yaml`, and the `.env.example` address lines, enforced by CI regenerating and diffing on every push rather than by any app importing it.
+Well-known token and Chainlink-feed addresses used to be hardcoded independently across `ShipStrategy.s.sol`, `Deploy.s.sol`, `config.yaml`, `EventHandlers.ts`, and `.env.example`. `packages/addresses`'s `base-mainnet.json` is now the single source: `apps/indexer` imports it directly as a real TS dependency (same as `decoding`), and `ShipStrategy.s.sol`/`Deploy.s.sol` read it live via Foundry's `vm.readFile`/`vm.parseJsonAddress` cheatcodes -- Solidity can't import TS, but it can read the same JSON file off disk at script-run time, so nothing needs generating or regenerating for either side. `config.yaml` and `.env.example` stay hand-maintained; a drift check (not a generator) confirms their addresses still match.

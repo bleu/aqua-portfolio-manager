@@ -3,9 +3,9 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AQUA, TOKENS } from "../src/index.js";
 
-// Unlike config.yaml/EventHandlers.ts (previously regenerated in full), config.yaml and
-// .env.example stay hand-maintained -- this only checks that every address this package knows
-// about still appears somewhere in each file, catching drift without owning their structure.
+// config.yaml and .env.example stay hand-maintained -- this only checks that every address
+// base-mainnet.json knows about still appears somewhere in each file, catching drift without
+// owning their structure.
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
 
@@ -34,8 +34,8 @@ for (const [relPath, expectAll] of [
 }
 
 if (failed) {
-  console.error("\nSome address in packages/addresses/src/index.ts isn't reflected in the file(s) above.");
-  console.error("Update the file by hand to match, or update src/index.ts if the source itself is stale.");
+  console.error("\nSome address in packages/addresses/base-mainnet.json isn't reflected in the file(s) above.");
+  console.error("Update the file by hand to match, or update base-mainnet.json if the source itself is stale.");
   process.exit(1);
 }
-console.log("config.yaml and .env.example match packages/addresses/src/index.ts.");
+console.log("config.yaml and .env.example match packages/addresses/base-mainnet.json.");

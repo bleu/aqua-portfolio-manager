@@ -6,7 +6,6 @@ pragma solidity 0.8.30;
 import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
-import {BaseMainnetAddresses} from "./generated/BaseMainnetAddresses.sol";
 
 /// @notice Deploys the reusable Portfolio Manager protocol pieces to a live chain: the strategy
 ///         validator and the router. Reuses the chain's existing Aqua registry and WETH predeploy
@@ -15,20 +14,19 @@ import {BaseMainnetAddresses} from "./generated/BaseMainnetAddresses.sol";
 ///         one strategy's hash, so it can't exist before a basket is chosen) done in a follow-up.
 contract Deploy is Script {
     function run() external returns (PortfolioManagerRouter router, PortfolioManagerStrategyValidator validator) {
+        // Base mainnet addresses live in packages/addresses/base-mainnet.json, shared with the
+        // TypeScript side (packages/addresses/src/index.ts) -- read live, nothing to regenerate.
+        string memory addresses = vm.readFile("../addresses/base-mainnet.json");
+        address aqua = vm.parseJsonAddress(addresses, ".aqua");
+        address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
+
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
         vm.startBroadcast(deployerKey);
 
         validator = new PortfolioManagerStrategyValidator();
-        router = new PortfolioManagerRouter(
-            BaseMainnetAddresses.AQUA,
-            BaseMainnetAddresses.WETH,
-            deployer,
-            "AquaPortfolioManager",
-            "1",
-            address(validator)
-        );
+        router = new PortfolioManagerRouter(aqua, weth, deployer, "AquaPortfolioManager", "1", address(validator));
 
         vm.stopBroadcast();
 

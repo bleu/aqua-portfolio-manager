@@ -14,7 +14,6 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
-import {BaseMainnetAddresses} from "./generated/BaseMainnetAddresses.sol";
 
 /// @notice Ships a real 2-group basket (majors: WETH+cbBTC, stables: USDC+USDT, 50/50 weight,
 ///         equal split within each group) through the already-deployed Router/Validator and the
@@ -30,14 +29,19 @@ contract ShipStrategy is Script {
     uint256 internal constant GROUP_WEIGHT = 0.5e18;
 
     function run() external {
+        // Base mainnet addresses live in packages/addresses/base-mainnet.json, shared with the
+        // TypeScript side (packages/addresses/src/index.ts) -- read live, nothing to regenerate.
+        string memory addresses = vm.readFile("../addresses/base-mainnet.json");
+        address aqua = vm.parseJsonAddress(addresses, ".aqua");
+
         uint256 ownerKey = vm.envUint("PRIVATE_KEY");
         address owner = vm.addr(ownerKey);
         address safeAddr = vm.envAddress("SAFE_ADDRESS");
         Safe safe = Safe(payable(safeAddr));
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = _majors();
-        groups[1] = _stables();
+        groups[0] = _majors(addresses);
+        groups[1] = _stables(addresses);
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, LP_FEE_BPS, 0);
         ISwapVM.Order memory order = MakerTraitsLib.build(
@@ -64,10 +68,10 @@ contract ShipStrategy is Script {
         );
 
         address[] memory tokens = new address[](4);
-        tokens[0] = BaseMainnetAddresses.WETH;
-        tokens[1] = BaseMainnetAddresses.CBBTC;
-        tokens[2] = BaseMainnetAddresses.USDC;
-        tokens[3] = BaseMainnetAddresses.USDT;
+        tokens[0] = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
+        tokens[1] = vm.parseJsonAddress(addresses, ".tokens.CBBTC.address");
+        tokens[2] = vm.parseJsonAddress(addresses, ".tokens.USDC.address");
+        tokens[3] = vm.parseJsonAddress(addresses, ".tokens.USDT.address");
 
         uint256[] memory amounts = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
@@ -78,10 +82,7 @@ contract ShipStrategy is Script {
         bytes memory batch = "";
         for (uint256 i = 0; i < 4; i++) {
             batch = abi.encodePacked(
-                batch,
-                _encodeMultiSendTx(
-                    tokens[i], abi.encodeCall(IERC20.approve, (BaseMainnetAddresses.AQUA, type(uint256).max))
-                )
+                batch, _encodeMultiSendTx(tokens[i], abi.encodeCall(IERC20.approve, (aqua, type(uint256).max)))
             );
         }
         batch = abi.encodePacked(
@@ -89,9 +90,7 @@ contract ShipStrategy is Script {
             _encodeMultiSendTx(
                 VALIDATOR, abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens))
             ),
-            _encodeMultiSendTx(
-                BaseMainnetAddresses.AQUA, abi.encodeCall(Aqua.ship, (ROUTER, abi.encode(order), tokens, amounts))
-            )
+            _encodeMultiSendTx(aqua, abi.encodeCall(Aqua.ship, (ROUTER, abi.encode(order), tokens, amounts)))
         );
 
         bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (batch));
@@ -99,7 +98,7 @@ contract ShipStrategy is Script {
 
         vm.startBroadcast(ownerKey);
         bool ok = safe.execTransaction(
-            BaseMainnetAddresses.MULTI_SEND_CALL_ONLY,
+            vm.parseJsonAddress(addresses, ".multiSendCallOnly"),
             0,
             multiSendData,
             Enum.Operation.DelegateCall,
@@ -119,32 +118,34 @@ contract ShipStrategy is Script {
         console.logBytes32(strategyHash);
     }
 
-    function _majors() internal pure returns (PortfolioManagerArgsCodec.Group memory) {
+    function _majors(string memory addresses) internal pure returns (PortfolioManagerArgsCodec.Group memory) {
+        uint256 maxStaleness = vm.parseJsonUint(addresses, ".maxStalenessSeconds");
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
         members[0] = PortfolioManagerArgsCodec.Member({
-            token: BaseMainnetAddresses.WETH,
-            feed: BaseMainnetAddresses.ETH_USD_FEED,
-            maxStaleness: BaseMainnetAddresses.MAX_STALENESS
+            token: vm.parseJsonAddress(addresses, ".tokens.WETH.address"),
+            feed: vm.parseJsonAddress(addresses, ".tokens.WETH.feedProxy"),
+            maxStaleness: maxStaleness
         });
         members[1] = PortfolioManagerArgsCodec.Member({
-            token: BaseMainnetAddresses.CBBTC,
-            feed: BaseMainnetAddresses.CBBTC_USD_FEED,
-            maxStaleness: BaseMainnetAddresses.MAX_STALENESS
+            token: vm.parseJsonAddress(addresses, ".tokens.CBBTC.address"),
+            feed: vm.parseJsonAddress(addresses, ".tokens.CBBTC.feedProxy"),
+            maxStaleness: maxStaleness
         });
         return PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: members});
     }
 
-    function _stables() internal pure returns (PortfolioManagerArgsCodec.Group memory) {
+    function _stables(string memory addresses) internal pure returns (PortfolioManagerArgsCodec.Group memory) {
+        uint256 maxStaleness = vm.parseJsonUint(addresses, ".maxStalenessSeconds");
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
         members[0] = PortfolioManagerArgsCodec.Member({
-            token: BaseMainnetAddresses.USDC,
-            feed: BaseMainnetAddresses.USDC_USD_FEED,
-            maxStaleness: BaseMainnetAddresses.MAX_STALENESS
+            token: vm.parseJsonAddress(addresses, ".tokens.USDC.address"),
+            feed: vm.parseJsonAddress(addresses, ".tokens.USDC.feedProxy"),
+            maxStaleness: maxStaleness
         });
         members[1] = PortfolioManagerArgsCodec.Member({
-            token: BaseMainnetAddresses.USDT,
-            feed: BaseMainnetAddresses.USDT_USD_FEED,
-            maxStaleness: BaseMainnetAddresses.MAX_STALENESS
+            token: vm.parseJsonAddress(addresses, ".tokens.USDT.address"),
+            feed: vm.parseJsonAddress(addresses, ".tokens.USDT.feedProxy"),
+            maxStaleness: maxStaleness
         });
         return PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: members});
     }

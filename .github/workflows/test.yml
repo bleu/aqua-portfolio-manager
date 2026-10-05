@@ -53,8 +53,8 @@ jobs:
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://mainnet.base.org' }}
         run: forge test -vvv
 
-  check-generated-addresses:
-    name: Generated addresses
+  check-addresses:
+    name: Addresses
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -76,15 +76,9 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @aqua-portfolio-manager/addresses typecheck
 
-      # Regenerates the one file Solidity needs (it can't import TS) and fails if the result
-      # doesn't match what's committed -- a hand-edit or a forgotten regeneration both fail here.
-      - name: Regenerate Solidity constants and diff
-        run: |
-          pnpm --filter @aqua-portfolio-manager/addresses generate-solidity
-          git diff --exit-code -- packages/contracts/script/generated/BaseMainnetAddresses.sol
-
+      # Solidity reads base-mainnet.json live via vm.readFile -- nothing to regenerate there.
       # config.yaml and .env.example stay hand-maintained; this only checks their addresses still
-      # match src/index.ts, not that their structure was regenerated.
+      # match base-mainnet.json.
       - name: Check config.yaml / .env.example address drift
         run: pnpm --filter @aqua-portfolio-manager/addresses check-config-drift
 
