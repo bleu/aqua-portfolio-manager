@@ -1,6 +1,6 @@
 import { indexer, createEffect, S } from "envio";
 import { createPublicClient, http, erc20Abi, type Address } from "viem";
-import { SEED_AGGREGATOR_TO_PROXY } from "./generated/baseMainnetAddresses.js";
+import { SEED_AGGREGATOR_TO_PROXY } from "@aqua-portfolio-manager/addresses";
 
 function strategyId(maker: string, app: string, strategyHash: string): string {
   return `${maker}-${app}-${strategyHash}`.toLowerCase();

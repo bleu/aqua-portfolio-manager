@@ -1,37 +1,30 @@
 # addresses
 
 Single source of truth for the Base mainnet addresses this repo used to hardcode independently in
-4 places: `packages/contracts/script/ShipStrategy.s.sol`, `apps/indexer/config.yaml`,
+`packages/contracts/script/ShipStrategy.s.sol`, `apps/indexer/config.yaml`,
 `apps/indexer/src/EventHandlers.ts`, and `apps/arbitrageur/.env.example`.
 
-This package has no runtime code of its own -- it's data (`base-mainnet.json`) plus a generator.
+`src/index.ts` is the data. Every TS consumer (currently `apps/indexer`) imports this package
+directly via `workspace:*`, same as `packages/decoding` -- no generation step for TS. Solidity
+can't import TS, so it still needs one small generated file; `config.yaml` and `.env.example` stay
+hand-maintained, checked against `src/index.ts` by a drift check instead of being regenerated.
 
 ## Updating an address
 
-1. Edit `base-mainnet.json`.
-2. Run `pnpm --filter @aqua-portfolio-manager/addresses generate`.
-3. Commit the data file and every file it regenerated.
+1. Edit `src/index.ts`.
+2. Run `pnpm --filter @aqua-portfolio-manager/addresses generate-solidity`, commit the result.
+3. Update the same address by hand in `apps/indexer/config.yaml` and, if it's a token or feed
+   address, `apps/arbitrageur/.env.example`'s `ALLOWED_TOKENS`/`ALLOWED_FEEDS`.
+4. Run `pnpm --filter @aqua-portfolio-manager/addresses check-config-drift` to confirm.
 
-CI re-runs the generator and fails the build if any generated file doesn't match what's committed
-(`check-generated-addresses` in `.github/workflows/test.yml`), so a hand-edit to a generated file,
-or an edit to `base-mainnet.json` without regenerating, fails the same way a stale `.gitignore`d
-build artifact would -- the CI job is the enforcement, not just a convention.
+CI (`check-generated-addresses` in `.github/workflows/test.yml`) runs steps 2 and 4 on every push,
+so a forgotten regeneration or a forgotten hand-edit both fail the build.
 
-## What gets generated
-
-- `packages/contracts/script/generated/BaseMainnetAddresses.sol` -- a Solidity library of
-  constants, imported by `ShipStrategy.s.sol` and `Deploy.s.sol`.
-- `apps/indexer/src/generated/baseMainnetAddresses.ts` -- `SEED_AGGREGATOR_TO_PROXY`, imported by
-  `EventHandlers.ts`.
-- `apps/indexer/config.yaml` -- the whole file. Envio only ever reads the final YAML; generating it
-  doesn't change how Envio consumes it, and the static scaffolding (event definitions, comments)
-  lives in the generator script itself, not derived from the JSON, so it's preserved verbatim.
-- `apps/arbitrageur/.env.example`'s `ALLOWED_TOKENS`/`ALLOWED_FEEDS` lines only -- every other line
-  in that file is untouched, and the real, gitignored `.env` is never written by this script.
+`src/index.ts` validates its own data on import (well-formed addresses, unique token symbols) --
+every consumer gets that guarantee for free, including `apps/indexer`'s own runtime import.
 
 ## Not in scope here
 
 `ROUTER`/`VALIDATOR` (this repo's own deployed Portfolio Manager contracts, not external
 addresses) are still hardcoded separately in `ShipStrategy.s.sol` and `EventHandlers.ts`'s
-`PM_ROUTER` -- a deployment output, not a well-known external address, so it doesn't belong in this
-data file. Left as-is.
+`PM_ROUTER` -- a deployment output, not a well-known external address, so it doesn't belong here.

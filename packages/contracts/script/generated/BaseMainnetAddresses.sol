@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 /// @notice GENERATED FILE -- do not edit by hand.
-/// @dev Regenerate from packages/addresses/base-mainnet.json: run `pnpm generate`
+/// @dev Regenerate from packages/addresses/src/index.ts: run `pnpm generate-solidity`
 ///      inside packages/addresses.
 library BaseMainnetAddresses {
     address internal constant AQUA = 0x499943E74FB0cE105688beeE8Ef2ABec5D936d31;

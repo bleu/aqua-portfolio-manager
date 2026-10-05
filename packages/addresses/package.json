@@ -3,10 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Single source of truth for the Base mainnet addresses this repo hardcodes in Solidity, Envio's config.yaml, and the arbitrageur's TS/env config -- generates all of them from base-mainnet.json.",
+  "description": "Single source of truth for the Base mainnet addresses this repo needs in more than one place -- a plain TS module, imported directly by TS consumers, plus a small generator for the one consumer that can't import TS (Solidity).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
-    "generate": "tsx scripts/generate.ts",
-    "typecheck": "tsc --noEmit"
+    "prepare": "tsc",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "generate-solidity": "tsx scripts/generate-solidity.ts",
+    "check-config-drift": "tsx scripts/check-config-drift.ts"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

@@ -73,20 +73,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --filter @aqua-portfolio-manager/addresses
 
-      - name: Typecheck generator
+      - name: Typecheck
         run: pnpm --filter @aqua-portfolio-manager/addresses typecheck
 
-      # Regenerates every consumer from base-mainnet.json and fails if the result doesn't match
-      # what's committed. A hand-edit to a generated file, or an edit to base-mainnet.json
-      # without regenerating, fails here.
-      - name: Regenerate and diff
+      # Regenerates the one file Solidity needs (it can't import TS) and fails if the result
+      # doesn't match what's committed -- a hand-edit or a forgotten regeneration both fail here.
+      - name: Regenerate Solidity constants and diff
         run: |
-          pnpm --filter @aqua-portfolio-manager/addresses generate
-          git diff --exit-code -- \
-            packages/contracts/script/generated/BaseMainnetAddresses.sol \
-            apps/indexer/src/generated/baseMainnetAddresses.ts \
-            apps/indexer/config.yaml \
-            apps/arbitrageur/.env.example
+          pnpm --filter @aqua-portfolio-manager/addresses generate-solidity
+          git diff --exit-code -- packages/contracts/script/generated/BaseMainnetAddresses.sol
+
+      # config.yaml and .env.example stay hand-maintained; this only checks their addresses still
+      # match src/index.ts, not that their structure was regenerated.
+      - name: Check config.yaml / .env.example address drift
+        run: pnpm --filter @aqua-portfolio-manager/addresses check-config-drift
 
   check-arbitrageur:
     name: Arbitrageur
