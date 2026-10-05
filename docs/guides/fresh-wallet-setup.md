@@ -45,7 +45,7 @@ The Safe signers must check the batch. Recorded validation (attestation) does no
 ## If the Safe has prior activity
 
 Check active strategies across all Aqua apps before adoption.
-Use `Shipped` and `Docked` history or the [indexer](../../packages/indexer/README.md) to identify them.
+Use `Shipped` and `Docked` history or the [indexer](../../apps/indexer/README.md) to identify them.
 Dock strategies that violate the declared group boundary.
 The Guard cannot inspect or undo strategies shipped before installation.
 

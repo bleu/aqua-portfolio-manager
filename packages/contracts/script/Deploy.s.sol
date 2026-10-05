@@ -13,18 +13,22 @@ import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategy
 ///         or BasketScopeGuard -- those are per-strategy setup (the Guard's constructor binds it to
 ///         one strategy's hash, so it can't exist before a basket is chosen) done in a follow-up.
 contract Deploy is Script {
-    address internal constant AQUA_BASE = 0x499943E74FB0cE105688beeE8Ef2ABec5D936d31;
-    address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
-
     function run() external returns (PortfolioManagerRouter router, PortfolioManagerStrategyValidator validator) {
+        // Base mainnet addresses live in packages/addresses/base-mainnet.json, shared with the
+        // TypeScript side (packages/addresses/src/index.ts) -- read live, nothing to regenerate.
+        // Run this script with `FOUNDRY_PROFILE=deploy forge script ...`: reading outside this
+        // project's own root needs foundry.toml's [profile.deploy] fs_permissions.
+        string memory addresses = vm.readFile("../addresses/base-mainnet.json");
+        address aqua = vm.parseJsonAddress(addresses, ".aqua");
+        address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
+
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
         vm.startBroadcast(deployerKey);
 
         validator = new PortfolioManagerStrategyValidator();
-        router =
-            new PortfolioManagerRouter(AQUA_BASE, WETH_BASE, deployer, "AquaPortfolioManager", "1", address(validator));
+        router = new PortfolioManagerRouter(aqua, weth, deployer, "AquaPortfolioManager", "1", address(validator));
 
         vm.stopBroadcast();
 

@@ -41,4 +41,4 @@ Our router is an Aqua app through its settlement calls.
 
 - [PM router](../../packages/contracts/src/PortfolioManagerRouter.sol) and [opcode table](../../packages/contracts/src/PortfolioManagerOpcodes.sol).
 - [SwapVM](../../packages/contracts/lib/swap-vm/src/SwapVM.sol) and its [Aqua opcode table](../../packages/contracts/lib/swap-vm/src/opcodes/AquaOpcodes.sol).
-- [Multi-token prototype](../../packages/contracts/src/BasketXYCSwap.sol).
+- Multi-token prototype: removed as a superseded PoC -- see `PortfolioManagerRouter.sol`'s own multi-token groups instead.

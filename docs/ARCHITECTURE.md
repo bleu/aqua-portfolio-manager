@@ -35,7 +35,7 @@ flowchart LR
 | `PortfolioManagerPricing` | Applies the weighted pricing formulas, rounding in the pool's favor. |
 | `PortfolioManagerStrategyValidator` | Checks the token list and initial asset mix, then records the result. |
 | `BasketScopeGuard` | Restricts direct Aqua `ship()` calls from the Safe by strategy hash and token group. |
-| Indexer | Tracks strategies across all Aqua apps. See its [README](../packages/indexer/README.md). |
+| Indexer | Tracks strategies across all Aqua apps. See its [README](../apps/indexer/README.md). |
 
 Contract sources are in [packages/contracts/src](../packages/contracts/src/).
 The LP app and monitoring dashboard remain part of the planned grant scope.

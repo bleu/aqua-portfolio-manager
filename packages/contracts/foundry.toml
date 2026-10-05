@@ -33,4 +33,14 @@ remappings = [
 # "${VAR:-default}" interpolation isn't supported for named rpc endpoints, so the fallback is
 # resolved in Solidity instead.
 
+# ShipStrategy.s.sol and Deploy.s.sol read packages/addresses/base-mainnet.json via vm.readFile --
+# the only two scripts that need to see outside this project's own root. Run them with
+# `FOUNDRY_PROFILE=deploy forge script ...` so every other command (forge test, forge build, CI)
+# keeps the tighter default fs_permissions instead of carrying this permission unconditionally.
+[profile.deploy]
+fs_permissions = [
+    { access = "read", path = "./" },
+    { access = "read", path = "../addresses" },
+]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

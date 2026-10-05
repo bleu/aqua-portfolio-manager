@@ -238,5 +238,5 @@ Transaction submission is allowed only when the service discovers supported Stra
 ## References
 
 - [ADR 0005: Chainlink push oracles](0005-chainlink-push-oracles.md)
-- [Aqua strategy indexer](../../packages/indexer/README.md)
+- [Aqua strategy indexer](../../apps/indexer/README.md)
 - Existing arbitrageur branch: `origin/luizhatem/bleudev-349-arbitrageur-server-in-the-place-of-1inch-pathfinder-to-test`
