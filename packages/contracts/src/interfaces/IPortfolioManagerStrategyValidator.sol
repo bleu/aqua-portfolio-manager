@@ -9,6 +9,11 @@ import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 /// @notice Parameter checks and attestation for PM strategies.
 interface IPortfolioManagerStrategyValidator {
     error PortfolioManagerStrategyValidatorNotAPortfolioManagerStrategy();
+    /// @dev A second curve instruction appears after the leading, validated one -- its own
+    ///      arguments were never checked or bound to the attested curve, but the order-wide
+    ///      `buildParamsAttested` flag would still cover it. A non-curve trailing instruction
+    ///      (e.g. the resolver KYC gate) is unaffected.
+    error PortfolioManagerStrategyValidatorTrailingCurveInstruction();
     error PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(address token);
     error PortfolioManagerStrategyValidatorShippedTokenNotDeclared(address token);
     /// @dev The maker's group share exceeds the configured relative deviation before shipping.

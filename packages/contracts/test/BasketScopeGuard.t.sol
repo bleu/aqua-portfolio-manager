@@ -29,6 +29,7 @@ contract BasketScopeGuardTest is Test {
 
     bytes internal pmStrategy = bytes("PM STRATEGY: weighted curve, groups={A,B},{C,D}, weights=50/50");
     bytes32 internal pmStrategyHash;
+    address internal constant TRUSTED_PM_ROUTER = address(0xAAAA);
 
     function setUp() public {
         aqua = new Aqua();
@@ -46,7 +47,7 @@ contract BasketScopeGuardTest is Test {
         basketIds[2] = 2;
         basketIds[3] = 2;
 
-        guard = new BasketScopeGuard(address(aqua), address(this), pmStrategyHash, tokens, basketIds);
+        guard = new BasketScopeGuard(address(aqua), address(this), pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
     }
 
     // ---------------------------------------------------------------------
@@ -62,7 +63,7 @@ contract BasketScopeGuardTest is Test {
         basketIds[0] = 1;
 
         vm.expectRevert(IBasketScopeGuard.TokenBasketLengthMismatch.selector);
-        new BasketScopeGuard(address(aqua), address(this), pmStrategyHash, tokens, basketIds);
+        new BasketScopeGuard(address(aqua), address(this), pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
     }
 
     // ---------------------------------------------------------------------
@@ -70,8 +71,16 @@ contract BasketScopeGuardTest is Test {
     // ---------------------------------------------------------------------
 
     function _shipCalldata(bytes memory strategy, address[] memory tokens) internal pure returns (bytes memory) {
+        return _shipCalldata(TRUSTED_PM_ROUTER, strategy, tokens);
+    }
+
+    function _shipCalldata(address app, bytes memory strategy, address[] memory tokens)
+        internal
+        pure
+        returns (bytes memory)
+    {
         uint256[] memory amounts = new uint256[](tokens.length);
-        return abi.encodeCall(Aqua.ship, (address(0xAAAA), strategy, tokens, amounts));
+        return abi.encodeCall(Aqua.ship, (app, strategy, tokens, amounts));
     }
 
     function test_AllowsPmStrategyEvenAcrossBaskets() public view {
@@ -95,6 +104,51 @@ contract BasketScopeGuardTest is Test {
             address(0)
         );
         // no revert = pass
+    }
+
+    /// @dev The trusted strategy bytes are publicly recoverable from Aqua's own Shipped event --
+    ///      replaying them against a different app must not grant the cross-basket exemption.
+    function test_RevertsOnTrustedStrategyReplayedAgainstAnotherApp() public {
+        address[] memory tokens = new address[](4);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+        tokens[2] = tokenC;
+        tokens[3] = tokenD;
+
+        vm.expectRevert(abi.encodeWithSelector(IBasketScopeGuard.CrossBasketStrategyForbidden.selector, tokenA, tokenC));
+        guard.checkTransaction(
+            address(aqua),
+            0,
+            _shipCalldata(address(0xBEEF), pmStrategy, tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
+    }
+
+    /// @dev Even the real router can't ship the trusted strategy against an empty token list.
+    function test_RevertsOnTrustedStrategyWithEmptyTokenList() public {
+        address[] memory tokens = new address[](0);
+
+        vm.expectRevert(IBasketScopeGuard.EmptyTokenList.selector);
+        guard.checkTransaction(
+            address(aqua),
+            0,
+            _shipCalldata(pmStrategy, tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
     }
 
     function test_AllowsSingleBasketStrategy() public view {

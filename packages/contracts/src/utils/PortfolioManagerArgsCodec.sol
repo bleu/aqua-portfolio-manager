@@ -20,11 +20,16 @@ library PortfolioManagerArgsCodec {
     uint256 internal constant PM_BPS = 1e9;
 
     uint256 private constant WAD = FixedPointMath.WAD;
-    /// @dev 16-byte weight + 1-byte member count precedes each group's members.
-    uint256 private constant GROUP_HEADER_SIZE = 17;
-    /// @dev Each member uses 20 token bytes, 20 feed bytes, and 2 maxStaleness bytes (seconds).
-    ///      The uint16 age limit is 65,535 seconds. Compact entries help fit the 255-byte argument budget.
-    uint256 private constant MEMBER_ENTRY_SIZE = 42;
+    /// @dev 8-byte weight + 1-byte member count precedes each group's members. A WAD-scaled
+    ///      weight is always in (0, 1e18], and uint64's ~1.8e19 ceiling covers that with room to
+    ///      spare -- the widest byte-aligned type that still leaves headroom under SwapVM's
+    ///      255-byte argument budget once member entries need 3 bytes each for maxStaleness.
+    uint256 private constant GROUP_HEADER_SIZE = 9;
+    /// @dev Each member uses 20 token bytes, 20 feed bytes, and 3 maxStaleness bytes (seconds).
+    ///      The uint24 age limit is 16,777,215 seconds (~194 days) -- comfortably covers the
+    ///      86,400-second heartbeat of common stablecoin/LST Chainlink feeds on Base and Ethereum,
+    ///      which a uint16 limit (65,535 seconds, ~18.2 hours) could not.
+    uint256 private constant MEMBER_ENTRY_SIZE = 43;
 
     /// @dev At least two groups are needed for cross-group pricing.
     ///      Shape bounds do not guarantee the 255-byte argument limit. build() checks encoded length separately.
@@ -90,12 +95,12 @@ library PortfolioManagerArgsCodec {
             require(g.members.length <= MAX_MEMBERS_PER_GROUP, PortfolioManagerTooManyMembers(g.members.length));
             sum += g.weight;
 
-            args = abi.encodePacked(args, uint128(g.weight), uint8(g.members.length));
+            args = abi.encodePacked(args, uint64(g.weight), uint8(g.members.length));
             for (uint256 j = 0; j < g.members.length; j++) {
                 Member memory m = g.members[j];
                 require(m.feed != address(0), PortfolioManagerZeroFeedAddress(m.token));
-                require(m.maxStaleness <= type(uint16).max, PortfolioManagerMaxStalenessOutOfRange(m.maxStaleness));
-                args = abi.encodePacked(args, m.token, m.feed, uint16(m.maxStaleness));
+                require(m.maxStaleness <= type(uint24).max, PortfolioManagerMaxStalenessOutOfRange(m.maxStaleness));
+                args = abi.encodePacked(args, m.token, m.feed, uint24(m.maxStaleness));
             }
         }
         require(sum == WAD, PortfolioManagerWeightsMustSumToWad(sum));
@@ -122,8 +127,8 @@ library PortfolioManagerArgsCodec {
 
         for (uint256 i = 0; i < groupCount; i++) {
             args.slice(offset, offset + GROUP_HEADER_SIZE, PortfolioManagerMissingGroupHeader.selector);
-            uint256 weight = uint256(uint128(bytes16(args.slice(offset, offset + 16))));
-            uint8 memberCount = uint8(bytes1(args.slice(offset + 16, offset + GROUP_HEADER_SIZE)));
+            uint256 weight = uint256(uint64(bytes8(args.slice(offset, offset + 8))));
+            uint8 memberCount = uint8(bytes1(args.slice(offset + 8, offset + GROUP_HEADER_SIZE)));
             require(weight > 0, PortfolioManagerZeroWeight(i));
             require(memberCount > 0, PortfolioManagerEmptyGroup(i));
             require(memberCount <= MAX_MEMBERS_PER_GROUP, PortfolioManagerTooManyMembers(memberCount));
@@ -135,7 +140,7 @@ library PortfolioManagerArgsCodec {
                 args.slice(offset, offset + MEMBER_ENTRY_SIZE, PortfolioManagerMissingMemberEntry.selector);
                 address token = address(bytes20(args.slice(offset, offset + 20)));
                 address feed = address(bytes20(args.slice(offset + 20, offset + 40)));
-                uint256 maxStaleness = uint256(uint16(bytes2(args.slice(offset + 40, offset + MEMBER_ENTRY_SIZE))));
+                uint256 maxStaleness = uint256(uint24(bytes3(args.slice(offset + 40, offset + MEMBER_ENTRY_SIZE))));
                 require(feed != address(0), PortfolioManagerZeroFeedAddress(token));
                 members[j] = Member({token: token, feed: feed, maxStaleness: maxStaleness});
                 offset += MEMBER_ENTRY_SIZE;
@@ -166,15 +171,15 @@ library PortfolioManagerArgsCodec {
         uint256 offset = 1;
 
         for (uint256 i = 0; i < groupCount; i++) {
-            uint256 weight = uint256(uint128(bytes16(args.slice(offset, offset + 16))));
-            uint8 memberCount = uint8(bytes1(args.slice(offset + 16, offset + GROUP_HEADER_SIZE)));
+            uint256 weight = uint256(uint64(bytes8(args.slice(offset, offset + 8))));
+            uint8 memberCount = uint8(bytes1(args.slice(offset + 8, offset + GROUP_HEADER_SIZE)));
             offset += GROUP_HEADER_SIZE;
 
             Member[] memory members = new Member[](memberCount);
             for (uint256 j = 0; j < memberCount; j++) {
                 address token = address(bytes20(args.slice(offset, offset + 20)));
                 address feed = address(bytes20(args.slice(offset + 20, offset + 40)));
-                uint256 maxStaleness = uint256(uint16(bytes2(args.slice(offset + 40, offset + MEMBER_ENTRY_SIZE))));
+                uint256 maxStaleness = uint256(uint24(bytes3(args.slice(offset + 40, offset + MEMBER_ENTRY_SIZE))));
                 members[j] = Member({token: token, feed: feed, maxStaleness: maxStaleness});
                 offset += MEMBER_ENTRY_SIZE;
             }

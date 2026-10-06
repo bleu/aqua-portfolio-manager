@@ -152,6 +152,94 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireUniverseMatches(order, shipped);
     }
 
+    /// @dev Builds an order from an arbitrary program, bypassing _order/_groups so the trailing-
+    ///      instruction tests can append raw bytes after a legitimate leading curve.
+    function _orderWithProgram(bytes memory program) internal view returns (ISwapVM.Order memory) {
+        return MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+    }
+
+    /// @dev A trailing curve instruction after the leading, validated one must never be silently
+    ///      accepted into the attested scope -- its own args were never checked.
+    function test_RevertsOnTrailingCurveInstruction() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        // Appends a second, unvalidated curve instruction after the first's own args.
+        bytes memory trailingCurve = abi.encodePacked(uint8(PortfolioManagerProgramBuilder.CURVE_OPCODE), uint8(0));
+        program = abi.encodePacked(program, trailingCurve);
+
+        vm.expectRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorTrailingCurveInstruction.selector
+        );
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
+    /// @dev A trailing curve must be rejected even when it comes after a legitimate non-curve
+    ///      instruction, not just immediately after the leading curve -- the walk must not stop
+    ///      at the first trailing instruction.
+    function test_RevertsOnTrailingCurveInstructionAfterANonCurveInstruction() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        // KYC_GATE_OPCODE = 1, matching GatedPortfolioManagerProgramBuilder's own wire format.
+        bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
+        bytes memory trailingCurve = abi.encodePacked(uint8(PortfolioManagerProgramBuilder.CURVE_OPCODE), uint8(0));
+        program = abi.encodePacked(program, kycGate, trailingCurve);
+
+        vm.expectRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorTrailingCurveInstruction.selector
+        );
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
+    /// @dev A trailing non-curve instruction (e.g. the resolver KYC gate) does not re-price
+    ///      anything, so it must stay allowed -- this is the real, shipped Gated program shape.
+    function test_AllowsTrailingNonCurveInstruction() public view {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
+        program = abi.encodePacked(program, kycGate);
+
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
     function test_RevertsOnNonPortfolioManagerProgram() public {
         bytes memory program = abi.encodePacked(uint8(99), uint8(0));
         ISwapVM.Order memory order = MakerTraitsLib.build(

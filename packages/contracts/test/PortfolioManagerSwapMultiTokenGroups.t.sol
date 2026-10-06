@@ -387,6 +387,63 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
     }
 
+    /// @notice A computed output can fit the maker's real wallet balance yet still exceed what
+    ///         this strategy is actually authorized to pull from Aqua's own ledger -- the wallet
+    ///         balance and the Aqua ledger amount are independent, not the same number.
+    function test_RevertsOnInsufficientLedgerAuthorizationEvenWhenWalletBalanceIsAmple() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+
+        // Wallet holds plenty of every token -- the OLD wallet-only check would pass.
+        tokenA.mint(maker, 1_000_000e18);
+        tokenB.mint(maker, 1_000_000e18);
+        tokenC.mint(maker, 1_000_000e18);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        tokenC.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+
+        // Aqua's own ledger authorizes only 1 wei of tokenA for this strategy -- independent of
+        // the real wallet balance above.
+        address[] memory tokens = new address[](3);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        tokens[2] = address(tokenC);
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = 1;
+        amounts[1] = 1_000_000e18;
+        amounts[2] = 1_000_000e18;
+
+        strategyValidator.attestBuildParameters(order, tokens);
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), tokens, amounts);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000_000e18);
+
+        // Unit prices make the expected group value balA + balB, with a 1:1 conversion to tokenA units.
+        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
+            balanceIn: 1_000_000e18,
+            balanceOut: 2_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+
+        // `available` reflects the ledger's 1 wei, not the wallet's ample balance -- confirms
+        // the ledger check actually bound the result, not just the pre-existing wallet one.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector,
+                address(tokenA),
+                expectedRequested,
+                1
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+    }
+
     /// @notice A pair can pass the group deviation check but lack enough units of the output member.
     function test_InsufficientMemberBalanceStillFiresWithDeviationCheckArmedAndWithinTolerance() public {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%

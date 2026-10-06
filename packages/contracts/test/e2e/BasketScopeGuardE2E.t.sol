@@ -18,6 +18,9 @@ contract BasketScopeGuardE2ETest is AquaE2EBase {
     address internal constant SYNTHETIC_TOKEN_B = 0x000000000000000000000000000000000000b0b0;
     /// @dev Fixed test hash for the PM exemption.
     bytes32 internal constant PM_STRATEGY_HASH = keccak256("placeholder-pm-strategy");
+    /// @dev `app` every ship() in this file targets -- must match the Guard's TRUSTED_PM_ROUTER
+    ///      for the PM exemption to apply.
+    address internal constant TRUSTED_PM_ROUTER = address(0xAAAA);
 
     BasketScopeGuard internal guard;
     Safe internal safe;
@@ -37,7 +40,8 @@ contract BasketScopeGuardE2ETest is AquaE2EBase {
         uint256[] memory basketIds = new uint256[](2);
         basketIds[0] = 1;
         basketIds[1] = 2;
-        guard = new BasketScopeGuard(address(aqua), address(safe), PM_STRATEGY_HASH, tokens, basketIds);
+        guard =
+            new BasketScopeGuard(address(aqua), address(safe), PM_STRATEGY_HASH, TRUSTED_PM_ROUTER, tokens, basketIds);
 
         // Install the Guard on the Safe for real, so this test exercises the actual enforced
         // state, not just a deployed-but-inert Guard contract.
@@ -109,6 +113,33 @@ contract BasketScopeGuardE2ETest is AquaE2EBase {
 
         vm.expectRevert();
         _shipThroughSafe("e2e attacker strategy", tokens);
+    }
+
+    /// @dev The trusted strategy bytes are publicly recoverable from Aqua's own Shipped event --
+    ///      replaying them against a different app must not grant the cross-basket exemption.
+    function test_E2E_DeployedSafeBlocksTrustedStrategyReplayedAgainstAnotherApp() public {
+        address[] memory tokens = new address[](2);
+        tokens[0] = basketOneToken;
+        tokens[1] = basketTwoToken;
+        bytes memory pmStrategy = "placeholder-pm-strategy";
+
+        uint256[] memory amounts = new uint256[](tokens.length);
+        bytes memory shipData = abi.encodeCall(Aqua.ship, (address(0xBEEF), pmStrategy, tokens, amounts));
+        vm.prank(deployer);
+
+        vm.expectRevert();
+        safe.execTransaction(
+            address(aqua),
+            0,
+            shipData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            _selfApprovedSignature()
+        );
     }
 
     function test_E2E_DeployedSafeBlocksTokenOutsideUniverse() public {
