@@ -24,12 +24,16 @@ contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
     bytes32 public immutable TRUSTED_PM_STRATEGY_HASH;
 
     /// @inheritdoc IBasketScopeGuard
+    address public immutable TRUSTED_PM_ROUTER;
+
+    /// @inheritdoc IBasketScopeGuard
     mapping(address token => uint256 basketId) public basketOf;
 
     constructor(
         address aqua,
         address safe_,
         bytes32 trustedPmStrategyHash,
+        address trustedPmRouter,
         address[] memory tokens,
         uint256[] memory basketIds
     ) {
@@ -38,6 +42,7 @@ contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
         AQUA = aqua;
         SAFE = safe_;
         TRUSTED_PM_STRATEGY_HASH = trustedPmStrategyHash;
+        TRUSTED_PM_ROUTER = trustedPmRouter;
 
         for (uint256 i = 0; i < tokens.length; i++) {
             if (basketIds[i] == 0) revert BasketIdZeroReserved();
@@ -90,10 +95,18 @@ contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
         if (to != AQUA) return;
         if (data.length < 4 || _selector(data) != IAqua.ship.selector) return;
 
-        (, bytes memory strategy, address[] memory tokens,) =
+        (address app, bytes memory strategy, address[] memory tokens,) =
             abi.decode(_stripSelector(data), (address, bytes, address[], uint256[]));
 
-        if (keccak256(strategy) == TRUSTED_PM_STRATEGY_HASH) return;
+        // The strategy hash alone never identifies which app will run it -- an attacker can
+        // replay the publicly-recoverable trusted bytes (from Aqua's own Shipped event) against
+        // a different, attacker-controlled app, which Aqua tracks under separate ledger slots.
+        // Cross-basket/undeclared tokens stay allowed for the real router by design (ADR-0011):
+        // only the empty-list sanity check still applies.
+        if (app == TRUSTED_PM_ROUTER && keccak256(strategy) == TRUSTED_PM_STRATEGY_HASH) {
+            if (tokens.length == 0) revert EmptyTokenList();
+            return;
+        }
 
         if (tokens.length == 0) revert EmptyTokenList();
         uint256 basketId = basketOf[tokens[0]];
