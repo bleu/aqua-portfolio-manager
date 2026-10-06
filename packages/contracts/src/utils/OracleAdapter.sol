@@ -16,6 +16,11 @@ library OracleAdapter {
     error OracleAdapterStalePrice(address feed, uint256 updatedAt, uint256 maxStaleness);
     error OracleAdapterInvalidPrice(address feed, int256 answer);
     error OracleAdapterTokensFeedsLengthMismatch();
+    /// @dev `answeredInRound < roundId` means this round's price carried over from an earlier,
+    ///      possibly-stale aggregator round instead of being freshly reported in this one --
+    ///      Chainlink's own documented pattern for detecting an incomplete round. A zero roundId
+    ///      is never valid either.
+    error OracleAdapterIncompleteRound(address feed, uint80 roundId, uint80 answeredInRound);
 
     enum Rounding {
         Down,
@@ -32,8 +37,12 @@ library OracleAdapter {
     /// @notice Returns the WAD-scaled price of one whole token with the requested rounding.
     /// @dev Rejects stale, non-positive prices and prices below one raw WAD unit.
     function priceWad(PriceFeed memory config, Rounding rounding) internal view returns (uint256) {
-        (, int256 answer,, uint256 updatedAt,) = config.feed.latestRoundData();
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = config.feed.latestRoundData();
         require(answer > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
+        require(
+            roundId != 0 && answeredInRound >= roundId,
+            OracleAdapterIncompleteRound(address(config.feed), roundId, answeredInRound)
+        );
         require(
             updatedAt <= block.timestamp, OracleAdapterStalePrice(address(config.feed), updatedAt, config.maxStaleness)
         );

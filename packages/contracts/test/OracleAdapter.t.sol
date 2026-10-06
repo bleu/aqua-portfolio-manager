@@ -11,6 +11,8 @@ contract MockAggregatorV3 is AggregatorV3Interface {
     int256 public answer;
     uint256 public updatedAt;
     uint8 private _decimals;
+    uint80 public roundId = 1;
+    uint80 public answeredInRound = 1;
 
     constructor(uint8 decimals_, int256 initialAnswer, uint256 initialUpdatedAt) {
         _decimals = decimals_;
@@ -23,12 +25,17 @@ contract MockAggregatorV3 is AggregatorV3Interface {
         updatedAt = newUpdatedAt;
     }
 
+    function setRound(uint80 newRoundId, uint80 newAnsweredInRound) external {
+        roundId = newRoundId;
+        answeredInRound = newAnsweredInRound;
+    }
+
     function decimals() external view returns (uint8) {
         return _decimals;
     }
 
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
-        return (1, answer, updatedAt, updatedAt, 1);
+        return (roundId, answer, updatedAt, updatedAt, answeredInRound);
     }
 }
 
@@ -130,6 +137,40 @@ contract OracleAdapterTest is Test {
             abi.encodeWithSelector(OracleAdapter.OracleAdapterInvalidPrice.selector, address(mock), int256(-1))
         );
         this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
+    }
+
+    function test_RevertsOnIncompleteRound() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 mock = new MockAggregatorV3(8, 2000e8, block.timestamp);
+        mock.setRound(5, 4);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OracleAdapter.OracleAdapterIncompleteRound.selector, address(mock), uint80(5), uint80(4)
+            )
+        );
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
+    }
+
+    function test_RevertsOnZeroRoundId() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 mock = new MockAggregatorV3(8, 2000e8, block.timestamp);
+        mock.setRound(0, 0);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OracleAdapter.OracleAdapterIncompleteRound.selector, address(mock), uint80(0), uint80(0)
+            )
+        );
+        this._priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
+    }
+
+    function test_AcceptsRoundWhereAnsweredInRoundExceedsRoundId() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 mock = new MockAggregatorV3(8, 2000e8, block.timestamp);
+        mock.setRound(5, 6);
+        uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
+        assertEq(price, 2000e18);
     }
 
     function test_GroupValueSumsAcrossDifferentTokenAndFeedDecimals() public {
