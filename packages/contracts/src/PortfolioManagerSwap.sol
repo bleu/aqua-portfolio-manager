@@ -100,8 +100,16 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             ctx.swap.amountIn = cleanAmountIn + daoAmount;
         }
 
-        // A group's total value does not guarantee enough units of the output token.
-        uint256 tokenOutAvailable = IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker);
+        // A group's total value does not guarantee enough units of the output token -- and
+        // neither does the wallet balance alone: Aqua's own ledger authorization for this
+        // strategy (set at ship() time, independent of the wallet's own balance) is a separate
+        // settlement constraint. A computed output that fits the wallet but exceeds the
+        // strategy's remaining Aqua allocation can never actually settle.
+        uint256 tokenOutWalletBalance = IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker);
+        (uint256 tokenOutLedgerBalance,) =
+            _AQUA.rawBalances(ctx.query.maker, address(this), ctx.query.orderHash, ctx.query.tokenOut);
+        uint256 tokenOutAvailable =
+            tokenOutWalletBalance < tokenOutLedgerBalance ? tokenOutWalletBalance : tokenOutLedgerBalance;
         require(
             ctx.swap.amountOut <= tokenOutAvailable,
             PortfolioManagerSwapInsufficientMemberBalance(ctx.query.tokenOut, ctx.swap.amountOut, tokenOutAvailable)
