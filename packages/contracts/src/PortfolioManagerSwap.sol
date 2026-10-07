@@ -29,9 +29,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
     /// @dev Aqua.ship() does not enforce validation. The opcode checks this validator's attestation.
     IPortfolioManagerStrategyValidator private immutable STRATEGY_VALIDATOR;
+    /// @dev Chainlink's L2 sequencer-uptime feed for this chain. See OracleAdapter.requireSequencerUp.
+    AggregatorV3Interface private immutable SEQUENCER_UPTIME_FEED;
 
-    constructor(address aqua, address strategyValidator) Fee(aqua) {
+    constructor(address aqua, address strategyValidator, address sequencerUptimeFeed) Fee(aqua) {
         STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
+        SEQUENCER_UPTIME_FEED = AggregatorV3Interface(sequencerUptimeFeed);
     }
 
     /// @param args Group configuration, LP fee, and deviation limit encoded by PortfolioManagerArgsCodec.
@@ -44,6 +47,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             STRATEGY_VALIDATOR.buildParamsAttested(ctx.query.orderHash),
             PortfolioManagerSwapBuildParametersNotAttested(ctx.query.orderHash)
         );
+        OracleAdapter.requireSequencerUp(SEQUENCER_UPTIME_FEED);
 
         // Attestation validates these exact argument bytes. Decode them without repeating validation.
         (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =

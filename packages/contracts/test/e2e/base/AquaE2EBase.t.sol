@@ -21,6 +21,9 @@ abstract contract AquaE2EBase is Test {
     /// @dev Aqua registry address on Base.
     address internal constant AQUA_MAINNET = 0x499943E74FB0cE105688beeE8Ef2ABec5D936d31;
 
+    /// @dev Chainlink's L2 sequencer-uptime feed for Base -- https://docs.chain.link/data-feeds/l2-sequencer-feeds
+    address internal constant SEQUENCER_UPTIME_FEED_MAINNET = 0xBCF85224fc0756B9Fa45aA7892530B47e10b6433;
+
     /// @dev Public test-only key. Owns fixture Safes and permits pre-approved-hash signatures.
     uint256 internal constant DEFAULT_DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 

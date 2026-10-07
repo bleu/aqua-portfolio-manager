@@ -12,6 +12,7 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
+import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Tests validation separately from shipping. Safe batch integration is covered in the E2E suite.
@@ -25,9 +26,14 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     MockAggregatorV3 internal feedA;
     MockAggregatorV3 internal feedB;
+    MockAggregatorV3 internal sequencerFeed;
 
     function setUp() public {
-        validator = new PortfolioManagerStrategyValidator();
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+        validator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -324,7 +330,8 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     function test_TolerancePassesWithinBand() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
-        // 105,000 / 205,000 = 51.2%, only ~2.4% off the 50% target -- inside the 10% band.
+        // Equal weights -- pairwise spot price is 105,000/100,000 = 1.05, 5% off the 1.0 parity
+        // the swap guard also checks -- inside the 10% band.
         tokenA.mint(maker, 105_000e18);
         tokenB.mint(maker, 100_000e18);
 
@@ -333,19 +340,44 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     function test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
-        // A 9.09% actual share against a 50% target gives about 82% relative deviation.
+        // Equal weights -- pairwise spot price is 10,000/100,000 = 0.1, 90% off the 1.0 parity
+        // the swap guard also checks -- well past the 10% band.
         uint256 balA = 10_000e18;
         uint256 balB = 100_000e18;
         tokenA.mint(maker, balA);
         tokenB.mint(maker, balB);
 
-        uint256 actualShareWad = balA * 1e18 / (balA + balB);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector,
                 uint256(0),
-                actualShareWad,
-                uint256(0.5e18)
+                uint256(1),
+                uint256(0.1e18),
+                uint256(0.1e9)
+            )
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev The actual BLEUDEV-407 bug: a wallet the OLD per-group-share metric would have passed
+    ///      (8.1% share deviation, under the 10% band) but whose pairwise spot price is already
+    ///      15% off parity -- exactly the gap between the two metrics. Proves attestation now
+    ///      rejects a strategy that would have shipped fine under the old check and then had every
+    ///      cross-group swap immediately revert against PortfolioManagerSwap's own pairwise guard.
+    function test_ToleranceRevertsOnPairwiseSpotPriceEvenWhenTheOldShareMetricWouldHavePassed() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
+        uint256 balA = 85_000e18;
+        uint256 balB = 100_000e18;
+        tokenA.mint(maker, balA);
+        tokenB.mint(maker, balB);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector,
+                uint256(0),
+                uint256(1),
+                uint256(0.85e18),
+                uint256(0.1e9)
             )
         );
         validator.requireBalancedWithinTolerance(order, maker);
@@ -356,6 +388,20 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         tokenA.mint(maker, 10_000e18);
         tokenB.mint(maker, 100_000e18);
 
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev Proves the deviation check actually asks the sequencer feed, not just that wiring a
+    ///      constructor param compiles -- flips the same mock setUp wired in, to "down".
+    function test_ToleranceRevertsWhenSequencerIsDown() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        sequencerFeed.setAnswer(1, block.timestamp); // answer 1 == down
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterSequencerDown.selector, address(sequencerFeed))
+        );
         validator.requireBalancedWithinTolerance(order, maker);
     }
 

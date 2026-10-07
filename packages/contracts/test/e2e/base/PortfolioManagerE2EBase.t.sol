@@ -53,9 +53,15 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     function setUp() public virtual override {
         super.setUp();
 
-        strategyValidator = new PortfolioManagerStrategyValidator();
+        strategyValidator = new PortfolioManagerStrategyValidator(SEQUENCER_UPTIME_FEED_MAINNET);
         router = new PortfolioManagerRouter(
-            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+            address(aqua),
+            WETH_BASE,
+            deployer,
+            "AquaPortfolioManager",
+            "1",
+            address(strategyValidator),
+            SEQUENCER_UPTIME_FEED_MAINNET
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(1); // distinct salt nonce from BasketScopeGuardE2E's/the multi-token fixture's Safes
