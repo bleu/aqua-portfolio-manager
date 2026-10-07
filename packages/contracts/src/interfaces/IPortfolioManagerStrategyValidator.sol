@@ -16,9 +16,11 @@ interface IPortfolioManagerStrategyValidator {
     error PortfolioManagerStrategyValidatorTrailingCurveInstruction();
     error PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(address token);
     error PortfolioManagerStrategyValidatorShippedTokenNotDeclared(address token);
-    /// @dev The maker's group share exceeds the configured relative deviation before shipping.
+    /// @dev A cross-group pair's spot price exceeds the configured deviation from parity --
+    ///      the same pairwise check PortfolioManagerSwap applies before every trade between
+    ///      these two groups.
     error PortfolioManagerStrategyValidatorExcessivePriceDeviation(
-        uint256 groupIndex, uint256 actualShareWad, uint256 targetWeightWad
+        uint256 groupInIdx, uint256 groupOutIdx, uint256 spotPriceWad, uint256 maxDeviationBps
     );
     /// @dev Portfolio shares are undefined when the declared tokens have zero total value.
     error PortfolioManagerStrategyValidatorEmptyPortfolio();
@@ -30,7 +32,9 @@ interface IPortfolioManagerStrategyValidator {
     /// @dev The program must start with CURVE_OPCODE. This check does not read balances or prices.
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure;
 
-    /// @notice Requires each group's share to stay within maxDeviationBps of its target, relative to that target.
+    /// @notice Requires every cross-group pair's spot price to stay within maxDeviationBps of parity --
+    ///         the same metric PortfolioManagerSwap's pre-trade guard checks, so an attested strategy
+    ///         is guaranteed tradeable in every direction immediately after shipping.
     /// @dev Zero disables the check. Reads the supplied maker's current balances.
     function requireBalancedWithinTolerance(ISwapVM.Order calldata order, address maker) external view;
 

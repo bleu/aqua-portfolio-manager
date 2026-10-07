@@ -8,6 +8,7 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
+import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 
@@ -100,16 +101,26 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         }
         require(totalValueWad > 0, PortfolioManagerStrategyValidatorEmptyPortfolio());
 
+        // Checks every cross-group pair with PortfolioManagerSwap's own pairwise spot-price
+        // formula, not each group's share of the total -- the two metrics diverge once a
+        // strategy has more than two groups, and only the pairwise one guarantees every
+        // direction a swap could actually trade is still within tolerance right after shipping.
         for (uint256 i = 0; i < n; i++) {
-            uint256 actualShareWad = groupValuesWad[i] * WAD / totalValueWad;
-            uint256 targetWeightWad = groups[i].weight;
-            uint256 diffWad =
-                actualShareWad > targetWeightWad ? actualShareWad - targetWeightWad : targetWeightWad - actualShareWad;
-            uint256 deviationBps = diffWad * PortfolioManagerArgsCodec.PM_BPS / targetWeightWad;
-            require(
-                deviationBps <= maxDeviationBps,
-                PortfolioManagerStrategyValidatorExcessivePriceDeviation(i, actualShareWad, targetWeightWad)
-            );
+            for (uint256 j = i + 1; j < n; j++) {
+                PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
+                    balanceIn: groupValuesWad[i],
+                    balanceOut: groupValuesWad[j],
+                    weightIn: groups[i].weight,
+                    weightOut: groups[j].weight,
+                    feeWad: 0
+                });
+                uint256 sp = PortfolioManagerPricing.spotPrice(quote);
+                uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PortfolioManagerArgsCodec.PM_BPS / WAD;
+                require(
+                    deviationBps <= maxDeviationBps,
+                    PortfolioManagerStrategyValidatorExcessivePriceDeviation(i, j, sp, maxDeviationBps)
+                );
+            }
         }
     }
 
