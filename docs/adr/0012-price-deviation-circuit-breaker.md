@@ -1,6 +1,8 @@
 # ADR-0012: Block trades with excessive price deviation
 
-**Status:** Accepted.
+**Status:** Partially superseded by [ADR-0016](0016-per-trade-deviation-step-cap.md) -- the
+swap-side pre-trade check described below is replaced by a per-trade step cap. The
+validation-time group-share check is unaffected and still described accurately here.
 
 ## Context
 

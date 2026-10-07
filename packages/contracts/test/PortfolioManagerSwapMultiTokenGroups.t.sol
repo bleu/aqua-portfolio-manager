@@ -467,13 +467,17 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
     }
 
-    /// @notice A pair can pass the group deviation check but lack enough units of the output member.
+    /// @notice A pair can pass the deviation step cap but lack enough units of the output member.
+    /// @dev The trade must stay small relative to the pool (ADR-0016 bounds the step this trade
+    ///      itself causes, not the pool's starting balance) -- a trade large enough to drain a
+    ///      meaningful fraction of the pool would trip the deviation check first, as it does in
+    ///      test_ExcessivePriceDeviationBlocksTrade below.
     function test_InsufficientMemberBalanceStillFiresWithDeviationCheckArmedAndWithinTolerance() public {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18); // group0 ~= group1 in value -> ~0% deviation
 
         bytes memory takerData = _exactInTakerData();
-        tokenC.mint(address(taker), 1_000_000e18);
+        tokenC.mint(address(taker), 1_000e18);
 
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: 1_000_000e18,
@@ -482,7 +486,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             weightOut: groups[0].weight,
             feeWad: 0
         });
-        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 1_000e18);
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -492,29 +496,62 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
                 1
             )
         );
-        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+        taker.swap(order, address(tokenC), address(tokenA), 1_000e18, takerData);
     }
 
-    // ===== Price-deviation circuit breaker (ADR-0012) =====
+    // ===== Price-deviation step cap (ADR-0012, superseded by ADR-0016) =====
 
+    /// @dev ADR-0016: the cap bounds how far THIS trade moves the pair, not the pool's starting
+    ///      deviation -- so this now starts perfectly balanced and uses one large trade to trip
+    ///      the cap, instead of starting already-skewed with a small trade (which the new check
+    ///      would let through, since its own step would be tiny).
     function test_ExcessivePriceDeviationBlocksTrade() public {
+        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, balanced
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 50_000e18);
+
+        // Equal weights reduce exactIn to xy=k: trading half the pool (50,000 of 100,000) moves
+        // spotPrice(tokenC->tokenA) from 1.0 (balanced) to ~150,000/66,666.67 ~= 2.25 (2 wei under
+        // from fixed-point rounding) -- a ~125% step in one trade, far past the 10% per-trade cap.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 2.25e18 - 2, uint256(0.1e9)
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 50_000e18, takerData);
+    }
+
+    /// @dev The actual BLEUDEV-403 bug this ADR fixes: under the old pre-trade check (ADR-0012),
+    ///      ANY trade against this 90%-deviated pair would have reverted outright, including this
+    ///      corrective one -- freezing the pair until an external balance or price change. The
+    ///      ADR-0016 step cap only bounds what THIS trade itself does, so a corrective trade whose
+    ///      own step stays under the 10% cap now succeeds even though the pool started far outside
+    ///      the band. (The trade stays small enough to also clear BLEUDEV-406's ledger-authorization
+    ///      cap: `_shipOrder` only authorized 50,000e18 of tokenA, not the post-ship mint below.)
+    function test_CorrectiveTradeSucceedsEvenWhenPoolStartedBeyondTheDeviationBand() public {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, at target
 
-        // An external balance change pushes group0 well beyond the 10% deviation limit.
+        // An external balance change pushes group0 to 90% deviation -- spotPrice(tokenC->tokenA)
+        // = 100,000/1,000,000 = 0.1, far outside the 10% band.
         tokenA.mint(maker, 900_000e18);
 
-        bytes memory takerData = _exactInTakerData();
-        tokenC.mint(address(taker), 1_000e18);
+        uint256 amountIn = 4_000e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
-        // spotPrice(tokenC->tokenA) = (100,000/0.5) / (1,000,000/0.5) = 0.1e18 exactly (equal
-        // weights cancel), i.e. 90% deviation from WAD -- well past the 10% ceiling.
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 0.1e18, uint256(0.1e9)
-            )
-        );
-        taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+        // This trade's own step (0.1 -> ~0.108, under 1%) stays well under the 10% cap, so it
+        // prices and settles exactly like any other within-tolerance trade.
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18,
+            balanceOut: 1_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "a corrective trade within its own step cap must succeed");
     }
 
     function test_PriceDeviationWithinToleranceStillPricesNormally() public {

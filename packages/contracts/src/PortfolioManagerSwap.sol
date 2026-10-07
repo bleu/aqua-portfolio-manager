@@ -57,51 +57,34 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
         require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
-        PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
-            balanceIn: _groupValueWad(groups[groupInIdx], ctx.query.maker, OracleAdapter.Rounding.Up),
-            balanceOut: _groupValueWad(groups[groupOutIdx], ctx.query.maker, OracleAdapter.Rounding.Down),
-            weightIn: groups[groupInIdx].weight,
-            weightOut: groups[groupOutIdx].weight,
-            feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
-        });
+        PortfolioManagerPricing.PoolState memory quote =
+            _buildQuote(groups[groupInIdx], groups[groupOutIdx], ctx.query.maker, feeBps);
 
-        if (maxDeviationBps != 0) {
-            uint256 sp = PortfolioManagerPricing.spotPrice(quote);
-            uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PortfolioManagerArgsCodec.PM_BPS / WAD;
-            require(deviationBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(sp, maxDeviationBps));
-        }
-
-        // Convert traded amounts to the reserves' value unit before pricing, then back to native token units.
-        (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
-            _priceAndDecimals(groups[groupInIdx].members[memberInIdx], ctx.query.tokenIn, OracleAdapter.Rounding.Down);
-        (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
-            _priceAndDecimals(groups[groupOutIdx].members[memberOutIdx], ctx.query.tokenOut, OracleAdapter.Rounding.Up);
-
-        uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
-        uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
-
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
         uint256 daoAmount;
-
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, PortfolioManagerSwapRecomputeDetected());
-            // Price after the DAO cut, but retain the full input for SwapVM settlement.
-            uint256 fullAmountIn = ctx.swap.amountIn;
-            daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
-            uint256 netAmountIn = fullAmountIn - daoAmount;
-
-            uint256 netAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
-            uint256 amountOutValueWad = PortfolioManagerPricing.exactIn(quote, netAmountInValueWad);
-            ctx.swap.amountOut = FixedPointMath.mulDivDown(amountOutValueWad, tokenOutUnit, tokenOutPriceWad);
-            ctx.swap.amountIn = fullAmountIn;
+            (ctx.swap.amountOut, daoAmount) = _priceExactIn(
+                groups[groupInIdx].members[memberInIdx],
+                ctx.query.tokenIn,
+                groups[groupOutIdx].members[memberOutIdx],
+                ctx.query.tokenOut,
+                quote,
+                ctx.swap.amountIn,
+                feeBps,
+                maxDeviationBps
+            );
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
-            // The curve includes the LP fee. Add the DAO fee to its required input.
-            uint256 amountOutValueWad = FixedPointMath.mulDivUp(ctx.swap.amountOut, tokenOutPriceWad, tokenOutUnit);
-            uint256 amountInValueWad = PortfolioManagerPricing.exactOut(quote, amountOutValueWad);
-            uint256 cleanAmountIn = FixedPointMath.mulDivUp(amountInValueWad, tokenInUnit, tokenInPriceWad);
-            daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
-            ctx.swap.amountIn = cleanAmountIn + daoAmount;
+            (ctx.swap.amountIn, daoAmount) = _priceExactOut(
+                groups[groupInIdx].members[memberInIdx],
+                ctx.query.tokenIn,
+                groups[groupOutIdx].members[memberOutIdx],
+                ctx.query.tokenOut,
+                quote,
+                ctx.swap.amountOut,
+                feeBps,
+                maxDeviationBps
+            );
         }
 
         // A group's total value does not guarantee enough units of the output token -- and
@@ -144,6 +127,114 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
                 }
             }
         }
+    }
+
+    /// @dev Builds the traded pair's pool state from both groups' oracle-valued reserves. Split
+    ///      out of _portfolioManagerSwapXD to keep that function under the stack-depth limit.
+    function _buildQuote(
+        PortfolioManagerArgsCodec.Group memory groupIn,
+        PortfolioManagerArgsCodec.Group memory groupOut,
+        address maker,
+        uint32 feeBps
+    ) private view returns (PortfolioManagerPricing.PoolState memory quote) {
+        quote = PortfolioManagerPricing.PoolState({
+            balanceIn: _groupValueWad(groupIn, maker, OracleAdapter.Rounding.Up),
+            balanceOut: _groupValueWad(groupOut, maker, OracleAdapter.Rounding.Down),
+            weightIn: groupIn.weight,
+            weightOut: groupOut.weight,
+            feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
+        });
+    }
+
+    /// @dev Prices an exact-in trade and enforces the ADR-0016 deviation step cap. Split out of
+    ///      _portfolioManagerSwapXD (along with _priceExactOut) to keep that function under the
+    ///      stack-depth limit -- each branch's own price/decimals/unit/curve locals now live in
+    ///      their own call frame instead of the dispatcher's.
+    function _priceExactIn(
+        PortfolioManagerArgsCodec.Member memory memberIn,
+        address tokenIn,
+        PortfolioManagerArgsCodec.Member memory memberOut,
+        address tokenOut,
+        PortfolioManagerPricing.PoolState memory quote,
+        uint256 fullAmountIn,
+        uint32 feeBps,
+        uint32 maxDeviationBps
+    ) private view returns (uint256 amountOut, uint256 daoAmount) {
+        (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
+            _priceAndDecimals(memberIn, tokenIn, OracleAdapter.Rounding.Down);
+        (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
+            _priceAndDecimals(memberOut, tokenOut, OracleAdapter.Rounding.Up);
+        uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
+        uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
+
+        // Price after the DAO cut; the caller keeps the full input for SwapVM settlement.
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
+        daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
+        uint256 netAmountIn = fullAmountIn - daoAmount;
+
+        uint256 curveAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
+        uint256 curveAmountOutValueWad = PortfolioManagerPricing.exactIn(quote, curveAmountInValueWad);
+        if (maxDeviationBps != 0) {
+            _requireWithinDeviationStep(quote, curveAmountInValueWad, curveAmountOutValueWad, maxDeviationBps);
+        }
+        amountOut = FixedPointMath.mulDivDown(curveAmountOutValueWad, tokenOutUnit, tokenOutPriceWad);
+    }
+
+    /// @dev Prices an exact-out trade and enforces the ADR-0016 deviation step cap. See
+    ///      _priceExactIn's doc comment for why this is split out.
+    function _priceExactOut(
+        PortfolioManagerArgsCodec.Member memory memberIn,
+        address tokenIn,
+        PortfolioManagerArgsCodec.Member memory memberOut,
+        address tokenOut,
+        PortfolioManagerPricing.PoolState memory quote,
+        uint256 amountOut,
+        uint32 feeBps,
+        uint32 maxDeviationBps
+    ) private view returns (uint256 amountIn, uint256 daoAmount) {
+        (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
+            _priceAndDecimals(memberIn, tokenIn, OracleAdapter.Rounding.Down);
+        (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
+            _priceAndDecimals(memberOut, tokenOut, OracleAdapter.Rounding.Up);
+        uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
+        uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
+
+        // The curve includes the LP fee. Add the DAO fee to its required input.
+        uint256 curveAmountOutValueWad = FixedPointMath.mulDivUp(amountOut, tokenOutPriceWad, tokenOutUnit);
+        uint256 curveAmountInValueWad = PortfolioManagerPricing.exactOut(quote, curveAmountOutValueWad);
+        if (maxDeviationBps != 0) {
+            _requireWithinDeviationStep(quote, curveAmountInValueWad, curveAmountOutValueWad, maxDeviationBps);
+        }
+        uint256 cleanAmountIn = FixedPointMath.mulDivUp(curveAmountInValueWad, tokenInUnit, tokenInPriceWad);
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
+        daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
+        amountIn = cleanAmountIn + daoAmount;
+    }
+
+    /// @dev ADR-0016: caps how far this trade itself moves the pair, not the pair's starting
+    ///      deviation -- a trade that already passed the curve (so curveAmountOutValueWad <
+    ///      quote.balanceOut, per PortfolioManagerPricing's own invariant) can't push spotPrice
+    ///      more than maxDeviationBps away from where it started, in either direction. Split out
+    ///      from _portfolioManagerSwapXD, and recomputes spBefore here instead of taking it as a
+    ///      param, to keep that function under the stack-depth limit.
+    function _requireWithinDeviationStep(
+        PortfolioManagerPricing.PoolState memory quote,
+        uint256 curveAmountInValueWad,
+        uint256 curveAmountOutValueWad,
+        uint32 maxDeviationBps
+    ) private pure {
+        uint256 spBefore = PortfolioManagerPricing.spotPrice(quote);
+        PortfolioManagerPricing.PoolState memory postQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: quote.balanceIn + curveAmountInValueWad,
+            balanceOut: quote.balanceOut - curveAmountOutValueWad,
+            weightIn: quote.weightIn,
+            weightOut: quote.weightOut,
+            feeWad: quote.feeWad
+        });
+        uint256 spAfter = PortfolioManagerPricing.spotPrice(postQuote);
+        uint256 stepBps =
+            (spAfter > spBefore ? spAfter - spBefore : spBefore - spAfter) * PortfolioManagerArgsCodec.PM_BPS / WAD;
+        require(stepBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(spAfter, maxDeviationBps));
     }
 
     /// @dev Aqua's token list can differ from the encoded PM universe. Enforce membership here too.

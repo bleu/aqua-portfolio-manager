@@ -12,8 +12,9 @@ interface IPortfolioManagerSwap {
     error PortfolioManagerSwapSameGroupSwap(uint256 groupIndex);
     /// @dev The output token lacks sufficient native units, even if its group has enough aggregate value.
     error PortfolioManagerSwapInsufficientMemberBalance(address token, uint256 requested, uint256 available);
-    /// @dev The pair's pre-trade spot price exceeds the deviation limit.
-    ///      Corrective trades also fail until external action restores the pair within tolerance.
+    /// @dev This trade would move the pair's spot price by more than maxDeviationBps in one
+    ///      step (ADR-0016), regardless of where the pair started. spotPriceWad is the rejected
+    ///      post-trade spot price, not the pre-trade one.
     error PortfolioManagerSwapExcessivePriceDeviation(uint256 spotPriceWad, uint256 maxDeviationBps);
     /// @dev The validator must attest this order before PM can quote or execute it.
     error PortfolioManagerSwapBuildParametersNotAttested(bytes32 strategyHash);
