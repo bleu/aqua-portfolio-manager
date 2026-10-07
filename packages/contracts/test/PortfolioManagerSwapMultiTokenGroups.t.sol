@@ -34,6 +34,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     MockAggregatorV3 internal feedA;
     MockAggregatorV3 internal feedB;
     MockAggregatorV3 internal feedC;
+    MockAggregatorV3 internal sequencerFeed;
     MockTaker internal taker;
 
     address internal maker;
@@ -42,10 +43,16 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+
         aqua = new Aqua();
-        strategyValidator = new PortfolioManagerStrategyValidator();
-        router =
-            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
+        strategyValidator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
+        router = new PortfolioManagerRouter(
+            address(aqua), address(0), address(this), "PM", "1", address(strategyValidator), address(sequencerFeed)
+        );
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -336,6 +343,22 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             abi.encodeWithSelector(
                 OracleAdapter.OracleAdapterStalePrice.selector, address(feedB), staleUpdatedAt, uint256(1 hours)
             )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+    }
+
+    /// @dev Proves the swap path actually asks the sequencer feed, not just that wiring a
+    ///      constructor param compiles -- flips the same mock setUp wired in, to "down".
+    function test_RevertsWhenSequencerIsDown() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
+        sequencerFeed.setAnswer(1, block.timestamp); // answer 1 == down
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterSequencerDown.selector, address(sequencerFeed))
         );
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
     }

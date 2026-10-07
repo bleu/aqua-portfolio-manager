@@ -16,8 +16,9 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
         address owner,
         string memory name,
         string memory version,
-        address strategyValidator
-    ) SwapVM(aqua, weth, owner, name, version) PortfolioManagerOpcodes(aqua, strategyValidator) {}
+        address strategyValidator,
+        address sequencerUptimeFeed
+    ) SwapVM(aqua, weth, owner, name, version) PortfolioManagerOpcodes(aqua, strategyValidator, sequencerUptimeFeed) {}
 
     function _instructions()
         internal

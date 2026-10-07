@@ -9,6 +9,7 @@ import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManager
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
+import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 
 /// @title PortfolioManagerStrategyValidator
 /// @notice Validates the declared universe and initial composition, then records attestation.
@@ -18,8 +19,15 @@ import {OracleAdapter} from "./utils/OracleAdapter.sol";
 contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator {
     uint256 private constant WAD = 1e18;
 
+    /// @dev Chainlink's L2 sequencer-uptime feed for this chain. See OracleAdapter.requireSequencerUp.
+    AggregatorV3Interface private immutable SEQUENCER_UPTIME_FEED;
+
     /// @inheritdoc IPortfolioManagerStrategyValidator
     mapping(bytes32 => bool) public buildParamsAttested;
+
+    constructor(address sequencerUptimeFeed) {
+        SEQUENCER_UPTIME_FEED = AggregatorV3Interface(sequencerUptimeFeed);
+    }
 
     /// @inheritdoc IPortfolioManagerStrategyValidator
     function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
@@ -81,6 +89,7 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         address maker
     ) private view {
         if (maxDeviationBps == 0) return;
+        OracleAdapter.requireSequencerUp(SEQUENCER_UPTIME_FEED);
 
         uint256 n = groups.length;
         uint256[] memory groupValuesWad = new uint256[](n);

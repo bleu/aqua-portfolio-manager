@@ -12,6 +12,7 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
+import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Tests validation separately from shipping. Safe batch integration is covered in the E2E suite.
@@ -25,9 +26,14 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     MockAggregatorV3 internal feedA;
     MockAggregatorV3 internal feedB;
+    MockAggregatorV3 internal sequencerFeed;
 
     function setUp() public {
-        validator = new PortfolioManagerStrategyValidator();
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+        validator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -356,6 +362,20 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         tokenA.mint(maker, 10_000e18);
         tokenB.mint(maker, 100_000e18);
 
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev Proves the deviation check actually asks the sequencer feed, not just that wiring a
+    ///      constructor param compiles -- flips the same mock setUp wired in, to "down".
+    function test_ToleranceRevertsWhenSequencerIsDown() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        sequencerFeed.setAnswer(1, block.timestamp); // answer 1 == down
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterSequencerDown.selector, address(sequencerFeed))
+        );
         validator.requireBalancedWithinTolerance(order, maker);
     }
 

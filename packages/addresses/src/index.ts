@@ -15,6 +15,8 @@ export type Token = {
 export const AQUA: string = raw.aqua;
 export const MULTI_SEND_CALL_ONLY: string = raw.multiSendCallOnly;
 export const MAX_STALENESS_SECONDS: number = raw.maxStalenessSeconds;
+/// Chainlink's L2 sequencer-uptime feed for Base -- https://docs.chain.link/data-feeds/l2-sequencer-feeds
+export const SEQUENCER_UPTIME_FEED: string = raw.sequencerUptimeFeed;
 
 export const TOKENS: Token[] = Object.entries(raw.tokens).map(([symbol, t]) => ({ symbol, ...t }));
 
@@ -34,6 +36,9 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 if (!ADDRESS_RE.test(AQUA)) throw new Error(`addresses: AQUA is not a well-formed address`);
 if (!ADDRESS_RE.test(MULTI_SEND_CALL_ONLY)) {
   throw new Error(`addresses: MULTI_SEND_CALL_ONLY is not a well-formed address`);
+}
+if (!ADDRESS_RE.test(SEQUENCER_UPTIME_FEED)) {
+  throw new Error(`addresses: SEQUENCER_UPTIME_FEED is not a well-formed address`);
 }
 const seenSymbols = new Set<string>();
 for (const t of TOKENS) {
