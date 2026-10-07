@@ -89,14 +89,21 @@ Quotes compute the amounts but skip the transfer.
 
 ## Deviation checks
 
-`maxDeviationBps == 0` disables both deviation checks. Otherwise:
+`maxDeviationBps == 0` disables both deviation checks. Otherwise, both operate on the same
+per-pair spot price `SP = (balanceIn/w_in) / (balanceOut/w_out)`, scaled the same way, but
+against different baselines:
 
-- Before a swap, PM checks `abs(SP - WAD) * PM_BPS / WAD` for the traded pair.
-- During validation, the validator checks each group's relative deviation from its target share of total portfolio value.
+- Before a swap, PM caps how far the trade itself can move the traded pair's spot price:
+  `abs(SP_after - SP_before) * PM_BPS / WAD <= maxDeviationBps`, checked after pricing the trade.
+  No single trade -- corrective or worsening -- can move the pair by more than the threshold in
+  one step, regardless of where it started.
+- During validation, the validator checks every cross-group pair's spot-price deviation from
+  parity: `abs(SP - WAD) * PM_BPS / WAD <= maxDeviationBps` for each pair -- the same metric the
+  swap check applies to its "before" state, so an attested strategy is guaranteed tradeable in
+  every direction right after shipping.
 
-These checks use the same threshold but different measurements. They are not equivalent for general weights or group counts.
-A failed pre-trade check blocks corrective trades too.
-See [ADR-0012](adr/0012-price-deviation-circuit-breaker.md) for recovery and tradeoffs.
+See [ADR-0012](adr/0012-price-deviation-circuit-breaker.md) and
+[ADR-0016](adr/0016-per-trade-deviation-step-cap.md) for the swap-side check's design history.
 
 The [invariant proof](DONATION-RESISTANCE-PROOF.md) uses real-number arithmetic without implementation rounding.
 The rounding rules implement conservative quotes for the supplied balances, weights, and fee.
