@@ -1,3 +1,5 @@
+"use client";
+
 import { Card } from "./Card";
 import { ProgressBar } from "./ProgressBar";
 import { TokenChip } from "./TokenChip";
