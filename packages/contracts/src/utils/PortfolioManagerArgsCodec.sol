@@ -12,7 +12,9 @@ import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 /// @title PortfolioManagerArgsCodec
 /// @notice Encodes token groups, target weights, feeds, the LP fee, and the deviation limit.
 /// @dev Configuration lives in immutable instruction arguments committed by the strategy hash.
-///      Every group member requires a feed. Group weights may differ.
+///      Group weights may differ. Every member requires a feed except at most one across the
+///      whole strategy, which may use the zero address to designate it the numeraire
+///      (BLEUDEV-412/ADR-0017) -- see OracleAdapter.PriceFeed's doc comment.
 library PortfolioManagerArgsCodec {
     using Calldata for bytes;
 
@@ -56,7 +58,10 @@ library PortfolioManagerArgsCodec {
     error PortfolioManagerFeeBpsOutOfRange(uint32 feeBps);
     error PortfolioManagerZeroWeight(uint256 groupIndex);
     error PortfolioManagerWeightsMustSumToWad(uint256 sum);
-    error PortfolioManagerZeroFeedAddress(address token);
+    /// @dev A member's feed may be the zero address, designating it the strategy's numeraire
+    ///      (BLEUDEV-412/ADR-0017) -- but only one, across every group. A second one would leave
+    ///      the unit of account ambiguous between two different tokens.
+    error PortfolioManagerMultipleNumeraireMembers();
     error PortfolioManagerMaxStalenessOutOfRange(uint256 maxStaleness);
     error PortfolioManagerDuplicateToken(address token);
     error PortfolioManagerMissingGroupCount();
@@ -88,6 +93,7 @@ library PortfolioManagerArgsCodec {
         args = abi.encodePacked(uint8(groups.length));
 
         uint256 sum;
+        uint256 numeraireCount;
         for (uint256 i = 0; i < groups.length; i++) {
             Group memory g = groups[i];
             require(g.weight > 0, PortfolioManagerZeroWeight(i));
@@ -98,12 +104,13 @@ library PortfolioManagerArgsCodec {
             args = abi.encodePacked(args, uint64(g.weight), uint8(g.members.length));
             for (uint256 j = 0; j < g.members.length; j++) {
                 Member memory m = g.members[j];
-                require(m.feed != address(0), PortfolioManagerZeroFeedAddress(m.token));
+                if (m.feed == address(0)) numeraireCount++;
                 require(m.maxStaleness <= type(uint24).max, PortfolioManagerMaxStalenessOutOfRange(m.maxStaleness));
                 args = abi.encodePacked(args, m.token, m.feed, uint24(m.maxStaleness));
             }
         }
         require(sum == WAD, PortfolioManagerWeightsMustSumToWad(sum));
+        require(numeraireCount <= 1, PortfolioManagerMultipleNumeraireMembers());
         _requireNoDuplicateTokens(groups);
 
         args = abi.encodePacked(args, feeBps, maxDeviationBps);
@@ -124,6 +131,7 @@ library PortfolioManagerArgsCodec {
         groups = new Group[](groupCount);
         uint256 offset = 1;
         uint256 sum;
+        uint256 numeraireCount;
 
         for (uint256 i = 0; i < groupCount; i++) {
             args.slice(offset, offset + GROUP_HEADER_SIZE, PortfolioManagerMissingGroupHeader.selector);
@@ -141,13 +149,14 @@ library PortfolioManagerArgsCodec {
                 address token = address(bytes20(args.slice(offset, offset + 20)));
                 address feed = address(bytes20(args.slice(offset + 20, offset + 40)));
                 uint256 maxStaleness = uint256(uint24(bytes3(args.slice(offset + 40, offset + MEMBER_ENTRY_SIZE))));
-                require(feed != address(0), PortfolioManagerZeroFeedAddress(token));
+                if (feed == address(0)) numeraireCount++;
                 members[j] = Member({token: token, feed: feed, maxStaleness: maxStaleness});
                 offset += MEMBER_ENTRY_SIZE;
             }
             groups[i] = Group({weight: weight, members: members});
         }
         require(sum == WAD, PortfolioManagerWeightsMustSumToWad(sum));
+        require(numeraireCount <= 1, PortfolioManagerMultipleNumeraireMembers());
         _requireNoDuplicateTokens(groups);
 
         feeBps = uint32(bytes4(args.slice(offset, offset + 4, PortfolioManagerMissingFeeBps.selector)));

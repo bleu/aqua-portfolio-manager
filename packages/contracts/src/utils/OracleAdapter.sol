@@ -38,16 +38,34 @@ library OracleAdapter {
         Up
     }
 
-    /// @param feed Chainlink-style feed for one token.
-    /// @param maxStaleness Maximum permitted price age in seconds.
+    /// @param feed Chainlink-style feed for one token. The zero address designates this member
+    ///        the group's numeraire (BLEUDEV-412/ADR-0017): its balance is already in the unit of
+    ///        account, so it needs no feed and no external call at all.
+    /// @param maxStaleness Maximum permitted price age in seconds. Unused when feed is the zero address.
     struct PriceFeed {
         AggregatorV3Interface feed;
         uint256 maxStaleness;
     }
 
-    /// @notice Returns the WAD-scaled price of one whole token with the requested rounding.
-    /// @dev Rejects stale, non-positive prices and prices below one raw WAD unit.
-    function priceWad(PriceFeed memory config, Rounding rounding) internal view returns (uint256) {
+    /// @dev A validated feed read, before rounding. `isNumeraire` short-circuits every other
+    ///      field -- see PriceFeed's doc comment. Fetched once per feed per swap; `roundPrice`
+    ///      derives either rounding direction from the same read with no further external call
+    ///      (BLEUDEV-412: swap pricing previously fetched the same traded feed twice, once per
+    ///      rounding direction it needed).
+    struct RawPrice {
+        bool isNumeraire;
+        int256 answer;
+        uint8 decimals;
+    }
+
+    /// @notice Fetches and validates one feed's latest round, without rounding it to WAD yet.
+    /// @dev Rejects stale, non-positive, and incomplete-round prices, and prices that would floor
+    ///      to zero. The zero-address feed (numeraire) returns a sentinel with no external call.
+    function fetchRawPrice(PriceFeed memory config) internal view returns (RawPrice memory raw) {
+        if (address(config.feed) == address(0)) {
+            return RawPrice({isNumeraire: true, answer: 0, decimals: 0});
+        }
+
         (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = config.feed.latestRoundData();
         require(answer > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
         require(
@@ -63,9 +81,28 @@ library OracleAdapter {
         );
 
         uint8 decimals = config.feed.decimals();
-        uint256 lower = FixedPointMath.scaleDown(uint256(answer), decimals, 18);
-        require(lower > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
-        return rounding == Rounding.Up ? FixedPointMath.scaleUp(uint256(answer), decimals, 18) : lower;
+        require(
+            FixedPointMath.scaleDown(uint256(answer), decimals, 18) > 0,
+            OracleAdapterInvalidPrice(address(config.feed), answer)
+        );
+        raw = RawPrice({isNumeraire: false, answer: answer, decimals: decimals});
+    }
+
+    /// @notice Rounds an already-fetched price to WAD in the requested direction. Pure -- no
+    ///         external call, so the same `RawPrice` can be rounded both ways for free.
+    function roundPrice(RawPrice memory raw, Rounding rounding) internal pure returns (uint256) {
+        if (raw.isNumeraire) return WAD;
+        return rounding == Rounding.Up
+            ? FixedPointMath.scaleUp(uint256(raw.answer), raw.decimals, 18)
+            : FixedPointMath.scaleDown(uint256(raw.answer), raw.decimals, 18);
+    }
+
+    /// @notice Returns the WAD-scaled price of one whole token with the requested rounding.
+    /// @dev Rejects stale, non-positive prices and prices below one raw WAD unit. Equivalent to
+    ///      `roundPrice(fetchRawPrice(config), rounding)` -- use those directly when the same
+    ///      feed needs both rounding directions in one call, to fetch only once.
+    function priceWad(PriceFeed memory config, Rounding rounding) internal view returns (uint256) {
+        return roundPrice(fetchRawPrice(config), rounding);
     }
 
     /// @notice Reverts unless the L2 sequencer is up and has stayed up through the grace period.
@@ -93,13 +130,33 @@ library OracleAdapter {
         PriceFeed[] memory feeds,
         Rounding rounding
     ) internal view returns (uint256 totalValueWad) {
+        RawPrice memory unused;
+        (totalValueWad,) = groupValueWadWithOverride(tokens, balances, feeds, rounding, tokens.length, unused);
+    }
+
+    /// @notice Same as `groupValueWad`, but reuses an already-fetched `RawPrice` for one member
+    ///         instead of calling its feed again -- the member this group's traded token is, when
+    ///         the caller (PortfolioManagerSwap) already fetched its raw price for the opposite
+    ///         rounding direction it also needs (BLEUDEV-412). Pass `overrideIdx >= tokens.length`
+    ///         to disable the override, as plain `groupValueWad` does.
+    /// @return totalValueWad The group's total value. `overrideDecimals` The override member's
+    ///         token decimals, so the caller doesn't have to look them up again either.
+    function groupValueWadWithOverride(
+        address[] memory tokens,
+        uint256[] memory balances,
+        PriceFeed[] memory feeds,
+        Rounding rounding,
+        uint256 overrideIdx,
+        RawPrice memory overrideRaw
+    ) internal view returns (uint256 totalValueWad, uint8 overrideDecimals) {
         require(
             tokens.length == balances.length && tokens.length == feeds.length, OracleAdapterTokensFeedsLengthMismatch()
         );
 
         for (uint256 i = 0; i < tokens.length; i++) {
             uint8 tokenDecimals = IERC20Metadata(tokens[i]).decimals();
-            uint256 price = priceWad(feeds[i], rounding);
+            uint256 price = i == overrideIdx ? roundPrice(overrideRaw, rounding) : priceWad(feeds[i], rounding);
+            if (i == overrideIdx) overrideDecimals = tokenDecimals;
             uint256 unit = FixedPointMath.scaleDown(1, 0, tokenDecimals);
             totalValueWad += rounding == Rounding.Up
                 ? FixedPointMath.mulDivUp(balances[i], price, unit)
