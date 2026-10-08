@@ -10,7 +10,7 @@ Follow the [documentation style](../STYLE.md).
 |---|---|---|
 | [0001](0001-license-under-aqua-source-not-mit.md) | Use Aqua-Source-1.1 | Accepted |
 | [0002](0002-dedicated-maker-wallet-as-portfolio-scope.md) | Use a dedicated maker wallet | Accepted |
-| [0003](0003-oracle-valued-token-groups.md) | Value exposure by token group | Accepted |
+| [0003](0003-oracle-valued-token-groups.md) | Value exposure by token group | Refined by 0017 |
 | [0004](0004-constant-mean-weighted-curve-pricing.md) | Use a constant-mean weighted curve | Accepted |
 | [0005](0005-chainlink-push-oracles.md) | Use Chainlink-style push feeds | Accepted |
 | [0006](0006-exposure-smoothing.md) | Price current exposure without smoothing | Accepted |
@@ -24,3 +24,4 @@ Follow the [documentation style](../STYLE.md).
 | [0014](0014-production-arbitrageur-design.md) | Run the production arbitrageur on Base | Proposed |
 | [0015](0015-two-program-builders-for-the-resolver-kyc-gate.md) | Ship both a gated and an ungated PM strategy builder | Accepted |
 | [0016](0016-per-trade-deviation-step-cap.md) | Cap per-trade deviation step instead of gating on pre-trade state | Accepted |
+| [0017](0017-numeraire-member-and-raw-price-reuse.md) | Let one member be the strategy's numeraire; fetch each feed once per swap | Accepted |

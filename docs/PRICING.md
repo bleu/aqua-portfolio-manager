@@ -15,7 +15,9 @@ See [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for the decisio
 
 A group total is `Σ (member balance × member price)`, expressed in one currency, such as USD.
 Values use WAD scaling: `1e18` represents one unit. Conversion accounts for each token's and feed's decimal places.
-This applies to every group, including single-token groups.
+This applies to every group, including single-token groups -- except the strategy's optional
+numeraire member (ADR-0017), at most one across every group, whose own native balance already is
+its value and needs no feed at all.
 Balances come from the maker wallet's `balanceOf`, without averaging past balances.
 
 `PortfolioManagerSwap` converts amounts from each token's own units to value units before calling the pricing library.
@@ -104,6 +106,9 @@ against different baselines:
 
 See [ADR-0012](adr/0012-price-deviation-circuit-breaker.md) and
 [ADR-0016](adr/0016-per-trade-deviation-step-cap.md) for the swap-side check's design history.
+Both formulas above only ever compare `balanceIn`/`balanceOut` ratios in whatever unit the
+strategy uses, so a strategy denominated in a numeraire member (ADR-0017) instead of USD checks
+identically -- the ratio is the same regardless of what the shared unit represents.
 
 The [invariant proof](DONATION-RESISTANCE-PROOF.md) uses real-number arithmetic without implementation rounding.
 The rounding rules implement conservative quotes for the supplied balances, weights, and fee.

@@ -39,6 +39,20 @@ contract MockAggregatorV3 is AggregatorV3Interface {
     }
 }
 
+/// @dev Reverts on every call -- proves a feed was never actually read, e.g. because
+///      groupValueWadWithOverride's override path replaced it instead of calling it.
+contract RevertingAggregatorV3 is AggregatorV3Interface {
+    error RevertingAggregatorV3Called();
+
+    function decimals() external pure returns (uint8) {
+        revert RevertingAggregatorV3Called();
+    }
+
+    function latestRoundData() external pure returns (uint80, int256, uint256, uint256, uint80) {
+        revert RevertingAggregatorV3Called();
+    }
+}
+
 /// @dev A 6-decimal ERC20 (e.g. USDC-like), since `ERC20Mock` is hardcoded to 18.
 contract ERC20MockWithDecimals is ERC20 {
     uint8 private immutable _decimals;
@@ -73,6 +87,14 @@ contract OracleAdapterTest is Test {
         returns (uint256)
     {
         return OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
+    }
+
+    function _fetchRawPrice(OracleAdapter.PriceFeed memory config)
+        external
+        view
+        returns (OracleAdapter.RawPrice memory)
+    {
+        return OracleAdapter.fetchRawPrice(config);
     }
 
     function _feed(MockAggregatorV3 mock, uint256 maxStaleness) internal pure returns (OracleAdapter.PriceFeed memory) {
@@ -341,5 +363,112 @@ contract OracleAdapterTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(OracleAdapter.OracleAdapterTokensFeedsLengthMismatch.selector));
         this._groupValueWad(tokens, balances, feeds);
+    }
+
+    // ===== Numeraire member and raw-price reuse (BLEUDEV-412/ADR-0017) =====
+
+    /// @dev The zero-address feed is the numeraire sentinel: price is exactly WAD, no external
+    ///      call, for either rounding direction. A RevertingAggregatorV3 at the same struct would
+    ///      prove this if priceWad somehow still dereferenced it -- here there's no feed address
+    ///      to call at all, so the test only needs to confirm the price and the absence of a revert.
+    function test_PriceWadReturnsWadForNumeraireMember() public {
+        OracleAdapter.PriceFeed memory numeraire =
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(address(0)), maxStaleness: 0});
+        assertEq(OracleAdapter.priceWad(numeraire, OracleAdapter.Rounding.Down), 1e18);
+        assertEq(OracleAdapter.priceWad(numeraire, OracleAdapter.Rounding.Up), 1e18);
+    }
+
+    function test_FetchRawPriceReturnsNumeraireSentinelForZeroFeed() public {
+        OracleAdapter.PriceFeed memory numeraire =
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(address(0)), maxStaleness: 0});
+        OracleAdapter.RawPrice memory raw = OracleAdapter.fetchRawPrice(numeraire);
+        assertTrue(raw.isNumeraire);
+        assertEq(OracleAdapter.roundPrice(raw, OracleAdapter.Rounding.Down), 1e18);
+        assertEq(OracleAdapter.roundPrice(raw, OracleAdapter.Rounding.Up), 1e18);
+    }
+
+    /// @dev Proves fetchRawPrice + roundPrice (called twice, no second external call) produces
+    ///      exactly the same two values priceWad produces via two independent calls -- the
+    ///      refactor this finding depends on didn't change any rounding behavior.
+    function test_RoundPriceBothDirectionsMatchesTwoSeparatePriceWadCalls() public {
+        MockAggregatorV3 mock = new MockAggregatorV3(24, 1_999_999, block.timestamp);
+        OracleAdapter.PriceFeed memory feed = _feed(mock, 1 hours);
+
+        OracleAdapter.RawPrice memory raw = this._fetchRawPrice(feed);
+        uint256 down = OracleAdapter.roundPrice(raw, OracleAdapter.Rounding.Down);
+        uint256 up = OracleAdapter.roundPrice(raw, OracleAdapter.Rounding.Up);
+
+        assertEq(down, OracleAdapter.priceWad(feed, OracleAdapter.Rounding.Down));
+        assertEq(up, OracleAdapter.priceWad(feed, OracleAdapter.Rounding.Up));
+        assertEq(down, 1);
+        assertEq(up, 2);
+    }
+
+    function test_GroupValueWadAllowsOneNumeraireMemberAtFullNativeBalance() public {
+        // A WETH-like numeraire member alongside a priced member: the numeraire contributes its
+        // native balance directly (18 decimals, scaled to WAD, price == 1), no feed call.
+        ERC20MockWithDecimals weth = new ERC20MockWithDecimals(18);
+        ERC20MockWithDecimals wbtc = new ERC20MockWithDecimals(8);
+        MockAggregatorV3 wbtcPerWeth = new MockAggregatorV3(18, 15e18, block.timestamp); // 1 WBTC = 15 WETH
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(weth);
+        tokens[1] = address(wbtc);
+        uint256[] memory balances = new uint256[](2);
+        balances[0] = 10e18; // 10 WETH
+        balances[1] = 1e8; // 1 WBTC
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](2);
+        feeds[0] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(address(0)), maxStaleness: 0});
+        feeds[1] = _feed(wbtcPerWeth, 1 hours);
+
+        uint256 totalValueWad = OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down);
+        // 10 WETH (numeraire, face value) + 1 WBTC * 15 WETH/WBTC = 25 WETH-denominated WAD units.
+        assertEq(totalValueWad, 25e18);
+    }
+
+    /// @dev Proves the override member's feed is never actually called -- RevertingAggregatorV3
+    ///      would revert the whole call if groupValueWadWithOverride fell back to priceWad for it.
+    function test_GroupValueWadWithOverrideNeverCallsTheOverriddenFeed() public {
+        ERC20MockWithDecimals tokenA = new ERC20MockWithDecimals(18);
+        ERC20MockWithDecimals tokenB = new ERC20MockWithDecimals(18);
+        MockAggregatorV3 feedA = new MockAggregatorV3(18, 2e18, block.timestamp);
+        RevertingAggregatorV3 feedB = new RevertingAggregatorV3();
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        uint256[] memory balances = new uint256[](2);
+        balances[0] = 10e18;
+        balances[1] = 5e18;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](2);
+        feeds[0] = _feed(feedA, 1 hours);
+        feeds[1] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(address(feedB)), maxStaleness: 1 hours});
+
+        OracleAdapter.RawPrice memory overrideRaw =
+            OracleAdapter.RawPrice({isNumeraire: false, answer: 3e18, decimals: 18});
+
+        (uint256 totalValueWad, uint8 overrideDecimals) = OracleAdapter.groupValueWadWithOverride(
+            tokens, balances, feeds, OracleAdapter.Rounding.Down, 1, overrideRaw
+        );
+
+        assertEq(overrideDecimals, 18);
+        // 10 * 2 (real feed) + 5 * 3 (override, not feedB's own un-set price) = 35.
+        assertEq(totalValueWad, 35e18);
+    }
+
+    function test_GroupValueWadWithOverrideOutOfRangeIndexBehavesLikePlainGroupValueWad() public {
+        ERC20MockWithDecimals token = new ERC20MockWithDecimals(18);
+        MockAggregatorV3 feed = new MockAggregatorV3(18, 2e18, block.timestamp);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(token);
+        uint256[] memory balances = new uint256[](1);
+        balances[0] = 10e18;
+        OracleAdapter.PriceFeed[] memory feeds = new OracleAdapter.PriceFeed[](1);
+        feeds[0] = _feed(feed, 1 hours);
+        OracleAdapter.RawPrice memory unused;
+
+        (uint256 totalValueWad,) =
+            OracleAdapter.groupValueWadWithOverride(tokens, balances, feeds, OracleAdapter.Rounding.Down, 99, unused);
+        assertEq(totalValueWad, OracleAdapter.groupValueWad(tokens, balances, feeds, OracleAdapter.Rounding.Down));
     }
 }

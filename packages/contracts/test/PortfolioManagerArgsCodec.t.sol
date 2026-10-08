@@ -306,16 +306,26 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, 0);
     }
 
-    function test_BuildRevertsOnZeroFeedAddress() public {
-        // group[1] is never reached -- group[0]'s own zero-feed check reverts first -- it's here
-        // only so the array itself satisfies MIN_GROUPS.
+    /// @dev A zero-feed member designates the strategy's numeraire (BLEUDEV-412/ADR-0017) -- it no
+    ///      longer rejects outright, it just round-trips with feed == address(0).
+    function test_BuildThenParseRoundTripsOneNumeraireMember() public view {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = _singleMemberGroup(WAD, TOKEN_A, address(0));
-        groups[1] = _singleMemberGroup(WAD, TOKEN_B, FEED_B);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, address(0));
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
-        );
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,) = this._callParse(args);
+
+        assertEq(parsed[0].members[0].feed, address(0));
+        assertEq(parsed[1].members[0].feed, FEED_B);
+    }
+
+    function test_BuildRevertsOnMultipleNumeraireMembers() public {
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, address(0));
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, address(0));
+
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector);
         this._callBuild(groups, 0);
     }
 
@@ -487,16 +497,27 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callParse(malformed);
     }
 
-    function test_ParseRevertsOnZeroFeedAddress() public {
-        // group[0]'s own zero-feed check reverts before group[1] would ever need to be
-        // present -- 2 groups declared only to satisfy MIN_GROUPS.
-        bytes memory malformed =
-            abi.encodePacked(uint8(2), uint64(WAD), uint8(1), TOKEN_A, address(0), uint24(STALENESS));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
+    function test_ParseRevertsOnMultipleNumeraireMembers() public {
+        // Two complete, otherwise-valid single-member groups (weights sum to WAD), both with
+        // feed == address(0) -- parse() must independently reject this, not just build().
+        bytes memory args = abi.encodePacked(
+            uint8(2),
+            uint64(0.5e18),
+            uint8(1),
+            TOKEN_A,
+            address(0),
+            uint24(STALENESS),
+            uint64(0.5e18),
+            uint8(1),
+            TOKEN_B,
+            address(0),
+            uint24(STALENESS),
+            uint32(0),
+            uint32(0)
         );
-        this._callParse(malformed);
+
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector);
+        this._callParse(args);
     }
 
     function test_ParseRevertsOnMissingFeeBps() public {

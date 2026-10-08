@@ -1,6 +1,7 @@
 # ADR-0003: Value exposure by token group
 
-**Status:** Accepted.
+**Status:** Accepted. Refined by [ADR-0017](0017-numeraire-member-and-raw-price-reuse.md) -- see
+this ADR's last Consequence line below.
 
 ## Context
 
@@ -24,7 +25,9 @@ Do not set targets for individual tokens within a group. Reject same-group PM sw
 - Delayed prices or a token losing its intended peg can cause the group to lose value.
 - Every feed in a traded group must be fresh, including feeds for tokens that do not move.
 - Changing group membership requires a new strategy and an updated Guard configuration.
-- Single-token groups use the same oracle conversion as multi-token groups.
+- Single-token groups use the same oracle conversion as multi-token groups -- except the
+  strategy's optional numeraire member (ADR-0017), which uses none: its native balance already
+  is its value in the chosen unit of account.
 
 See [pricing](../PRICING.md) for units and [ADR-0005](0005-chainlink-push-oracles.md) for oracle policy.
 The raw-balance `BasketXYCSwap` prototype does not implement this valuation.
