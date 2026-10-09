@@ -39,8 +39,16 @@ library OracleAdapter {
     }
 
     /// @param feed Chainlink-style feed for one token. The zero address designates this member
-    ///        the group's numeraire (BLEUDEV-412/ADR-0017): its balance is already in the unit of
-    ///        account, so it needs no feed and no external call at all.
+    ///        its *group's own* numeraire (BLEUDEV-412/ADR-0017, at most one per group): its
+    ///        balance is already in that group's unit of account, so it needs no feed and no
+    ///        external call at all. Every other member of the same group must then be quoted in
+    ///        that same token's terms (e.g. a WBTC/WETH feed, not WBTC/USD, once WETH is the
+    ///        group's numeraire). Different groups may use different numeraires (or none) --
+    ///        the curve's trade math only needs each group's own members to agree on one unit,
+    ///        not the whole strategy. ADR-0017's `Bridge` feeds reconcile different groups' units
+    ///        for the ship-time deviation check only; swap pricing never needs them. Nothing
+    ///        on-chain checks that a feed actually quotes in the unit its group expects; a
+    ///        mismatched feed prices silently, not with a revert.
     /// @param maxStaleness Maximum permitted price age in seconds. Unused when feed is the zero address.
     struct PriceFeed {
         AggregatorV3Interface feed;

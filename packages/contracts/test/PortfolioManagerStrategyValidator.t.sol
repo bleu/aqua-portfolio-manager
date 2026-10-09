@@ -529,6 +529,63 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireBalancedWithinTolerance(order, maker);
     }
 
+    /// @dev Group 0's numeraire is tokenA, group 1's is tokenC -- two different units, no shared
+    ///      numeraire (ADR-0017's per-group, bridge-feed design). The registered bridge quotes 1
+    ///      tokenA = 2 tokenC. At target, group 0's 100,000 tokenA bridge-adjusts to 200,000
+    ///      tokenC-equivalent, matching group 1's 200,000 tokenC exactly -- parity, must not
+    ///      revert. Confirms the bridge rate is actually consulted, not just accepted at build time.
+    function test_ToleranceWorksAcrossTwoDifferentGroupNumerairesWithABridgeFeed() public {
+        MockAggregatorV3 bridgeFeed = new MockAggregatorV3(18, 2e18, block.timestamp); // 1 tokenA = 2 tokenC
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] = PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(0), maxStaleness: 0});
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+
+        PortfolioManagerArgsCodec.Member[] memory membersC = new PortfolioManagerArgsCodec.Member[](1);
+        membersC[0] = PortfolioManagerArgsCodec.Member({token: address(tokenC), feed: address(0), maxStaleness: 0});
+        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersC});
+
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] =
+            PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(bridgeFeed), maxStaleness: 1 hours});
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, 0.1e9, bridges); // 10%
+        ISwapVM.Order memory order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        tokenA.mint(maker, 100_000e18);
+        tokenC.mint(maker, 200_000e18);
+        validator.requireBalancedWithinTolerance(order, maker); // bridge-adjusted parity, must not revert
+
+        // Drop group 1 far below its bridge-adjusted target share.
+        tokenC.burn(maker, 190_000e18); // tokenC now 10,000e18 vs tokenA's bridge-adjusted 200,000e18
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
     function test_AttestBuildParametersIsIdempotent() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9);
         tokenA.mint(maker, 100_000e18);

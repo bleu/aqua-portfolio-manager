@@ -18,8 +18,9 @@ import {FixedPointMath} from "./utils/FixedPointMath.sol";
 
 /// @title PortfolioManagerSwap
 /// @notice Prices cross-group swaps from real wallet balances, oracle values, and target weights.
-/// @dev Every group member uses its feed, including single-token groups, except the strategy's
-///      optional numeraire member (BLEUDEV-412/ADR-0017), which uses none.
+/// @dev Every group member uses its feed, including single-token groups, except each group's own
+///      optional numeraire member (BLEUDEV-412/ADR-0017), which uses none. Different groups may
+///      use different numeraires (or none) -- this contract never needs to reconcile them.
 ///      The DAO fee transfer is inside this opcode so programs cannot omit a separate fee instruction.
 ///      Collection remains best-effort. Fee inheritance supplies the Aqua reference, scale, and skipped-fee event.
 ///      See docs/PRICING.md for formulas and units.
@@ -50,9 +51,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         );
         OracleAdapter.requireSequencerUp(SEQUENCER_UPTIME_FEED);
 
-        // Attestation validates these exact argument bytes. Decode them without repeating validation.
+        // Attestation validates these exact argument bytes. Decode them without repeating
+        // validation. Bridge feeds (ADR-0017) exist only for the ship-time deviation check --
+        // swap pricing always uses each group's own unit, never a bridge -- so this skips
+        // decoding them entirely instead of materializing an unused Bridge[] every swap.
         (PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, uint32 maxDeviationBps) =
-            PortfolioManagerArgsCodec.decodeTrusted(args);
+            PortfolioManagerArgsCodec.decodeTrustedForSwap(args);
 
         (uint256 groupInIdx, uint256 memberInIdx) = _resolve(groups, ctx.query.tokenIn);
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
@@ -277,8 +281,8 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         return OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness});
     }
 
-    /// @dev Values every member through OracleAdapter, including single-token groups, except the
-    ///      strategy's numeraire member if any (BLEUDEV-412/ADR-0017). Reuses `tradedMemberRaw`
+    /// @dev Values every member through OracleAdapter, including single-token groups, except
+    ///      this group's own numeraire member if any (BLEUDEV-412/ADR-0017). Reuses `tradedMemberRaw`
     ///      for the member at `tradedMemberIdx` instead of fetching its feed again, and returns
     ///      that member's decimals and native balance alongside the group total so the caller
     ///      doesn't have to look either up a second time.

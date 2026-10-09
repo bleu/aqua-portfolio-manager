@@ -26,10 +26,19 @@ contract PortfolioManagerArgsCodecTest is Test {
         return PortfolioManagerArgsCodec.build(groups, feeBps);
     }
 
+    function _callBuildWithBridges(
+        PortfolioManagerArgsCodec.Group[] memory groups,
+        uint32 feeBps,
+        uint32 maxDeviationBps,
+        PortfolioManagerArgsCodec.Bridge[] memory bridges
+    ) external pure returns (bytes memory) {
+        return PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps, bridges);
+    }
+
     function _callParse(bytes calldata args)
         external
         pure
-        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32)
+        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32, PortfolioManagerArgsCodec.Bridge[] memory)
     {
         return PortfolioManagerArgsCodec.parse(args);
     }
@@ -37,7 +46,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     function _callDecodeTrusted(bytes calldata args)
         external
         pure
-        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32)
+        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32, PortfolioManagerArgsCodec.Bridge[] memory)
     {
         return PortfolioManagerArgsCodec.decodeTrusted(args);
     }
@@ -61,7 +70,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5); // 2bps, ADR-0008 default
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
 
         assertEq(parsed.length, 2);
@@ -81,7 +90,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5, 5e7); // 5% circuit breaker
-        (,, uint32 parsedMaxDeviationBps) = this._callParse(args);
+        (,, uint32 parsedMaxDeviationBps,) = this._callParse(args);
 
         assertEq(parsedMaxDeviationBps, 5e7);
     }
@@ -93,7 +102,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[2] = _singleMemberGroup(0.2e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, 3);
         for (uint256 i = 0; i < 3; i++) {
@@ -113,7 +122,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, 2);
         assertEq(parsed[0].weight, 0.6e18);
@@ -141,7 +150,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         }
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, n);
         for (uint256 i = 0; i < n; i++) {
@@ -163,9 +172,9 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5, 5e7);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
-        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps,) =
             this._callDecodeTrusted(args);
 
         assertEq(decoded.length, parsed.length);
@@ -195,9 +204,9 @@ contract PortfolioManagerArgsCodecTest is Test {
         }
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
-        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps,) =
             this._callDecodeTrusted(args);
 
         assertEq(decoded.length, parsed.length);
@@ -302,31 +311,155 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members0});
         groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members1});
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 457));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 458));
         this._callBuild(groups, 0);
     }
 
-    /// @dev A zero-feed member designates the strategy's numeraire (BLEUDEV-412/ADR-0017) -- it no
-    ///      longer rejects outright, it just round-trips with feed == address(0).
+    /// @dev A zero-feed member designates its own group's numeraire (BLEUDEV-412/ADR-0017) -- it
+    ///      no longer rejects outright, it just round-trips with feed == address(0).
     function test_BuildThenParseRoundTripsOneNumeraireMember() public view {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, address(0));
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
-        (PortfolioManagerArgsCodec.Group[] memory parsed,,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
 
         assertEq(parsed[0].members[0].feed, address(0));
         assertEq(parsed[1].members[0].feed, FEED_B);
     }
 
-    function test_BuildRevertsOnMultipleNumeraireMembers() public {
+    /// @dev The numeraire check is scoped per group (BLEUDEV-412/ADR-0017) -- two different
+    ///      groups each picking their own zero-feed member is not ambiguous, since every
+    ///      group's own value is still well-defined. Each group ends up denominated in a
+    ///      different unit; nothing here requires them to match.
+    function test_BuildThenParseRoundTripsOneNumeraireMemberPerGroup() public view {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, address(0));
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, address(0));
 
-        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
+
+        assertEq(parsed[0].members[0].feed, address(0));
+        assertEq(parsed[1].members[0].feed, address(0));
+    }
+
+    function test_BuildRevertsOnMultipleNumeraireMembersInSameGroup() public {
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
+        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: address(0), maxStaleness: STALENESS});
+        members[1] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: address(0), maxStaleness: STALENESS});
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members});
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_C, FEED_C);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector, 0)
+        );
         this._callBuild(groups, 0);
+    }
+
+    // ---- bridges (ADR-0017): feeds between groups whose units differ, for the ship-time
+    // deviation check only ----
+
+    function _twoGroupUniverse() private pure returns (PortfolioManagerArgsCodec.Group[] memory groups) {
+        groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+    }
+
+    function test_BuildThenParseRoundTripsOneBridge() public view {
+        PortfolioManagerArgsCodec.Group[] memory groups = _twoGroupUniverse();
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: FEED_C, maxStaleness: STALENESS});
+
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0, 0, bridges);
+        (,,, PortfolioManagerArgsCodec.Bridge[] memory parsed) = this._callParse(args);
+
+        assertEq(parsed.length, 1);
+        assertEq(parsed[0].groupA, 0);
+        assertEq(parsed[0].groupB, 1);
+        assertEq(parsed[0].feed, FEED_C);
+        assertEq(parsed[0].maxStaleness, STALENESS);
+    }
+
+    /// @dev A 2-group universe with no bridges round-trips exactly as before -- the new section
+    ///      is an empty, 1-byte count, not a required-but-unused field.
+    function test_BuildThenParseRoundTripsNoBridges() public view {
+        bytes memory args = PortfolioManagerArgsCodec.build(_twoGroupUniverse(), 0);
+        (,,, PortfolioManagerArgsCodec.Bridge[] memory parsed) = this._callParse(args);
+        assertEq(parsed.length, 0);
+    }
+
+    function test_BuildRevertsOnBridgeGroupIndexOutOfRange() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 2, feed: FEED_C, maxStaleness: STALENESS});
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerBridgeInvalidGroupIndex.selector, 2)
+        );
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_BuildRevertsOnBridgeSameGroup() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 0, feed: FEED_C, maxStaleness: STALENESS});
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerBridgeSameGroup.selector, 0));
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_BuildRevertsOnBridgeZeroFeedAddress() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(0), maxStaleness: STALENESS});
+
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerBridgeZeroFeedAddress.selector);
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    /// @dev Registering a pair twice is ambiguous regardless of which side is groupA/groupB in
+    ///      each entry.
+    function test_BuildRevertsOnDuplicateBridgeRegardlessOfSide() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](2);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: FEED_C, maxStaleness: STALENESS});
+        bridges[1] = PortfolioManagerArgsCodec.Bridge({groupA: 1, groupB: 0, feed: FEED_C, maxStaleness: STALENESS});
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerDuplicateBridge.selector, 1, 0)
+        );
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_BuildRevertsOnTooManyBridges() public {
+        uint256 n = PortfolioManagerArgsCodec.MAX_BRIDGES + 1;
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](n);
+        for (uint256 i = 0; i < n; i++) {
+            bridges[i] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: FEED_C, maxStaleness: STALENESS});
+        }
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyBridges.selector, n));
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_ParseRevertsOnMissingBridgeCount() public {
+        // Valid 2-group universe (sums to WAD), but no trailing bridge-count byte.
+        bytes memory malformed = abi.encodePacked(
+            uint8(2),
+            uint64(0.5e18),
+            uint8(1),
+            TOKEN_A,
+            FEED_A,
+            uint24(STALENESS),
+            uint64(0.5e18),
+            uint8(1),
+            TOKEN_B,
+            FEED_B,
+            uint24(STALENESS)
+        );
+
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingBridgeCount.selector);
+        this._callParse(malformed);
     }
 
     function test_BuildRevertsOnDuplicateTokenAcrossGroups() public {
@@ -369,7 +502,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
-        (PortfolioManagerArgsCodec.Group[] memory parsed,,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
         assertEq(parsed[0].members[0].maxStaleness, oneDay);
         assertEq(parsed[1].members[0].maxStaleness, oneDay);
     }
@@ -498,30 +631,36 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnMultipleNumeraireMembers() public {
-        // Two complete, otherwise-valid single-member groups (weights sum to WAD), both with
-        // feed == address(0) -- parse() must independently reject this, not just build().
+        // One group with two zero-feed members (weights sum to WAD) -- parse() must
+        // independently reject this, not just build().
         bytes memory args = abi.encodePacked(
             uint8(2),
             uint64(0.5e18),
-            uint8(1),
+            uint8(2),
             TOKEN_A,
+            address(0),
+            uint24(STALENESS),
+            TOKEN_B,
             address(0),
             uint24(STALENESS),
             uint64(0.5e18),
             uint8(1),
-            TOKEN_B,
-            address(0),
+            TOKEN_C,
+            FEED_C,
             uint24(STALENESS),
+            uint8(0), // bridgeCount
             uint32(0),
             uint32(0)
         );
 
-        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector, 0)
+        );
         this._callParse(args);
     }
 
     function test_ParseRevertsOnMissingFeeBps() public {
-        // Valid 2-group universe (sums to WAD) but no trailing feeBps bytes.
+        // Valid 2-group universe (sums to WAD) and an empty bridge list, but no trailing feeBps bytes.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
             uint64(0.5e18),
@@ -533,7 +672,8 @@ contract PortfolioManagerArgsCodecTest is Test {
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint24(STALENESS)
+            uint24(STALENESS),
+            uint8(0) // bridgeCount
         );
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingFeeBps.selector);
@@ -541,7 +681,8 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnMissingMaxDeviationBps() public {
-        // Valid 2-group universe plus feeBps, but no trailing maxDeviationBps bytes.
+        // Valid 2-group universe, an empty bridge list, plus feeBps, but no trailing
+        // maxDeviationBps bytes.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
             uint64(0.5e18),
@@ -554,6 +695,7 @@ contract PortfolioManagerArgsCodecTest is Test {
             TOKEN_B,
             FEED_B,
             uint24(STALENESS),
+            uint8(0), // bridgeCount
             uint32(0)
         );
 

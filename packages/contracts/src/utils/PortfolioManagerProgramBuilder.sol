@@ -32,7 +32,20 @@ library PortfolioManagerProgramBuilder {
         pure
         returns (bytes memory program)
     {
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps);
+        return build(groups, feeBps, maxDeviationBps, new PortfolioManagerArgsCodec.Bridge[](0));
+    }
+
+    /// @param groups, feeBps  The LP's own declared groups and curve fee.
+    /// @param maxDeviationBps  Price-deviation circuit breaker (ADR-0012) -- 0 disables it.
+    /// @param bridges  Live feeds bridging groups whose units differ (ADR-0017), for the
+    ///        ship-time deviation check only.
+    function build(
+        PortfolioManagerArgsCodec.Group[] memory groups,
+        uint32 feeBps,
+        uint32 maxDeviationBps,
+        PortfolioManagerArgsCodec.Bridge[] memory bridges
+    ) internal pure returns (bytes memory program) {
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps, bridges);
         program = abi.encodePacked(CURVE_OPCODE, args.length.toUint8(), args);
     }
 }

@@ -15,9 +15,10 @@ See [ADR-0004](adr/0004-constant-mean-weighted-curve-pricing.md) for the decisio
 
 A group total is `Σ (member balance × member price)`, expressed in one currency, such as USD.
 Values use WAD scaling: `1e18` represents one unit. Conversion accounts for each token's and feed's decimal places.
-This applies to every group, including single-token groups -- except the strategy's optional
-numeraire member (ADR-0017), at most one across every group, whose own native balance already is
-its value and needs no feed at all.
+This applies to every group, including single-token groups -- except each group's own optional
+numeraire member (ADR-0017), at most one per group, whose own native balance already is its value
+and needs no feed at all. Different groups may use different numeraires, or none; the curve
+formulas below only need each group's own members to agree on one unit, not the whole strategy.
 Balances come from the maker wallet's `balanceOf`, without averaging past balances.
 
 `PortfolioManagerSwap` converts amounts from each token's own units to value units before calling the pricing library.
@@ -106,9 +107,13 @@ against different baselines:
 
 See [ADR-0012](adr/0012-price-deviation-circuit-breaker.md) and
 [ADR-0016](adr/0016-per-trade-deviation-step-cap.md) for the swap-side check's design history.
-Both formulas above only ever compare `balanceIn`/`balanceOut` ratios in whatever unit the
-strategy uses, so a strategy denominated in a numeraire member (ADR-0017) instead of USD checks
-identically -- the ratio is the same regardless of what the shared unit represents.
+The swap-side step cap only ever compares a trade's own before/after `SP`, so it checks
+identically regardless of what unit a pair's two groups use -- no reconciliation needed, since
+both sides of that comparison are computed the same way. The ship-time pairwise check compares
+`SP` against parity (`WAD`), which only means "at target" when the pair's two groups already
+share a unit. When they don't (two groups using different numeraires, per ADR-0017), a registered
+`Bridge` feed converts one side into the other's unit first; a pair whose groups already share a
+unit (including every pre-ADR-0017 strategy) needs no `Bridge` and checks exactly as before.
 
 The [invariant proof](DONATION-RESISTANCE-PROOF.md) uses real-number arithmetic without implementation rounding.
 The rounding rules implement conservative quotes for the supplied balances, weights, and fee.
