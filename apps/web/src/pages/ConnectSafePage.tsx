@@ -5,10 +5,12 @@ import { Header } from '../components/Header'
 
 export type ConnectSafePageProps = {
   onConnectSafe?: () => void
+  isConnecting?: boolean
+  connectError?: string
 }
 
 /** V1 entry/onboarding, "01 · Connect Safe": the Safe-connection landing page (BLEUDEV-397). */
-export function ConnectSafePage({ onConnectSafe }: ConnectSafePageProps) {
+export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: ConnectSafePageProps) {
   return (
     <div className="min-h-screen bg-bg">
       <Header />
@@ -26,9 +28,11 @@ export function ConnectSafePage({ onConnectSafe }: ConnectSafePageProps) {
             routed through Aqua help maintain those targets while your portfolio earns LP fees.
           </p>
 
-          <Button className="mt-8" onClick={onConnectSafe}>
-            Connect Safe
+          <Button className="mt-8" disabled={isConnecting} onClick={onConnectSafe}>
+            {isConnecting ? 'Connecting…' : 'Connect Safe'}
           </Button>
+
+          {connectError && <p className="mt-4 max-w-md text-sm text-red-400">{connectError}</p>}
 
           <p className="mt-4 text-sm text-text-faint">
             You can connect with WalletConnect or open Portfolio Manager as a Safe App.
