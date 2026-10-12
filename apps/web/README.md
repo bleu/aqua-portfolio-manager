@@ -1,39 +1,44 @@
 # Web
 
-The Portfolio Manager frontend. React + TypeScript, built with Vite, styled with Tailwind CSS.
-First page: the V1 entry/onboarding flow's `01 · Connect Safe` landing page (BLEUDEV-397).
+The Portfolio Manager frontend. Next.js (App Router) + React + TypeScript, styled with Tailwind
+CSS. First page: the entry/onboarding flow's `01 · Connect Safe` landing page (BLEUDEV-397).
 
 ## Structure
 
+- `app/` — routes. `/` is the Connect Safe entry page; later steps are added as the flow grows
+  (BLEUDEV-409 onward).
 - `src/components/` — reusable UI pieces (`Badge`, `Button`, `AllocationBar`, `CurrentVsTargetCard`,
   `Header`), each with a colocated `*.stories.tsx` file.
-- `src/pages/` — full pages assembled from those components (`ConnectSafePage`).
-- `src/lib/` — small local utilities (`cn` for conditional class names).
+- `src/components/pages/` — full pages assembled from those components (`ConnectSafePage`).
+- `src/lib/` — small local utilities (`cn` for conditional class names, `wagmi` for the wallet
+  connection config).
 
 ## Running
 
 ```sh
-pnpm dev          # Vite dev server, http://localhost:5173
+pnpm dev          # Next.js dev server, http://localhost:3000
 pnpm storybook    # Storybook, http://localhost:6006
-pnpm build        # typecheck + production build
+pnpm build        # production build
+pnpm typecheck    # tsc --noEmit
 ```
+
+## Wallet connection
+
+Connection is Safe-only (ADR-0011: a Safe smart account is required, not a plain EOA) -- see
+`src/lib/wagmi.ts`'s own doc comment. `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (see `.env.example`)
+is optional: without it, the "Connect Safe" button only works when this page is embedded inside
+Safe{Wallet} as a Safe App.
 
 ## Design
 
-Dark theme only for now -- tokens live in `src/index.css` under Tailwind v4's `@theme` block
-(`--color-bg`, `--color-accent`, etc.), not a separate config file. No light-mode variant exists
-yet; the design this page implements didn't have one.
+Dark theme only for now -- tokens live in `tailwind.config.ts` (`surface`, `border`, `accent`,
+`positive`). No light-mode variant exists yet; the design this page implements didn't have one.
 
 ## Storybook
 
-Every component in `src/components/` and page in `src/pages/` has a story. `pnpm exec vitest run`
-runs the Storybook Vitest addon's tests (each story renders in a real Chromium instance via
-Playwright, with an accessibility check) -- this is the fastest way to catch a component that
-doesn't render at all, independent of the full app.
+Every component in `src/components/` and page in `src/components/pages/` has a story.
 
-## Known gaps (tracked in BLEUDEV-397, not solved here)
+## Known gaps
 
-- No wallet-connection library wired up yet -- "Connect Safe" takes an `onConnectSafe` callback
-  prop but the page itself doesn't call any wallet SDK.
 - The "Current vs. target" card renders static, hardcoded sample data. Where real allocation data
   comes from (the indexer's GraphQL endpoint, a new API, or something else) isn't decided.

@@ -1,13 +1,13 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Header } from './Header'
+import type { Meta, StoryObj } from "@storybook/react";
+import { Header } from "./Header";
 
-const meta = {
-  title: 'Components/Header',
+const meta: Meta<typeof Header> = {
+  title: "Primitives/Header",
   component: Header,
-  parameters: { layout: 'fullscreen' },
-} satisfies Meta<typeof Header>
+  parameters: { layout: "fullscreen" },
+};
+export default meta;
 
-export default meta
-type Story = StoryObj<typeof meta>
+type Story = StoryObj<typeof Header>;
 
-export const Default: Story = {}
+export const Default: Story = {};
