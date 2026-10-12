@@ -18,6 +18,8 @@ import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../../src/utils/PortfolioManagerFeedRegistry.sol";
 import {IPortfolioManagerStrategyValidator} from "../../src/interfaces/IPortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../../src/interfaces/IPortfolioManagerSwap.sol";
 import {PortfolioManagerPricing} from "../../src/utils/PortfolioManagerPricing.sol";
@@ -52,20 +54,28 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     /// @dev Chainlink USDC/USD on Base — https://basescan.org/address/0x7e860098f58bbfc8648a4311b374b1d669a2bc6b
     address internal constant USDC_USD_FEED_BASE = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B;
 
-    /// @dev The packed encoding's maxStaleness field is a uint24 (max ~194 days) -- 12 hours
-    ///      here is just a conservative test fixture, not an encoding ceiling.
-    uint256 internal constant MULTI_TOKEN_MAX_STALENESS = 12 hours;
-
     uint256 internal constant WETH_FUNDING = 20e18;
     uint256 internal constant WBTC_FUNDING = 1e8;
     uint256 internal constant DAI_FUNDING = 60_000e18;
     uint256 internal constant USDT_FUNDING = 30_000e6;
     uint256 internal constant USDC_FUNDING = 30_000e6;
 
+    /// @dev Real Chainlink Base heartbeats, confirmed on-chain (BLEUDEV-412/ADR-0018 and
+    ///      packages/addresses/base-mainnet-feeds.json): WETH's feed updates every 1200s;
+    ///      wbtcFeed here is the generic BTC/USD feed (not the WBTC-specific one in that file),
+    ///      whose own observed round-to-round gaps stay well under 1200s, so the same bound
+    ///      applies safely. Stablecoin feeds (DAI, USDT, USDC) almost never move enough to
+    ///      trigger an early update, so they wait out their full 86400s heartbeat round after
+    ///      round in practice.
+    uint32 internal constant MAJOR_MAX_STALENESS = 1200;
+    uint32 internal constant STABLE_MAX_STALENESS = 86400;
+
     PortfolioManagerRouter internal router;
     Safe internal multiTokenSafe;
     MockTaker internal taker;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     MultiSendCallOnly internal multiSendCallOnly;
 
     IERC20 internal weth;
@@ -78,7 +88,6 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     address internal daiFeed;
     address internal usdtFeed;
     address internal usdcFeed;
-    uint256 internal maxStaleness;
 
     /// @dev groups[0] = majors {WETH, WBTC}, groups[1] = stables {DAI, USDT, USDC}.
     PortfolioManagerArgsCodec.Group[] internal groups;
@@ -86,7 +95,11 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     function setUp() public override {
         super.setUp();
 
-        strategyValidator = new PortfolioManagerStrategyValidator(SEQUENCER_UPTIME_FEED_MAINNET);
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            SEQUENCER_UPTIME_FEED_MAINNET, address(tokenRegistry), address(feedRegistry)
+        );
         router = new PortfolioManagerRouter(
             address(aqua),
             WETH_BASE,
@@ -94,7 +107,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             "AquaPortfolioManager",
             "1",
             address(strategyValidator),
-            SEQUENCER_UPTIME_FEED_MAINNET
+            SEQUENCER_UPTIME_FEED_MAINNET,
+            address(tokenRegistry),
+            address(feedRegistry)
         );
         multiSendCallOnly = new MultiSendCallOnly();
         multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
@@ -109,21 +124,33 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         daiFeed = DAI_USD_FEED_BASE;
         usdtFeed = USDT_USD_FEED_BASE;
         usdcFeed = USDC_USD_FEED_BASE;
-        maxStaleness = MULTI_TOKEN_MAX_STALENESS;
 
         taker = new MockTaker(aqua, router, address(this));
 
         PortfolioManagerArgsCodec.Member[] memory majors = new PortfolioManagerArgsCodec.Member[](2);
-        majors[0] = PortfolioManagerArgsCodec.Member({token: address(weth), feed: wethFeed, maxStaleness: maxStaleness});
-        majors[1] = PortfolioManagerArgsCodec.Member({token: address(wbtc), feed: wbtcFeed, maxStaleness: maxStaleness});
+        majors[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(weth)),
+            feedIndex: feedRegistry.register(wethFeed, MAJOR_MAX_STALENESS)
+        });
+        majors[1] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(wbtc)),
+            feedIndex: feedRegistry.register(wbtcFeed, MAJOR_MAX_STALENESS)
+        });
         groups.push(PortfolioManagerArgsCodec.Group({weight: MAJORS_WEIGHT, members: majors}));
 
         PortfolioManagerArgsCodec.Member[] memory stables = new PortfolioManagerArgsCodec.Member[](3);
-        stables[0] = PortfolioManagerArgsCodec.Member({token: address(dai), feed: daiFeed, maxStaleness: maxStaleness});
-        stables[1] =
-            PortfolioManagerArgsCodec.Member({token: address(usdt), feed: usdtFeed, maxStaleness: maxStaleness});
-        stables[2] =
-            PortfolioManagerArgsCodec.Member({token: address(usdc), feed: usdcFeed, maxStaleness: maxStaleness});
+        stables[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(dai)),
+            feedIndex: feedRegistry.register(daiFeed, STABLE_MAX_STALENESS)
+        });
+        stables[1] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(usdt)),
+            feedIndex: feedRegistry.register(usdtFeed, STABLE_MAX_STALENESS)
+        });
+        stables[2] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(usdc)),
+            feedIndex: feedRegistry.register(usdcFeed, STABLE_MAX_STALENESS)
+        });
         groups.push(PortfolioManagerArgsCodec.Group({weight: STABLES_WEIGHT, members: stables}));
     }
 
@@ -302,13 +329,14 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         returns (uint256 total)
     {
         for (uint256 i = 0; i < members.length; i++) {
-            OracleAdapter.PriceFeed memory feed = OracleAdapter.PriceFeed({
-                feed: AggregatorV3Interface(members[i].feed), maxStaleness: members[i].maxStaleness
-            });
+            address token = tokenRegistry.tokenAt(members[i].tokenIndex);
+            (address feedAddr, uint32 feedMaxStaleness) = feedRegistry.feedAt(members[i].feedIndex);
+            OracleAdapter.PriceFeed memory feed =
+                OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feedAddr), maxStaleness: feedMaxStaleness});
             uint256 price =
                 OracleAdapter.priceWad(feed, roundUp ? OracleAdapter.Rounding.Up : OracleAdapter.Rounding.Down);
-            uint8 decimals = IERC20Metadata(members[i].token).decimals();
-            uint256 numerator = IERC20(members[i].token).balanceOf(address(multiTokenSafe)) * price;
+            uint8 decimals = IERC20Metadata(token).decimals();
+            uint256 numerator = IERC20(token).balanceOf(address(multiTokenSafe)) * price;
             uint256 unit = 10 ** decimals;
             total += numerator / unit;
             if (roundUp && numerator % unit != 0) total += 1;
@@ -318,10 +346,16 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     /// @dev Convert a token amount to WAD-scaled USD for comparisons across tokens.
     function _usdValueWad(address token, address feed, uint256 amount) internal view returns (uint256) {
         OracleAdapter.PriceFeed memory pf =
-            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feed), maxStaleness: maxStaleness});
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feed), maxStaleness: _maxStalenessOf(feed)});
         uint256 price = OracleAdapter.priceWad(pf, OracleAdapter.Rounding.Down);
         uint8 decimals = IERC20Metadata(token).decimals();
         return amount * price / 10 ** decimals;
+    }
+
+    /// @dev Mirrors the per-feed staleness bound each feed was registered with in setUp --
+    ///      majors (WETH, WBTC) vs. stables (DAI, USDT, USDC).
+    function _maxStalenessOf(address feed) internal view returns (uint32) {
+        return (feed == wethFeed || feed == wbtcFeed) ? MAJOR_MAX_STALENESS : STABLE_MAX_STALENESS;
     }
 
     // ===== Tests =====
@@ -374,7 +408,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongPoolState, usdcAmountInValueWad);
 
         uint256 wethPriceWad = OracleAdapter.priceWad(
-            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: maxStaleness}),
+            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: MAJOR_MAX_STALENESS}),
             OracleAdapter.Rounding.Down
         );
         uint256 expectedCorrectOut = expectedCorrectOutValueWad * 1e18 / wethPriceWad;
@@ -450,20 +484,28 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         ISwapVM.Order memory order = _buildOrder(3);
         _shipOnly(order);
 
-        // Expire the oldest feed and assert its exact error.
+        // Expire whichever feed breaches its own staleness bound first and assert its exact
+        // error. Per-feed bounds (majors vs. stables) mean the first to expire is no longer
+        // necessarily the one with the oldest raw timestamp.
         // Mock-based tests isolate the non-traded-member case.
         address[5] memory feeds = [wethFeed, wbtcFeed, daiFeed, usdtFeed, usdcFeed];
-        uint256 oldestUpdatedAt = type(uint256).max;
-        address oldestFeed;
+        uint256 earliestExpiry = type(uint256).max;
+        address soonestStaleFeed;
+        uint256 soonestStaleFeedUpdatedAt;
+        uint32 soonestStaleFeedMaxStaleness;
         for (uint256 i = 0; i < feeds.length; i++) {
             (,,, uint256 updatedAt,) = AggregatorV3Interface(feeds[i]).latestRoundData();
-            if (updatedAt < oldestUpdatedAt) {
-                oldestUpdatedAt = updatedAt;
-                oldestFeed = feeds[i];
+            uint32 feedMaxStaleness = _maxStalenessOf(feeds[i]);
+            uint256 expiry = updatedAt + feedMaxStaleness;
+            if (expiry < earliestExpiry) {
+                earliestExpiry = expiry;
+                soonestStaleFeed = feeds[i];
+                soonestStaleFeedUpdatedAt = updatedAt;
+                soonestStaleFeedMaxStaleness = feedMaxStaleness;
             }
         }
 
-        vm.warp(oldestUpdatedAt + maxStaleness + 1);
+        vm.warp(earliestExpiry + 1);
 
         // Fund and build calldata before expectRevert so swap is the next external call.
         uint256 amount = 300e6;
@@ -472,7 +514,10 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                OracleAdapter.OracleAdapterStalePrice.selector, oldestFeed, oldestUpdatedAt, maxStaleness
+                OracleAdapter.OracleAdapterStalePrice.selector,
+                soonestStaleFeed,
+                soonestStaleFeedUpdatedAt,
+                soonestStaleFeedMaxStaleness
             )
         );
         taker.swap(order, address(usdc), address(weth), amount, takerData);

@@ -9,6 +9,8 @@ import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManager
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "./utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
+import {PortfolioManagerTokenRegistry} from "./utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "./utils/PortfolioManagerFeedRegistry.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
 import {FixedPointMath} from "./utils/FixedPointMath.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
@@ -18,21 +20,28 @@ import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 /// @dev Aqua does not compare ship() tokens with the encoded PM universe.
 ///      Batch attestation and shipping from the maker with identical tokens.
 ///      This contract must not forward ship(): Aqua uses msg.sender as the maker.
+///      Members reference a token and a feed by registry index (BLEUDEV-412/ADR-0018) --
+///      TOKEN_REGISTRY/FEED_REGISTRY are immutables so every helper below can resolve one
+///      directly instead of carrying it as a parameter through the whole call chain.
 contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator {
     uint256 private constant WAD = 1e18;
 
     /// @dev Chainlink's L2 sequencer-uptime feed for this chain. See OracleAdapter.requireSequencerUp.
     AggregatorV3Interface private immutable SEQUENCER_UPTIME_FEED;
+    PortfolioManagerTokenRegistry private immutable TOKEN_REGISTRY;
+    PortfolioManagerFeedRegistry private immutable FEED_REGISTRY;
 
     /// @inheritdoc IPortfolioManagerStrategyValidator
     mapping(bytes32 => bool) public buildParamsAttested;
 
-    constructor(address sequencerUptimeFeed) {
+    constructor(address sequencerUptimeFeed, address tokenRegistry, address feedRegistry) {
         SEQUENCER_UPTIME_FEED = AggregatorV3Interface(sequencerUptimeFeed);
+        TOKEN_REGISTRY = PortfolioManagerTokenRegistry(tokenRegistry);
+        FEED_REGISTRY = PortfolioManagerFeedRegistry(feedRegistry);
     }
 
     /// @inheritdoc IPortfolioManagerStrategyValidator
-    function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure {
+    function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external view {
         (PortfolioManagerArgsCodec.Group[] memory groups,,,) = PortfolioManagerArgsCodec.parse(_args(order));
         _requireUniverseMatches(groups, tokens);
     }
@@ -64,11 +73,13 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         emit BuildParametersAttested(strategyHash);
     }
 
+    /// @dev Resolves every declared member's token index through TOKEN_REGISTRY -- the only
+    ///      reason this is `view` and not `pure` anymore.
     function _requireUniverseMatches(PortfolioManagerArgsCodec.Group[] memory groups, address[] calldata tokens)
         private
-        pure
+        view
     {
-        address[] memory declared = PortfolioManagerArgsCodec.flattenTokens(groups);
+        address[] memory declared = PortfolioManagerArgsCodec.flattenTokens(groups, TOKEN_REGISTRY);
 
         for (uint256 i = 0; i < declared.length; i++) {
             bool shipped = false;
@@ -117,7 +128,9 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         groupValuesWad = new uint256[](n);
         uint256 totalValueWad;
         for (uint256 i = 0; i < n; i++) {
-            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker, OracleAdapter.Rounding.Down);
+            groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(
+                groups[i], maker, TOKEN_REGISTRY, FEED_REGISTRY, OracleAdapter.Rounding.Down
+            );
             totalValueWad += groupValuesWad[i];
         }
         require(totalValueWad > 0, PortfolioManagerStrategyValidatorEmptyPortfolio());

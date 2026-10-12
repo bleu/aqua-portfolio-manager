@@ -14,6 +14,8 @@ import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 
 /// @notice Ships a real 2-group basket (majors: WETH+cbBTC, stables: USDC+USDT, 50/50 weight,
 ///         equal split within each group) through the already-deployed Router/Validator and the
@@ -26,6 +28,9 @@ contract ShipStrategy is Script {
     // token/feed addresses below, there's nothing else in the repo to deduplicate this against.
     address internal constant ROUTER = 0x02a11927B0a1c701FEB589Ca86886F4ae1F85f02;
     address internal constant VALIDATOR = 0x88F52Fe4A35aD046f37BcF3eB01E99551aa7dA92;
+    // Fill in after running Deploy.s.sol -- see that script's console output.
+    address internal constant TOKEN_REGISTRY = address(0);
+    address internal constant FEED_REGISTRY = address(0);
 
     uint32 internal constant LP_FEE_BPS = 200_000; // 2bps on the 1e9 scale, matching this repo's existing default
     uint256 internal constant GROUP_WEIGHT = 0.5e18;
@@ -37,7 +42,6 @@ contract ShipStrategy is Script {
         // project's own root needs foundry.toml's [profile.deploy] fs_permissions.
         string memory addresses = vm.readFile("../addresses/base-mainnet.json");
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
-        uint256 maxStaleness = vm.parseJsonUint(addresses, ".maxStalenessSeconds");
 
         // Parsed once here, threaded through to _majors/_stables and reused below for the
         // approve/ship batch -- not re-parsed from the same JSON paths a second time.
@@ -52,9 +56,31 @@ contract ShipStrategy is Script {
         address safeAddr = vm.envAddress("SAFE_ADDRESS");
         Safe safe = Safe(payable(safeAddr));
 
+        // Deploy.s.sol already registered every token/feed this strategy needs (BLEUDEV-412/
+        // ADR-0018, bulk-populated from base-mainnet-feeds.json) -- this only looks up the
+        // indices it gets back, it never registers anything itself. Token lookup stays a
+        // register() call (idempotent -- a no-op broadcast if already registered, self-healing
+        // if this token predates Deploy.s.sol's bulk pass for some reason); feed lookup must NOT
+        // call register() again, since PortfolioManagerFeedRegistry.register always appends a
+        // new entry -- calling it here for an already-registered feed would create a duplicate
+        // index pointing at the same address instead of reusing the existing one.
+        PortfolioManagerFeedRegistry feedRegistry = PortfolioManagerFeedRegistry(FEED_REGISTRY);
+        uint16[] memory feedIndices = new uint16[](4);
+        feedIndices[0] = _feedIndexOf(feedRegistry, vm.parseJsonAddress(addresses, ".tokens.WETH.feedProxy"));
+        feedIndices[1] = _feedIndexOf(feedRegistry, vm.parseJsonAddress(addresses, ".tokens.CBBTC.feedProxy"));
+        feedIndices[2] = _feedIndexOf(feedRegistry, vm.parseJsonAddress(addresses, ".tokens.USDC.feedProxy"));
+        feedIndices[3] = _feedIndexOf(feedRegistry, vm.parseJsonAddress(addresses, ".tokens.USDT.feedProxy"));
+
+        vm.startBroadcast(ownerKey);
+        uint16[] memory tokenIndices = new uint16[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            tokenIndices[i] = PortfolioManagerTokenRegistry(TOKEN_REGISTRY).register(tokens[i]);
+        }
+        vm.stopBroadcast();
+
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = _majors(addresses, maxStaleness, tokens[0], tokens[1]);
-        groups[1] = _stables(addresses, maxStaleness, tokens[2], tokens[3]);
+        groups[0] = _majors(tokenIndices[0], tokenIndices[1], feedIndices[0], feedIndices[1]);
+        groups[1] = _stables(tokenIndices[2], tokenIndices[3], feedIndices[2], feedIndices[3]);
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, LP_FEE_BPS, 0);
         ISwapVM.Order memory order = MakerTraitsLib.build(
@@ -125,37 +151,45 @@ contract ShipStrategy is Script {
         console.logBytes32(strategyHash);
     }
 
-    function _majors(string memory addresses, uint256 maxStaleness, address weth, address cbbtc)
+    function _majors(uint16 wethTokenIndex, uint16 cbbtcTokenIndex, uint16 wethFeedIndex, uint16 cbbtcFeedIndex)
         internal
         pure
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
-        members[0] = PortfolioManagerArgsCodec.Member({
-            token: weth, feed: vm.parseJsonAddress(addresses, ".tokens.WETH.feedProxy"), maxStaleness: maxStaleness
-        });
-        members[1] = PortfolioManagerArgsCodec.Member({
-            token: cbbtc, feed: vm.parseJsonAddress(addresses, ".tokens.CBBTC.feedProxy"), maxStaleness: maxStaleness
-        });
+        members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: wethTokenIndex, feedIndex: wethFeedIndex});
+        members[1] = PortfolioManagerArgsCodec.Member({tokenIndex: cbbtcTokenIndex, feedIndex: cbbtcFeedIndex});
         return PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: members});
     }
 
-    function _stables(string memory addresses, uint256 maxStaleness, address usdc, address usdt)
+    function _stables(uint16 usdcTokenIndex, uint16 usdtTokenIndex, uint16 usdcFeedIndex, uint16 usdtFeedIndex)
         internal
         pure
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
-        members[0] = PortfolioManagerArgsCodec.Member({
-            token: usdc, feed: vm.parseJsonAddress(addresses, ".tokens.USDC.feedProxy"), maxStaleness: maxStaleness
-        });
-        members[1] = PortfolioManagerArgsCodec.Member({
-            token: usdt, feed: vm.parseJsonAddress(addresses, ".tokens.USDT.feedProxy"), maxStaleness: maxStaleness
-        });
+        members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: usdcTokenIndex, feedIndex: usdcFeedIndex});
+        members[1] = PortfolioManagerArgsCodec.Member({tokenIndex: usdtTokenIndex, feedIndex: usdtFeedIndex});
         return PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: members});
     }
 
     function _encodeMultiSendTx(address to, bytes memory data) internal pure returns (bytes memory) {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
+    }
+
+    error ShipStrategyFeedNotRegistered(address feed);
+
+    /// @dev PortfolioManagerFeedRegistry has no indexOf map (unlike the token registry) --
+    ///      register() is intentionally allowed to append the same feed address more than once
+    ///      at different maxStaleness bounds, so a lookup can't just dedupe on address alone.
+    ///      This scans for the first match, which is correct as long as Deploy.s.sol's bulk pass
+    ///      registered each feed exactly once -- true for every feed in base-mainnet-feeds.json.
+    function _feedIndexOf(PortfolioManagerFeedRegistry registry, address feed) internal view returns (uint16) {
+        uint256 count = registry.feedCount();
+        for (uint16 i = 1; i < count; i++) {
+            (address candidate,) = registry.feedAt(i);
+            if (candidate == feed) return i;
+        }
+        revert ShipStrategyFeedNotRegistered(feed);
     }
 }

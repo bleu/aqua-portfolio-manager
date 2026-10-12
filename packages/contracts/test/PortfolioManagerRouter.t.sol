@@ -15,9 +15,12 @@ contract PortfolioManagerRouterTest is Test {
         address owner = address(0xC0FFEE0000000000000000000000000000000C);
         address strategyValidator = address(0xFAC70000000000000000000000000000000000);
         address sequencerUptimeFeed = address(0x5EC000000000000000000000000000000000AD);
+        address tokenRegistry = address(0x7071E000000000000000000000000000000000);
+        address feedRegistry = address(0xFEEDBEEF00000000000000000000000000000);
 
-        PortfolioManagerRouter router =
-            new PortfolioManagerRouter(aqua, weth, owner, "PM", "1", strategyValidator, sequencerUptimeFeed);
+        PortfolioManagerRouter router = new PortfolioManagerRouter(
+            aqua, weth, owner, "PM", "1", strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry
+        );
 
         assertEq(address(router.AQUA()), aqua, "AQUA must be the address passed to the constructor");
         assertEq(router.owner(), owner, "owner (Rescuable/Ownable) must be the address passed to the constructor");
