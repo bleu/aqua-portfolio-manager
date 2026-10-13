@@ -12,7 +12,7 @@ import { TokenChip } from "@/components/TokenChip";
 import { TokenListRow } from "@/components/TokenListRow";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
-import { loadBasketDrafts, saveBasketDrafts } from "@/lib/basketDraftsStorage";
+import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
@@ -56,7 +56,7 @@ export function CreateBasketsPage({
   // server-rendered baskets prop -- avoids a hydration mismatch between what the server sent and
   // whatever this browser's localStorage happens to hold.
   useEffect(() => {
-    const stored = loadBasketDrafts(safeAddress);
+    const stored = loadDraftBaskets(safeAddress);
     if (stored) {
       setDraftBaskets(stored);
       setSelectedBasketId(stored[0]?.id);
@@ -64,7 +64,7 @@ export function CreateBasketsPage({
   }, [safeAddress]);
 
   useEffect(() => {
-    saveBasketDrafts(safeAddress, draftBaskets);
+    saveDraftBaskets(safeAddress, draftBaskets);
   }, [safeAddress, draftBaskets]);
 
   const selectedBasket = draftBaskets.find((basket) => basket.id === selectedBasketId) ?? draftBaskets[0];
