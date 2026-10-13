@@ -7,5 +7,10 @@
   "scripts": {
     "contracts:build": "pnpm --filter @aqua-portfolio-manager/contracts build",
     "contracts:test": "pnpm --filter @aqua-portfolio-manager/contracts test"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "^7.0.0"
+    }
   }
 }
