@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AddBasketButton } from "@/components/AddBasketButton";
 import { AppHeader } from "@/components/AppHeader";
 import { BasketPanelHeader } from "@/components/BasketPanelHeader";
@@ -12,6 +12,7 @@ import { TokenChip } from "@/components/TokenChip";
 import { TokenListRow } from "@/components/TokenListRow";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
+import { loadBasketDrafts, saveBasketDrafts } from "@/lib/basketDraftsStorage";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
@@ -50,6 +51,21 @@ export function CreateBasketsPage({
   const [selectedBasketId, setSelectedBasketId] = useState(baskets[0]?.id);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+
+  // Applied after mount, not as useState's initializer, so the first render always matches the
+  // server-rendered baskets prop -- avoids a hydration mismatch between what the server sent and
+  // whatever this browser's localStorage happens to hold.
+  useEffect(() => {
+    const stored = loadBasketDrafts(safeAddress);
+    if (stored) {
+      setDraftBaskets(stored);
+      setSelectedBasketId(stored[0]?.id);
+    }
+  }, [safeAddress]);
+
+  useEffect(() => {
+    saveBasketDrafts(safeAddress, draftBaskets);
+  }, [safeAddress, draftBaskets]);
 
   const selectedBasket = draftBaskets.find((basket) => basket.id === selectedBasketId) ?? draftBaskets[0];
   const assignedAddresses = new Set(draftBaskets.flatMap((basket) => basket.tokenAddresses));
