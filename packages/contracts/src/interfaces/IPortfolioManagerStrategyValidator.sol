@@ -24,9 +24,14 @@ interface IPortfolioManagerStrategyValidator {
     );
     /// @dev Portfolio shares are undefined when the declared tokens have zero total value.
     error PortfolioManagerStrategyValidatorEmptyPortfolio();
+    /// @dev `groupNames` must be empty (caller declines to name groups) or exactly one name per
+    ///      declared group -- anything else can't be a caller's real intent.
+    error PortfolioManagerStrategyValidatorGroupNamesLengthMismatch(uint256 namesLength, uint256 groupsLength);
 
-    /// @dev Emitted on every successful attestation, including repeat calls.
-    event BuildParametersAttested(bytes32 indexed strategyHash);
+    /// @dev Emitted on every successful attestation, including repeat calls. `groupNames` is a
+    ///      display label per group, in group order, or empty if the caller didn't supply any --
+    ///      purely informational (not validated against anything on-chain beyond its length).
+    event BuildParametersAttested(bytes32 indexed strategyHash, string[] groupNames);
 
     /// @notice Requires matching token membership in the order and supplied list, in both directions.
     /// @dev The program must start with CURVE_OPCODE. This check does not read balances or prices.
@@ -40,7 +45,12 @@ interface IPortfolioManagerStrategyValidator {
 
     /// @notice Validates parameters and records attestation required by PM quotes and swaps.
     /// @dev Permissionless and idempotent. Does not bind a later ship() token array or guarantee future balances.
-    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external;
+    ///      `groupNames` is optional (pass an empty array to skip naming) -- see BuildParametersAttested.
+    function attestBuildParameters(
+        ISwapVM.Order calldata order,
+        address[] calldata tokens,
+        string[] calldata groupNames
+    ) external;
 
     /// @notice Whether `attestBuildParameters` has ever succeeded for this `strategyHash`
     ///         (`keccak256(abi.encode(order))` for Aqua-native orders).

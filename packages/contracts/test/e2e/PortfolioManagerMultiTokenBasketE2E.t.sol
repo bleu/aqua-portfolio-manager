@@ -261,7 +261,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             ? abi.encodePacked(
                 _encodeMultiSendTx(
                     address(strategyValidator),
-                    abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens))
+                    abi.encodeCall(
+                        PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens, new string[](0))
+                    )
                 ),
                 _encodeMultiSendTx(address(aqua), shipData)
             )

@@ -251,7 +251,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         vm.stopPrank();
 
         bytes memory attestData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
+            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens, new string[](0)));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(

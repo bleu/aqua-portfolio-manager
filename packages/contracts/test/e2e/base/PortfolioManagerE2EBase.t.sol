@@ -159,8 +159,9 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
         internal
         returns (bool)
     {
-        bytes memory attestData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
+        bytes memory attestData = abi.encodeCall(
+            PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens, new string[](0))
+        );
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(
