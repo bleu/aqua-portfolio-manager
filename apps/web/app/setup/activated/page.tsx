@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { PortfolioManagerActivatedPage } from "@/components/pages/PortfolioManagerActivatedPage";
+import { saveActiveStrategy } from "@/lib/activeStrategyStorage";
 import { clearDraftBaskets, loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { clearDraftParameters, loadDraftParameters } from "@/lib/parametersDraftStorage";
@@ -48,9 +49,18 @@ export default function Page() {
       lpFeePct={draftParameters?.lpFeePct ?? 0}
       activationTxHash="0x0000000000000000000000000000000000000000000000000000000000000000"
       onGoToDashboard={() => {
-        // The strategy has shipped -- this draft's names now live on-chain/the indexer (see the
-        // attest-strategy-group-names work), not here. Clearing it stops a stale draft from
-        // resurfacing the next time this Safe starts building a strategy.
+        // Snapshots the final config before clearing the in-progress draft -- the dashboard
+        // (BLEUDEV-419) reads this, not the draft, since the draft's whole point is to not
+        // resurface once the strategy has shipped. The real source of truth is on-chain/the
+        // indexer; this placeholder stands in until that's wired up.
+        if (draftParameters) {
+          saveActiveStrategy(address, {
+            baskets: draftBaskets,
+            targetsPct: draftTargets,
+            parameters: draftParameters,
+            activatedAt: Date.now(),
+          });
+        }
         clearDraftBaskets(address);
         clearDraftTargets(address);
         clearDraftParameters(address);

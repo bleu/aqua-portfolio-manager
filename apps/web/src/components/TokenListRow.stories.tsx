@@ -19,3 +19,7 @@ export const Added: Story = {
 export const HighlightedNotYetAdded: Story = {
   args: { token: weth, balance: 1.52, value: 4270, highlighted: true },
 };
+
+export const ReadOnly: Story = {
+  args: { token: usdc, balance: 4500, value: 4500, readOnly: true, tokenName: "USD Coin" },
+};
