@@ -22,6 +22,10 @@ const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { labe
 const MAX_TOKENS_PER_BASKET = 5;
 const MAX_BASKETS = 4;
 
+/** Quick-filter badges only surface this curated subset -- the full 40-token list stays reachable
+ *  through the search box below. */
+const POPULAR_TOKEN_SYMBOLS = ["USDC", "USDT", "DAI", "WETH", "CBETH", "WBTC", "CBBTC"];
+
 export type CreateBasketsPageProps = {
   network: string;
   safeAddress: string;
@@ -51,15 +55,25 @@ export function CreateBasketsPage({
   const assignedAddresses = new Set(draftBaskets.flatMap((basket) => basket.tokenAddresses));
 
   const visibleTokens = useMemo(() => {
-    return safeTokens.filter((token) => {
-      const matchesFilter = activeFilters.size === 0 || activeFilters.has(token.symbol);
-      const matchesQuery =
-        query.trim() === "" ||
-        token.symbol.toLowerCase().includes(query.toLowerCase()) ||
-        token.address.toLowerCase().includes(query.toLowerCase());
-      return matchesFilter && matchesQuery;
-    });
+    return safeTokens
+      .filter((token) => {
+        const matchesFilter = activeFilters.size === 0 || activeFilters.has(token.symbol);
+        const matchesQuery =
+          query.trim() === "" ||
+          token.symbol.toLowerCase().includes(query.toLowerCase()) ||
+          token.address.toLowerCase().includes(query.toLowerCase());
+        return matchesFilter && matchesQuery;
+      })
+      .sort((a, b) => b.value - a.value);
   }, [safeTokens, activeFilters, query]);
+
+  const popularTokens = useMemo(
+    () =>
+      POPULAR_TOKEN_SYMBOLS.map((symbol) => safeTokens.find((t) => t.symbol === symbol)).filter(
+        (t): t is SafeToken => t !== undefined,
+      ),
+    [safeTokens],
+  );
 
   function toggleFilter(symbol: string) {
     setActiveFilters((prev) => {
@@ -185,7 +199,7 @@ export function CreateBasketsPage({
                   onChange={(e) => setQuery(e.target.value)}
                 />
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {safeTokens.map((token) => (
+                  {popularTokens.map((token) => (
                     <TokenChip
                       key={token.address}
                       token={token}
