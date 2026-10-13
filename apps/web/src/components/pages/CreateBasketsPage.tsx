@@ -27,12 +27,21 @@ export type CreateBasketsPageProps = {
   safeAddress: string;
   baskets: BasketDraft[];
   safeTokens: SafeToken[];
+  tokensLoading?: boolean;
   onBack?: () => void;
   onContinue?: () => void;
 };
 
 /** BLEUDEV-411 — "04C · Create baskets, two-column token selector": step 1 of the 4-step setup wizard. */
-export function CreateBasketsPage({ network, safeAddress, baskets, safeTokens, onBack, onContinue }: CreateBasketsPageProps) {
+export function CreateBasketsPage({
+  network,
+  safeAddress,
+  baskets,
+  safeTokens,
+  tokensLoading,
+  onBack,
+  onContinue,
+}: CreateBasketsPageProps) {
   const [draftBaskets, setDraftBaskets] = useState(baskets);
   const [selectedBasketId, setSelectedBasketId] = useState(baskets[0]?.id);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
@@ -77,6 +86,10 @@ export function CreateBasketsPage({ network, safeAddress, baskets, safeTokens, o
             },
       ),
     );
+  }
+
+  function renameBasket(id: string, name: string) {
+    setDraftBaskets((prev) => prev.map((basket) => (basket.id === id ? { ...basket, name } : basket)));
   }
 
   function addBasket() {
@@ -142,6 +155,7 @@ export function CreateBasketsPage({ network, safeAddress, baskets, safeTokens, o
                 color={selectedBasket.color}
                 tokenCount={selectedBasketTokens.length}
                 totalValue={selectedBasketValue}
+                onRename={(name) => renameBasket(selectedBasket.id, name)}
               />
 
               <div>
@@ -184,17 +198,19 @@ export function CreateBasketsPage({ network, safeAddress, baskets, safeTokens, o
               </div>
 
               <div className="max-h-64 space-y-1 overflow-y-auto">
-                {visibleTokens.map((token) => (
-                  <TokenListRow
-                    key={token.address}
-                    token={token}
-                    balance={token.balance}
-                    value={token.value}
-                    added={selectedBasket.tokenAddresses.includes(token.address)}
-                    disabled={selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET}
-                    onToggle={() => toggleTokenInSelectedBasket(token.address)}
-                  />
-                ))}
+                {tokensLoading && <p className="text-xs text-gray-500">Loading Safe balances…</p>}
+                {!tokensLoading &&
+                  visibleTokens.map((token) => (
+                    <TokenListRow
+                      key={token.address}
+                      token={token}
+                      balance={token.balance}
+                      value={token.value}
+                      added={selectedBasket.tokenAddresses.includes(token.address)}
+                      disabled={selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET}
+                      onToggle={() => toggleTokenInSelectedBasket(token.address)}
+                    />
+                  ))}
               </div>
             </div>
           )}
