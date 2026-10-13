@@ -1,5 +1,23 @@
-/** Stub -- BLEUDEV-415 builds the real Parameters step. This only exists so BLEUDEV-414's
- *  "Continue to parameters" has a route to land on. */
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useAccount } from "wagmi";
+import { SetStrategyParametersPage } from "@/components/pages/SetStrategyParametersPage";
+
 export default function Page() {
-  return <div className="min-h-screen p-8 text-gray-400">Parameters step coming soon (BLEUDEV-415).</div>;
+  const router = useRouter();
+  const { address } = useAccount();
+
+  if (!address) {
+    return <div className="min-h-screen" />;
+  }
+
+  return (
+    <SetStrategyParametersPage
+      network="Base"
+      safeAddress={address}
+      onBack={() => router.push("/setup/targets")}
+      onContinue={() => router.push("/setup/review")}
+    />
+  );
 }
