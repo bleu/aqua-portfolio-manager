@@ -1,5 +1,31 @@
-/** Stub -- BLEUDEV-417 builds the real page. This only exists so BLEUDEV-416's
- *  "Create transaction" has a route to land on. */
+"use client";
+
+import { useAccount } from "wagmi";
+import { WaitingForSafeSignaturesPage } from "@/components/pages/WaitingForSafeSignaturesPage";
+import { loadDraftParameters } from "@/lib/parametersDraftStorage";
+import { useSafeThreshold } from "@/lib/useSafeThreshold";
+
 export default function Page() {
-  return <div className="min-h-screen p-8 text-gray-400">Waiting for Safe signatures (BLEUDEV-417).</div>;
+  const { address } = useAccount();
+  const { threshold } = useSafeThreshold(address);
+
+  if (!address) {
+    return <div className="min-h-screen" />;
+  }
+
+  const draftParameters = loadDraftParameters(address);
+
+  return (
+    <WaitingForSafeSignaturesPage
+      network="Base"
+      safeAddress={address}
+      signaturesRequired={threshold ?? 1}
+      // The proposer's own signature is collected the moment the transaction is proposed --
+      // real-time updates past this point need the Safe Transaction Service, out of scope here.
+      signaturesCollected={1}
+      transactionHash="0x0000000000000000000000000000000000000000000000000000000000000000"
+      submittedAt="Just now"
+      priceDeviationPct={draftParameters?.priceDeviationPct ?? 0}
+    />
+  );
 }
