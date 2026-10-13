@@ -1,5 +1,6 @@
 "use client";
 
+import { TokenIcon } from "./TokenIcon";
 import { cn } from "@/lib/cn";
 import type { Token } from "@/lib/types";
 
@@ -13,14 +14,6 @@ export type TokenChipProps = {
   onRemove?: () => void;
   className?: string;
 };
-
-function TokenIcon({ symbol }: { symbol: string }) {
-  return (
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/30 text-[10px] font-semibold text-accent">
-      {symbol.slice(0, 1)}
-    </span>
-  );
-}
 
 /** Token icon + ticker chip, shared across every page that lists or picks tokens. */
 export function TokenChip({ token, variant = "display", selected, onToggle, onRemove, className }: TokenChipProps) {
@@ -39,7 +32,7 @@ export function TokenChip({ token, variant = "display", selected, onToggle, onRe
           className,
         )}
       >
-        <TokenIcon symbol={token.symbol} />
+        <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />
         {token.symbol}
       </button>
     );
@@ -48,7 +41,7 @@ export function TokenChip({ token, variant = "display", selected, onToggle, onRe
   if (variant === "removable") {
     return (
       <span className={cn(base, "border-border bg-surface-raised text-gray-200", className)}>
-        <TokenIcon symbol={token.symbol} />
+        <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />
         {token.symbol}
         <button
           type="button"
@@ -64,7 +57,7 @@ export function TokenChip({ token, variant = "display", selected, onToggle, onRe
 
   return (
     <span className={cn(base, "border-border bg-surface-raised text-gray-300", className)}>
-      <TokenIcon symbol={token.symbol} />
+      <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />
       {token.symbol}
     </span>
   );

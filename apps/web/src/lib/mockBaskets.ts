@@ -1,4 +1,5 @@
 import { DAI, USDC, USDT, WBTC, WETH } from "./mockData";
+import { POPULAR_TOKEN_ICONS } from "./tokenFeeds";
 import type { Token } from "./types";
 
 export type BasketDraft = {
@@ -58,7 +59,7 @@ export const safeTokens: SafeToken[] = [
   { symbol: "WELL", address: "0xA88594D404727625A9437C3f886C7643872296AE", balance: 0, value: 0 },
   { symbol: "YFI", address: "0x9EaF8C1E34F05a589EDa6BAfdF391Cf6Ad3CB239", balance: 0, value: 0 },
   { symbol: "ZRO", address: "0x6985884C4392D348587B19cb9eAAf157F13271cd", balance: 0, value: 0 },
-];
+].map((token) => ({ ...token, iconUrl: POPULAR_TOKEN_ICONS[token.symbol] }));
 
 export const initialBaskets: BasketDraft[] = [
   { id: "stablecoins", name: "Stablecoins", color: "#6366f1", tokenAddresses: [USDC.address, USDT.address, DAI.address] },

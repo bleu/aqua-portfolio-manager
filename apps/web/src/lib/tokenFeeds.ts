@@ -8,6 +8,20 @@ export type TokenFeed = {
   feedDecimals: number;
 };
 
+/** Logos for the most commonly held tokens, sourced from Trust Wallet's public asset repo (WBTC's
+ *  reuses Ethereum mainnet's entry -- same token, no separate Base-specific logo there) and
+ *  CoinGecko for cbBTC (not yet in Trust Wallet's Base asset list). Scoped to just these tokens
+ *  for now rather than all 40 -- expand this map if more of the list needs real icons later. */
+export const POPULAR_TOKEN_ICONS: Record<string, string> = {
+  USDC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913/logo.png",
+  USDT: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2/logo.png",
+  DAI: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb/logo.png",
+  WETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/0x4200000000000000000000000000000000000006/logo.png",
+  CBETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22/logo.png",
+  WBTC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png",
+  CBBTC: "https://coin-images.coingecko.com/coins/images/40143/small/cbbtc.webp",
+};
+
 export const TOKEN_FEEDS: TokenFeed[] = [
   { symbol: "AAVE", tokenAddress: "0x63706e401c06ac8513145b7687A14804d17f814b", feedProxy: "0x3d6774EF702A10b20FCa8Ed40FC022f7E4938e07", feedDecimals: 8 },
   { symbol: "AERO", tokenAddress: "0x940181a94A35A4569E4529A3CDfB74e38FD98631", feedProxy: "0x4EC5970fC728C5f65ba413992CD5fF6FD70fcfF0", feedDecimals: 8 },

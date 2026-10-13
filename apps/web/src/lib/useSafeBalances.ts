@@ -3,7 +3,7 @@
 import { erc20Abi } from "viem";
 import { useReadContracts } from "wagmi";
 import { base } from "wagmi/chains";
-import { TOKEN_FEEDS } from "./tokenFeeds";
+import { POPULAR_TOKEN_ICONS, TOKEN_FEEDS } from "./tokenFeeds";
 import type { SafeToken } from "./mockBaskets";
 
 const AGGREGATOR_ABI = [
@@ -64,7 +64,13 @@ export function useSafeBalances(safeAddress: `0x${string}` | undefined) {
         const answer = roundData ? roundData[1] : 0n;
         const price = Number(answer) / 10 ** feed.feedDecimals;
         const balance = Number(rawBalance) / 10 ** tokenDecimals;
-        return { symbol: feed.symbol, address: feed.tokenAddress, balance, value: balance * price };
+        return {
+          symbol: feed.symbol,
+          address: feed.tokenAddress,
+          iconUrl: POPULAR_TOKEN_ICONS[feed.symbol],
+          balance,
+          value: balance * price,
+        };
       });
 
   return { tokens, isLoading, isError };

@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "./Badge";
+import { TokenIcon } from "./TokenIcon";
 import { cn } from "@/lib/cn";
 import { formatUsd, truncateAddress } from "@/lib/format";
 import type { Token } from "@/lib/types";
@@ -36,9 +37,7 @@ export function TokenListRow({ token, balance, value, added, highlighted, disabl
         onChange={onToggle}
         className="h-4 w-4 shrink-0 rounded border-border bg-surface-raised accent-accent disabled:cursor-not-allowed"
       />
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/30 text-xs font-semibold text-accent">
-        {token.symbol.slice(0, 1)}
-      </span>
+      <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} size={28} className="text-xs" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-gray-100">{token.symbol}</span>
         <span className="block truncate text-xs text-gray-500">{truncateAddress(token.address)}</span>
