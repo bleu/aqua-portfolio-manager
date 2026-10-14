@@ -824,6 +824,61 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         assertEq(actualAmountOut, expectedAmountOut, "numeraire member must price off its native balance directly");
     }
 
+    /// @dev The test above only ever pairs one numeraire member against one priced member --
+    ///      this is the fully-free case: every member on both sides is a numeraire (feed ==
+    ///      address(0)), no Bridge registered (no Bridge means the groups are declared to already
+    ///      share one unit), so the swap must settle with zero oracle calls at all, pricing
+    ///      purely off raw balances. feedA/feedB/feedC are all deployed in setUp() for other
+    ///      tests in this file but never wired into either member here -- the assertions below
+    ///      prove none of them are ever touched, not just that the two feeds this test cares
+    ///      about are untouched.
+    function test_SwapBetweenTwoNumeraireMembersNeedsNoOracleCallAtAll() public {
+        PortfolioManagerArgsCodec.Member[] memory numeraireMembersA = new PortfolioManagerArgsCodec.Member[](1);
+        numeraireMembersA[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
+        PortfolioManagerArgsCodec.Group[] memory customGroups = new PortfolioManagerArgsCodec.Group[](2);
+        customGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembersA});
+
+        PortfolioManagerArgsCodec.Member[] memory numeraireMembersB = new PortfolioManagerArgsCodec.Member[](1);
+        numeraireMembersB[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenB)), feedIndex: 0});
+        customGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembersB});
+
+        ISwapVM.Order memory order = _buildOrderWithGroups(customGroups, 0, 0);
+
+        address[] memory shipTokens = new address[](2);
+        shipTokens[0] = address(tokenA);
+        shipTokens[1] = address(tokenB);
+        uint256[] memory shipAmounts = new uint256[](2);
+        shipAmounts[0] = 100_000e18;
+        shipAmounts[1] = 100_000e18;
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+        strategyValidator.attestBuildParameters(order, shipTokens);
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), shipTokens, shipAmounts);
+
+        bytes memory latestRoundDataCall = abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector);
+        vm.expectCall(address(feedA), latestRoundDataCall, 0);
+        vm.expectCall(address(feedB), latestRoundDataCall, 0);
+        vm.expectCall(address(feedC), latestRoundDataCall, 0);
+
+        uint256 amountIn = 1_000e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenB), address(tokenA), amountIn);
+
+        // Equal weights, both groups worth 100,000 raw-balance units -- same xy=k math as any
+        // other balanced single-member pair, just with neither side ever priced by an oracle.
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "two numeraire members must price off raw balances alone");
+    }
+
     /// @dev ADR-0016's per-trade deviation step cap is unit-agnostic by construction -- it only
     ///      ever compares quote.balanceIn/balanceOut ratios, never an absolute USD value -- so it
     ///      must keep working unchanged when the pair's shared unit is a numeraire token instead
