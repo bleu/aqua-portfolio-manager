@@ -5,13 +5,16 @@ export type BadgeProps = {
   children: ReactNode;
   /**
    * `outline` — uppercase, bordered, tinted-background label (e.g. "SAFE SMART ACCOUNT REQUIRED").
-   * `dot` — rounded pill with a leading color dot (e.g. "Aqua routing").
+   * `dot` — rounded pill with a leading accent-color dot (e.g. "Aqua routing").
+   * `header` — plain bordered pill, normal case (the network/Safe-address badges in AppHeader).
    */
-  variant?: "outline" | "dot";
+  variant?: "outline" | "dot" | "header";
+  /** Only meaningful for variant="header": colors its optional leading dot. Omit for no dot. */
+  dotColor?: string;
   className?: string;
 };
 
-export function Badge({ children, variant = "outline", className }: BadgeProps) {
+export function Badge({ children, variant = "outline", dotColor, className }: BadgeProps) {
   if (variant === "dot") {
     return (
       <span
@@ -21,6 +24,20 @@ export function Badge({ children, variant = "outline", className }: BadgeProps) 
         )}
       >
         <span className="size-1.5 rounded-full bg-accent" />
+        {children}
+      </span>
+    );
+  }
+
+  if (variant === "header") {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-gray-200",
+          className,
+        )}
+      >
+        {dotColor && <span className="size-1.5 rounded-full" style={{ backgroundColor: dotColor }} />}
         {children}
       </span>
     );
