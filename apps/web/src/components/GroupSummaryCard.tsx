@@ -1,3 +1,5 @@
+"use client";
+
 import { Card } from "./Card";
 import { ProgressBar } from "./ProgressBar";
 import { TokenChip } from "./TokenChip";
@@ -63,7 +65,7 @@ export function GroupSummaryCard({
       {showTokens && (
         <div className="flex flex-wrap gap-1.5">
           {group.tokens.map((token) => (
-            <TokenChip key={token.address} token={token} variant="display" />
+            <TokenChip key={token.address} token={token} variant="display" showIcon={!!compact} />
           ))}
         </div>
       )}
