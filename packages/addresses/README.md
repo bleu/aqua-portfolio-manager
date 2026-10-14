@@ -1,7 +1,7 @@
 # addresses
 
 Single source of truth for the Base mainnet addresses this repo used to hardcode independently in
-`packages/contracts/script/ShipStrategy.s.sol`, `apps/indexer/config.yaml`,
+`packages/contracts/script/ShipTestStrategy.s.sol`, `apps/indexer/config.yaml`,
 `apps/indexer/src/EventHandlers.ts`, and `apps/arbitrageur/.env.example`.
 
 `base-mainnet.json` is the data. Nothing generates it, and nothing generates from it:
@@ -10,7 +10,7 @@ Single source of truth for the Base mainnet addresses this repo used to hardcode
   (`workspace:*`), same as `packages/decoding`. `src/index.ts` imports the JSON with
   `resolveJsonModule`/an import attribute and re-exports it typed and validated -- it's hand-written
   once, not regenerated.
-- `ShipStrategy.s.sol` and `Deploy.s.sol` read `base-mainnet.json` live via `vm.readFile` +
+- `ShipTestStrategy.s.sol` and `Deploy.s.sol` read `base-mainnet.json` live via `vm.readFile` +
   `vm.parseJsonAddress`, at script-run time. No Solidity file is generated or committed; editing
   `base-mainnet.json` is immediately reflected the next time either script runs. This needed one
   `fs_permissions` entry in `packages/contracts/foundry.toml` for the sibling directory.
@@ -29,10 +29,10 @@ Single source of truth for the Base mainnet addresses this repo used to hardcode
 
 `base-mainnet.json` validates itself on import (well-formed addresses, unique token symbols) --
 every consumer gets that guarantee for free, including `apps/indexer`'s own runtime import and
-`ShipStrategy.s.sol`/`Deploy.s.sol`'s live reads.
+`ShipTestStrategy.s.sol`/`Deploy.s.sol`'s live reads.
 
 ## Not in scope here
 
 `ROUTER`/`VALIDATOR` (this repo's own deployed Portfolio Manager contracts, not external
-addresses) are still hardcoded separately in `ShipStrategy.s.sol` and `EventHandlers.ts`'s
+addresses) are still hardcoded separately in `ShipTestStrategy.s.sol` and `EventHandlers.ts`'s
 `PM_ROUTER` -- a deployment output, not a well-known external address, so it doesn't belong here.

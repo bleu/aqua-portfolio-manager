@@ -23,7 +23,7 @@ import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedReg
 ///         tokens, attest, and ship, batched via MultiSendCallOnly (mirrors
 ///         PortfolioManagerMultiTokenBasketE2E.t.sol's `_shipOnly`, but against a real Safe via
 ///         `execTransaction` + an approved-hash signature instead of `vm.prank`).
-contract ShipStrategy is Script {
+contract ShipTestStrategy is Script {
     // This deployment's own router/validator, not a well-known external address -- unlike the
     // token/feed addresses below, there's nothing else in the repo to deduplicate this against.
     address internal constant ROUTER = 0x02a11927B0a1c701FEB589Ca86886F4ae1F85f02;
@@ -177,7 +177,7 @@ contract ShipStrategy is Script {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
     }
 
-    error ShipStrategyFeedNotRegistered(address feed);
+    error ShipTestStrategyFeedNotRegistered(address feed);
 
     /// @dev PortfolioManagerFeedRegistry has no indexOf map (unlike the token registry) --
     ///      register() is intentionally allowed to append the same feed address more than once
@@ -190,6 +190,6 @@ contract ShipStrategy is Script {
             (address candidate,) = registry.feedAt(i);
             if (candidate == feed) return i;
         }
-        revert ShipStrategyFeedNotRegistered(feed);
+        revert ShipTestStrategyFeedNotRegistered(feed);
     }
 }

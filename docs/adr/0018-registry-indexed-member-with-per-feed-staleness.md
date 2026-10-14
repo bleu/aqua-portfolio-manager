@@ -37,7 +37,7 @@ While implementing this, real Base-mainnet E2E tests (forked at a pinned block) 
 ## Consequences
 
 - `Member` shrinks from 43 to 4 bytes; a strategy's maximum basket size is no longer at risk of exceeding SwapVM's 255-byte instruction argument limit.
-- Shipping or updating a strategy now requires registering its tokens (free, permissionless) and feeds (owner-gated, intended to run through a timelock) before building its encoded arguments — `script/ShipStrategy.s.sol` does this as part of the same broadcast.
+- Shipping or updating a strategy now requires registering its tokens (free, permissionless) and feeds (owner-gated, intended to run through a timelock) before building its encoded arguments — `script/ShipTestStrategy.s.sol` does this as part of the same broadcast.
 - A feed's `maxStaleness` is fixed at registration time. Loosening or tightening it for an already-registered feed requires the feed registry's owner to register a new entry (a new index) and point future strategies at it; already-shipped strategies keep referencing the old index and its original bound, unaffected.
 - `PortfolioManagerFeedRegistry`'s owner is deployed to the deployer address at launch and must be transferred to a `TimelockController` before the registry is used in production — not yet automated by `Deploy.s.sol`, called out there as a follow-up.
 - `PortfolioManagerSwap` and `PortfolioManagerStrategyValidator` each gained two constructor parameters (the two registry addresses) and two private immutables; every call site that constructs either contract (`PortfolioManagerRouter`, `PortfolioManagerOpcodes`, both deploy scripts, every test fixture) was updated accordingly.
@@ -48,5 +48,5 @@ While implementing this, real Base-mainnet E2E tests (forked at a pinned block) 
 - `packages/contracts/src/utils/PortfolioManagerArgsCodec.sol` -- `Member`, `groupValueWad`, `flattenTokens`.
 - `packages/contracts/src/PortfolioManagerSwap.sol` -- `TOKEN_REGISTRY`/`FEED_REGISTRY` immutables, `_feedOf`.
 - `packages/contracts/src/PortfolioManagerStrategyValidator.sol` -- same immutables, `_requireUniverseMatches`.
-- `packages/contracts/script/Deploy.s.sol`, `packages/contracts/script/ShipStrategy.s.sol`.
+- `packages/contracts/script/Deploy.s.sol`, `packages/contracts/script/ShipTestStrategy.s.sol`.
 - BLEUDEV-412 (AI Audit gas-cost and encoding-size finding, BLEUDEV-338).
