@@ -40,8 +40,22 @@ const getErc20Balance = createEffect(
   },
 );
 
+indexer.onEvent(
+  { contract: "PortfolioManagerValidator", event: "BuildParametersAttested" },
+  async ({ event, context }) => {
+    context.StrategyAttestation.set({
+      id: event.params.strategyHash.toLowerCase(),
+      groupNames: event.params.groupNames,
+    });
+  },
+);
+
 indexer.onEvent({ contract: "Aqua", event: "Shipped" }, async ({ event, context }) => {
   const id = strategyId(event.params.maker, event.params.app, event.params.strategyHash);
+  // ShipStrategy.s.sol always batches attest then ship in the same transaction, so a same-block
+  // attestation is already indexed by the time this handler runs. A strategy shipped without
+  // ever attesting (or attesting with an empty groupNames) simply has no row here.
+  const attestation = await context.StrategyAttestation.get(event.params.strategyHash.toLowerCase());
   context.Strategy.set({
     id,
     maker: event.params.maker,
@@ -54,6 +68,7 @@ indexer.onEvent({ contract: "Aqua", event: "Shipped" }, async ({ event, context 
     shippedAtTxHash: event.transaction.hash,
     dockedAt: undefined,
     dockedAtTxHash: undefined,
+    groupNames: attestation !== undefined && attestation.groupNames.length > 0 ? attestation.groupNames : undefined,
   });
   // Marks the maker as a known Strategy Wallet so the Transfer handler below can decide in O(1)
   // whether a transfer is balance-relevant. Idempotent: re-set on every Shipped event from the

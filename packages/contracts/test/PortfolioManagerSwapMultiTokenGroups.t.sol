@@ -166,7 +166,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         amounts[1] = balB;
         amounts[2] = balC;
 
-        strategyValidator.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens, new string[](0));
 
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -471,7 +471,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         amounts[1] = 1_000_000e18;
         amounts[2] = 1_000_000e18;
 
-        strategyValidator.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens, new string[](0));
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), tokens, amounts);
 
@@ -792,7 +792,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         tokenA.approve(address(aqua), type(uint256).max);
         tokenC.approve(address(aqua), type(uint256).max);
         vm.stopPrank();
-        strategyValidator.attestBuildParameters(order, shipTokens);
+        strategyValidator.attestBuildParameters(order, shipTokens, new string[](0));
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), shipTokens, shipAmounts);
     }
@@ -858,7 +858,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         tokenA.approve(address(aqua), type(uint256).max);
         tokenB.approve(address(aqua), type(uint256).max);
         vm.stopPrank();
-        strategyValidator.attestBuildParameters(order, shipTokens);
+        strategyValidator.attestBuildParameters(order, shipTokens, new string[](0));
         vm.prank(maker);
         aqua.ship(address(router), abi.encode(order), shipTokens, shipAmounts);
 

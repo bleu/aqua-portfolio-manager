@@ -157,7 +157,7 @@ contract PortfolioManagerOpcodesTest is Test {
         amounts[0] = tokenInLedgerAmount;
         amounts[1] = INITIAL_BALANCE;
 
-        strategyValidator.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens, new string[](0));
 
         vm.prank(maker);
         bytes32 strategyHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -550,7 +550,7 @@ contract PortfolioManagerOpcodesTest is Test {
         address[] memory declaredTokens = new address[](2);
         declaredTokens[0] = address(tokenA);
         declaredTokens[1] = address(tokenB);
-        strategyValidator.attestBuildParameters(order, declaredTokens);
+        strategyValidator.attestBuildParameters(order, declaredTokens, new string[](0));
 
         address[] memory tokens = new address[](3);
         tokens[0] = address(tokenA);
