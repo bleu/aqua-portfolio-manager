@@ -22,7 +22,7 @@ export function EmptyState({ icon, heading, description, action, className }: Em
       )}
       <div className="space-y-2">
         <h2 className="text-lg font-semibold text-white">{heading}</h2>
-        <p className="mx-auto max-w-md text-sm text-gray-400">{description}</p>
+        <p className="mx-auto max-w-xl text-sm text-gray-400">{description}</p>
       </div>
       {action}
     </Card>
