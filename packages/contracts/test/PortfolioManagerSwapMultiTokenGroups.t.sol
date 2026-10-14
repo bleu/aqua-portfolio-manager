@@ -17,6 +17,8 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../src/interfaces/AggregatorV3Interface.sol";
@@ -25,10 +27,13 @@ import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 /// @notice Tests group valuation, member liquidity, and feed freshness through SwapVM swaps.
 contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
+    uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -50,9 +55,21 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
 
         aqua = new Aqua();
-        strategyValidator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            address(sequencerFeed), address(tokenRegistry), address(feedRegistry)
+        );
         router = new PortfolioManagerRouter(
-            address(aqua), address(0), address(this), "PM", "1", address(strategyValidator), address(sequencerFeed)
+            address(aqua),
+            address(0),
+            address(this),
+            "PM",
+            "1",
+            address(strategyValidator),
+            address(sequencerFeed),
+            address(tokenRegistry),
+            address(feedRegistry)
         );
 
         tokenA = new TokenMock("Token A", "TKA");
@@ -68,15 +85,21 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker = new MockTaker(aqua, router, address(this));
 
         PortfolioManagerArgsCodec.Member[] memory group0Members = new PortfolioManagerArgsCodec.Member[](2);
-        group0Members[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
-        group0Members[1] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        group0Members[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenA)),
+            feedIndex: feedRegistry.register(address(feedA), DEFAULT_MAX_STALENESS)
+        });
+        group0Members[1] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenB)),
+            feedIndex: feedRegistry.register(address(feedB), DEFAULT_MAX_STALENESS)
+        });
         groups.push(PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: group0Members}));
 
         PortfolioManagerArgsCodec.Member[] memory group1Members = new PortfolioManagerArgsCodec.Member[](1);
-        group1Members[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
+        group1Members[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenC)),
+            feedIndex: feedRegistry.register(address(feedC), DEFAULT_MAX_STALENESS)
+        });
         groups.push(PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: group1Members}));
     }
 
@@ -260,7 +283,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     function _checkHighDecimalPriceSettlement(bool fractionalInput, bool exactIn) internal {
         feedA = new MockAggregatorV3(24, 1_500_000, block.timestamp);
-        groups[0].members[0].feed = address(feedA);
+        groups[0].members[0].feedIndex = feedRegistry.register(address(feedA), DEFAULT_MAX_STALENESS);
         feedB.setAnswer(1, block.timestamp);
         feedC.setAnswer(1, block.timestamp);
         ISwapVM.Order memory order = _buildOrder(0);
@@ -744,13 +767,15 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     {
         PortfolioManagerArgsCodec.Member[] memory numeraireMembers = new PortfolioManagerArgsCodec.Member[](1);
         numeraireMembers[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(0), maxStaleness: 0});
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
         PortfolioManagerArgsCodec.Group[] memory customGroups = new PortfolioManagerArgsCodec.Group[](2);
         customGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembers});
 
         PortfolioManagerArgsCodec.Member[] memory pricedMembers = new PortfolioManagerArgsCodec.Member[](1);
-        pricedMembers[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
+        pricedMembers[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenC)),
+            feedIndex: feedRegistry.register(address(feedC), DEFAULT_MAX_STALENESS)
+        });
         customGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: pricedMembers});
 
         order = _buildOrderWithGroups(customGroups, 0, maxDeviationBps);
@@ -797,6 +822,61 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         });
         uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "numeraire member must price off its native balance directly");
+    }
+
+    /// @dev The test above only ever pairs one numeraire member against one priced member --
+    ///      this is the fully-free case: every member on both sides is a numeraire (feed ==
+    ///      address(0)), no Bridge registered (no Bridge means the groups are declared to already
+    ///      share one unit), so the swap must settle with zero oracle calls at all, pricing
+    ///      purely off raw balances. feedA/feedB/feedC are all deployed in setUp() for other
+    ///      tests in this file but never wired into either member here -- the assertions below
+    ///      prove none of them are ever touched, not just that the two feeds this test cares
+    ///      about are untouched.
+    function test_SwapBetweenTwoNumeraireMembersNeedsNoOracleCallAtAll() public {
+        PortfolioManagerArgsCodec.Member[] memory numeraireMembersA = new PortfolioManagerArgsCodec.Member[](1);
+        numeraireMembersA[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
+        PortfolioManagerArgsCodec.Group[] memory customGroups = new PortfolioManagerArgsCodec.Group[](2);
+        customGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembersA});
+
+        PortfolioManagerArgsCodec.Member[] memory numeraireMembersB = new PortfolioManagerArgsCodec.Member[](1);
+        numeraireMembersB[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenB)), feedIndex: 0});
+        customGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembersB});
+
+        ISwapVM.Order memory order = _buildOrderWithGroups(customGroups, 0, 0);
+
+        address[] memory shipTokens = new address[](2);
+        shipTokens[0] = address(tokenA);
+        shipTokens[1] = address(tokenB);
+        uint256[] memory shipAmounts = new uint256[](2);
+        shipAmounts[0] = 100_000e18;
+        shipAmounts[1] = 100_000e18;
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenB.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+        strategyValidator.attestBuildParameters(order, shipTokens);
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), shipTokens, shipAmounts);
+
+        bytes memory latestRoundDataCall = abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector);
+        vm.expectCall(address(feedA), latestRoundDataCall, 0);
+        vm.expectCall(address(feedB), latestRoundDataCall, 0);
+        vm.expectCall(address(feedC), latestRoundDataCall, 0);
+
+        uint256 amountIn = 1_000e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenB), address(tokenA), amountIn);
+
+        // Equal weights, both groups worth 100,000 raw-balance units -- same xy=k math as any
+        // other balanced single-member pair, just with neither side ever priced by an oracle.
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "two numeraire members must price off raw balances alone");
     }
 
     /// @dev ADR-0016's per-trade deviation step cap is unit-agnostic by construction -- it only

@@ -11,12 +11,12 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 /// @notice Check opcode and argument-length bytes directly against the SwapVM wire format.
 contract PortfolioManagerProgramBuilderTest is Test {
     function _groups() internal pure returns (PortfolioManagerArgsCodec.Group[] memory groups) {
-        address[2] memory tokens = [address(0x1111), address(0x2222)];
-        address[2] memory feeds = [address(0xFEED1), address(0xFEED2)];
+        uint16[2] memory tokenIndices = [uint16(1), uint16(2)];
+        uint16[2] memory feedIndices = [uint16(10), uint16(11)];
         groups = new PortfolioManagerArgsCodec.Group[](2);
         for (uint256 i = 0; i < 2; i++) {
             PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-            members[0] = PortfolioManagerArgsCodec.Member({token: tokens[i], feed: feeds[i], maxStaleness: 3600});
+            members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: tokenIndices[i], feedIndex: feedIndices[i]});
             groups[i] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members});
         }
     }

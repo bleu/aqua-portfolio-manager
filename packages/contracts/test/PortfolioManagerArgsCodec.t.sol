@@ -4,17 +4,23 @@ pragma solidity 0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 
+/// @notice Tests the encoding layer only (build/parse/decodeTrusted) -- indices are plain
+///         uint16s here, never resolved through a real registry. Resolution (tokenIndex/
+///         feedIndex -> address) is tested where it actually happens: PortfolioManagerSwap.t.sol
+///         and PortfolioManagerStrategyValidator.t.sol, both of which need real deployed
+///         registries.
 contract PortfolioManagerArgsCodecTest is Test {
     uint256 constant WAD = 1e18;
 
-    address constant TOKEN_A = address(0xA11CE);
-    address constant TOKEN_B = address(0xB0B);
-    address constant TOKEN_C = address(0xC0FFEE);
-    address constant FEED_A = address(0xFEEDA);
-    address constant FEED_B = address(0xFEEDB);
-    address constant FEED_C = address(0xFEEDC);
-
-    uint256 constant STALENESS = 3600;
+    // Index 0 is reserved (PortfolioManagerZeroTokenIndex / numeraire) -- every token index here
+    // starts at 1, every feed index at 1 unless a test specifically wants the numeraire sentinel.
+    uint16 constant TOKEN_A = 1;
+    uint16 constant TOKEN_B = 2;
+    uint16 constant TOKEN_C = 3;
+    uint16 constant FEED_A = 10;
+    uint16 constant FEED_B = 11;
+    uint16 constant FEED_C = 12;
+    uint16 constant NUMERAIRE = 0;
 
     // See FixedPointMath.t.sol for why internal pure library calls need an external wrapper
     // for `vm.expectRevert` to intercept the revert at the right call depth.
@@ -26,10 +32,19 @@ contract PortfolioManagerArgsCodecTest is Test {
         return PortfolioManagerArgsCodec.build(groups, feeBps);
     }
 
+    function _callBuildWithBridges(
+        PortfolioManagerArgsCodec.Group[] memory groups,
+        uint32 feeBps,
+        uint32 maxDeviationBps,
+        PortfolioManagerArgsCodec.Bridge[] memory bridges
+    ) external pure returns (bytes memory) {
+        return PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps, bridges);
+    }
+
     function _callParse(bytes calldata args)
         external
         pure
-        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32)
+        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32, PortfolioManagerArgsCodec.Bridge[] memory)
     {
         return PortfolioManagerArgsCodec.parse(args);
     }
@@ -37,18 +52,18 @@ contract PortfolioManagerArgsCodecTest is Test {
     function _callDecodeTrusted(bytes calldata args)
         external
         pure
-        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32)
+        returns (PortfolioManagerArgsCodec.Group[] memory, uint32, uint32, PortfolioManagerArgsCodec.Bridge[] memory)
     {
         return PortfolioManagerArgsCodec.decodeTrusted(args);
     }
 
-    function _singleMemberGroup(uint256 weight, address token, address feed)
+    function _singleMemberGroup(uint256 weight, uint16 tokenIndex, uint16 feedIndex)
         private
         pure
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: STALENESS});
+        members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: tokenIndex, feedIndex: feedIndex});
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
@@ -61,15 +76,14 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5); // 2bps, ADR-0008 default
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
 
         assertEq(parsed.length, 2);
         assertEq(parsed[0].weight, 0.5e18);
         assertEq(parsed[0].members.length, 1);
-        assertEq(parsed[0].members[0].token, TOKEN_A);
-        assertEq(parsed[0].members[0].feed, FEED_A);
-        assertEq(parsed[0].members[0].maxStaleness, STALENESS);
+        assertEq(parsed[0].members[0].tokenIndex, TOKEN_A);
+        assertEq(parsed[0].members[0].feedIndex, FEED_A);
         assertEq(parsed[1].weight, 0.5e18);
         assertEq(parsedFeeBps, 2e5);
         assertEq(parsedMaxDeviationBps, 0);
@@ -81,7 +95,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5, 5e7); // 5% circuit breaker
-        (,, uint32 parsedMaxDeviationBps) = this._callParse(args);
+        (,, uint32 parsedMaxDeviationBps,) = this._callParse(args);
 
         assertEq(parsedMaxDeviationBps, 5e7);
     }
@@ -93,11 +107,11 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[2] = _singleMemberGroup(0.2e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, 3);
         for (uint256 i = 0; i < 3; i++) {
-            assertEq(parsed[i].members[0].token, groups[i].members[0].token);
+            assertEq(parsed[i].members[0].tokenIndex, groups[i].members[0].tokenIndex);
             assertEq(parsed[i].weight, groups[i].weight);
         }
         assertEq(parsedFeeBps, 0);
@@ -105,24 +119,23 @@ contract PortfolioManagerArgsCodecTest is Test {
 
     function test_BuildThenParseRoundTripsMultiTokenGroup() public view {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
-        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: STALENESS});
-        members[1] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: STALENESS * 2});
+        members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: TOKEN_A, feedIndex: FEED_A});
+        members[1] = PortfolioManagerArgsCodec.Member({tokenIndex: TOKEN_B, feedIndex: FEED_B});
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.6e18, members: members});
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, 2);
         assertEq(parsed[0].weight, 0.6e18);
         assertEq(parsed[0].members.length, 2);
-        assertEq(parsed[0].members[0].token, TOKEN_A);
-        assertEq(parsed[0].members[0].feed, FEED_A);
-        assertEq(parsed[0].members[0].maxStaleness, STALENESS);
-        assertEq(parsed[0].members[1].token, TOKEN_B);
-        assertEq(parsed[0].members[1].maxStaleness, STALENESS * 2);
+        assertEq(parsed[0].members[0].tokenIndex, TOKEN_A);
+        assertEq(parsed[0].members[0].feedIndex, FEED_A);
+        assertEq(parsed[0].members[1].tokenIndex, TOKEN_B);
+        assertEq(parsed[0].members[1].feedIndex, FEED_B);
         assertEq(parsed[1].weight, 0.4e18);
         assertEq(parsedFeeBps, 1e5);
     }
@@ -137,16 +150,20 @@ contract PortfolioManagerArgsCodecTest is Test {
             // Last weight soaks up the remainder so the set always sums to exactly WAD.
             uint256 weight = i == n - 1 ? remaining : remaining / (n - i);
             remaining -= weight;
-            groups[i] = _singleMemberGroup(weight, address(uint160(0x1000 + i)), address(uint160(0x2000 + i)));
+            groups[i] = _singleMemberGroup(weight, uint16(1 + i), uint16(10 + i));
         }
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, n);
         for (uint256 i = 0; i < n; i++) {
-            assertEq(parsed[i].members[0].token, groups[i].members[0].token);
-            assertEq(parsed[i].weight, groups[i].weight);
+            assertEq(parsed[i].members[0].tokenIndex, groups[i].members[0].tokenIndex);
+            // Weight round-trips through PM_BPS scale (1e9), not WAD -- exact for a weight
+            // that's already a multiple of 1e9, off by up to n * 1e9 (worst case, all of it
+            // landing on the last group) otherwise. That's ~1e-9 relative error, far inside any
+            // real allocation's precision needs.
+            assertApproxEqAbs(parsed[i].weight, groups[i].weight, n * 1e9);
         }
         assertEq(parsedFeeBps, feeBps);
     }
@@ -155,17 +172,17 @@ contract PortfolioManagerArgsCodecTest is Test {
 
     function test_BuildThenDecodeTrustedMatchesParseOnMultiTokenGroup() public view {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
-        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: STALENESS});
-        members[1] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: STALENESS * 2});
+        members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: TOKEN_A, feedIndex: FEED_A});
+        members[1] = PortfolioManagerArgsCodec.Member({tokenIndex: TOKEN_B, feedIndex: FEED_B});
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.6e18, members: members});
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5, 5e7);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
-        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps,) =
             this._callDecodeTrusted(args);
 
         assertEq(decoded.length, parsed.length);
@@ -173,9 +190,8 @@ contract PortfolioManagerArgsCodecTest is Test {
             assertEq(decoded[i].weight, parsed[i].weight);
             assertEq(decoded[i].members.length, parsed[i].members.length);
             for (uint256 j = 0; j < parsed[i].members.length; j++) {
-                assertEq(decoded[i].members[j].token, parsed[i].members[j].token);
-                assertEq(decoded[i].members[j].feed, parsed[i].members[j].feed);
-                assertEq(decoded[i].members[j].maxStaleness, parsed[i].members[j].maxStaleness);
+                assertEq(decoded[i].members[j].tokenIndex, parsed[i].members[j].tokenIndex);
+                assertEq(decoded[i].members[j].feedIndex, parsed[i].members[j].feedIndex);
             }
         }
         assertEq(decodedFeeBps, parsedFeeBps);
@@ -191,19 +207,19 @@ contract PortfolioManagerArgsCodecTest is Test {
         for (uint256 i = 0; i < n; i++) {
             uint256 weight = i == n - 1 ? remaining : remaining / (n - i);
             remaining -= weight;
-            groups[i] = _singleMemberGroup(weight, address(uint160(0x1000 + i)), address(uint160(0x2000 + i)));
+            groups[i] = _singleMemberGroup(weight, uint16(1 + i), uint16(10 + i));
         }
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, feeBps, maxDeviationBps);
-        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
-        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps) =
+        (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps,) =
             this._callDecodeTrusted(args);
 
         assertEq(decoded.length, parsed.length);
         for (uint256 i = 0; i < n; i++) {
             assertEq(decoded[i].weight, parsed[i].weight);
-            assertEq(decoded[i].members[0].token, parsed[i].members[0].token);
+            assertEq(decoded[i].members[0].tokenIndex, parsed[i].members[0].tokenIndex);
         }
         assertEq(decodedFeeBps, parsedFeeBps);
         assertEq(decodedMaxDeviationBps, parsedMaxDeviationBps);
@@ -270,9 +286,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         uint256 n = PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP + 1;
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](n);
         for (uint256 i = 0; i < n; i++) {
-            members[i] = PortfolioManagerArgsCodec.Member({
-                token: address(uint160(0x1000 + i)), feed: address(uint160(0x2000 + i)), maxStaleness: STALENESS
-            });
+            members[i] = PortfolioManagerArgsCodec.Member({tokenIndex: uint16(1 + i), feedIndex: uint16(10 + i)});
         }
         // group[1] is never reached -- group[0]'s own too-many-members check reverts first --
         // it's here only so the array itself satisfies MIN_GROUPS.
@@ -284,49 +298,184 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, 0);
     }
 
-    /// @notice Valid group/member counts can still exceed the 255-byte encoding limit.
+    /// @notice Valid group/member counts can still exceed the 255-byte encoding limit --
+    ///         though with the 4-byte member entry (BLEUDEV-412/ADR-0018) this now needs far
+    ///         more groups/members than it used to to actually hit the ceiling.
     function test_BuildRevertsOnArgsTooLargeEvenWhenEachAxisIsWithinBounds() public {
-        PortfolioManagerArgsCodec.Member[] memory members0 =
-            new PortfolioManagerArgsCodec.Member[](PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP);
-        PortfolioManagerArgsCodec.Member[] memory members1 =
-            new PortfolioManagerArgsCodec.Member[](PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP);
-        for (uint256 i = 0; i < PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP; i++) {
-            members0[i] = PortfolioManagerArgsCodec.Member({
-                token: address(uint160(0x1000 + i)), feed: address(uint160(0x2000 + i)), maxStaleness: STALENESS
-            });
-            members1[i] = PortfolioManagerArgsCodec.Member({
-                token: address(uint160(0x3000 + i)), feed: address(uint160(0x4000 + i)), maxStaleness: STALENESS
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            PortfolioManagerArgsCodec.Member[] memory members =
+                new PortfolioManagerArgsCodec.Member[](PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP);
+            for (uint256 j = 0; j < PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP; j++) {
+                members[j] = PortfolioManagerArgsCodec.Member({
+                    tokenIndex: uint16(1 + i * 10 + j), feedIndex: uint16(100 + i * 10 + j)
+                });
+            }
+            groups[i] = PortfolioManagerArgsCodec.Group({weight: 0.25e18, members: members});
+        }
+
+        // 1 (count) + 4 * (5 header + 5*4 members) + 1 (bridgeCount) + 8 (fee+dev) = 1+4*25+1+8=110.
+        // Bump bridges to push it over: all 6 distinct pairs among 4 groups, 25 bytes each = 150 more.
+        PortfolioManagerArgsCodec.Bridge[] memory bridges =
+            new PortfolioManagerArgsCodec.Bridge[](PortfolioManagerArgsCodec.MAX_BRIDGES);
+        uint8[2][6] memory pairs = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+        for (uint256 i = 0; i < PortfolioManagerArgsCodec.MAX_BRIDGES; i++) {
+            bridges[i] = PortfolioManagerArgsCodec.Bridge({
+                groupA: pairs[i][0], groupB: pairs[i][1], feed: address(uint160(0x9000 + i)), maxStaleness: 3600
             });
         }
-        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members0});
-        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members1});
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 457));
-        this._callBuild(groups, 0);
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 260));
+        this._callBuildWithBridges(groups, 0, 0, bridges);
     }
 
-    /// @dev A zero-feed member designates the strategy's numeraire (BLEUDEV-412/ADR-0017) -- it no
-    ///      longer rejects outright, it just round-trips with feed == address(0).
+    /// @dev Feed index 0 designates its own group's numeraire (BLEUDEV-412/ADR-0017) -- it no
+    ///      longer rejects outright, it just round-trips with feedIndex == 0.
     function test_BuildThenParseRoundTripsOneNumeraireMember() public view {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, address(0));
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, NUMERAIRE);
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
-        (PortfolioManagerArgsCodec.Group[] memory parsed,,) = this._callParse(args);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
 
-        assertEq(parsed[0].members[0].feed, address(0));
-        assertEq(parsed[1].members[0].feed, FEED_B);
+        assertEq(parsed[0].members[0].feedIndex, NUMERAIRE);
+        assertEq(parsed[1].members[0].feedIndex, FEED_B);
     }
 
-    function test_BuildRevertsOnMultipleNumeraireMembers() public {
+    /// @dev The numeraire check is scoped per group (BLEUDEV-412/ADR-0017) -- two different
+    ///      groups each picking their own zero-feed member is not ambiguous, since every
+    ///      group's own value is still well-defined. Each group ends up denominated in a
+    ///      different unit; nothing here requires them to match.
+    function test_BuildThenParseRoundTripsOneNumeraireMemberPerGroup() public view {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, address(0));
-        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, address(0));
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, NUMERAIRE);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, NUMERAIRE);
 
-        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
+
+        assertEq(parsed[0].members[0].feedIndex, NUMERAIRE);
+        assertEq(parsed[1].members[0].feedIndex, NUMERAIRE);
+    }
+
+    function test_BuildRevertsOnMultipleNumeraireMembersInSameGroup() public {
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](2);
+        members[0] = PortfolioManagerArgsCodec.Member({tokenIndex: TOKEN_A, feedIndex: NUMERAIRE});
+        members[1] = PortfolioManagerArgsCodec.Member({tokenIndex: TOKEN_B, feedIndex: NUMERAIRE});
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members});
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_C, FEED_C);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector, 0)
+        );
         this._callBuild(groups, 0);
+    }
+
+    function test_BuildRevertsOnZeroTokenIndex() public {
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, 0, FEED_A);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroTokenIndex.selector, 0, 0));
+        this._callBuild(groups, 0);
+    }
+
+    // ---- bridges (ADR-0017): feeds between groups whose units differ, for the ship-time
+    // deviation check only. Bridge entries still carry raw addresses, not registry indices --
+    // a strategy registers at most a handful, nowhere near the per-member budget pressure. ----
+
+    address constant BRIDGE_FEED = address(0xFEEDC);
+
+    function _twoGroupUniverse() private pure returns (PortfolioManagerArgsCodec.Group[] memory groups) {
+        groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+    }
+
+    function test_BuildThenParseRoundTripsOneBridge() public view {
+        PortfolioManagerArgsCodec.Group[] memory groups = _twoGroupUniverse();
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: BRIDGE_FEED, maxStaleness: 3600});
+
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0, 0, bridges);
+        (,,, PortfolioManagerArgsCodec.Bridge[] memory parsed) = this._callParse(args);
+
+        assertEq(parsed.length, 1);
+        assertEq(parsed[0].groupA, 0);
+        assertEq(parsed[0].groupB, 1);
+        assertEq(parsed[0].feed, BRIDGE_FEED);
+        assertEq(parsed[0].maxStaleness, 3600);
+    }
+
+    /// @dev A 2-group universe with no bridges round-trips exactly as before -- the new section
+    ///      is an empty, 1-byte count, not a required-but-unused field.
+    function test_BuildThenParseRoundTripsNoBridges() public view {
+        bytes memory args = PortfolioManagerArgsCodec.build(_twoGroupUniverse(), 0);
+        (,,, PortfolioManagerArgsCodec.Bridge[] memory parsed) = this._callParse(args);
+        assertEq(parsed.length, 0);
+    }
+
+    function test_BuildRevertsOnBridgeGroupIndexOutOfRange() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 2, feed: BRIDGE_FEED, maxStaleness: 3600});
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerBridgeInvalidGroupIndex.selector, 2)
+        );
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_BuildRevertsOnBridgeSameGroup() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 0, feed: BRIDGE_FEED, maxStaleness: 3600});
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerBridgeSameGroup.selector, 0));
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_BuildRevertsOnBridgeZeroFeedAddress() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(0), maxStaleness: 3600});
+
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerBridgeZeroFeedAddress.selector);
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    /// @dev Registering a pair twice is ambiguous regardless of which side is groupA/groupB in
+    ///      each entry.
+    function test_BuildRevertsOnDuplicateBridgeRegardlessOfSide() public {
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](2);
+        bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: BRIDGE_FEED, maxStaleness: 3600});
+        bridges[1] = PortfolioManagerArgsCodec.Bridge({groupA: 1, groupB: 0, feed: BRIDGE_FEED, maxStaleness: 3600});
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerDuplicateBridge.selector, 1, 0)
+        );
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_BuildRevertsOnTooManyBridges() public {
+        uint256 n = PortfolioManagerArgsCodec.MAX_BRIDGES + 1;
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](n);
+        for (uint256 i = 0; i < n; i++) {
+            bridges[i] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: BRIDGE_FEED, maxStaleness: 3600});
+        }
+
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyBridges.selector, n));
+        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+    }
+
+    function test_ParseRevertsOnMissingBridgeCount() public {
+        // Valid 2-group universe (sums to WAD), but no trailing bridge-count byte.
+        bytes memory malformed = abi.encodePacked(
+            uint8(2), uint32(0.5e9), uint8(1), TOKEN_A, FEED_A, uint32(0.5e9), uint8(1), TOKEN_B, FEED_B
+        );
+
+        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingBridgeCount.selector);
+        this._callParse(malformed);
     }
 
     function test_BuildRevertsOnDuplicateTokenAcrossGroups() public {
@@ -354,41 +503,6 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS + 1));
     }
 
-    /// @notice A 24-hour maxStaleness -- matching common stablecoin/LST Chainlink feed
-    ///         heartbeats on Base and Ethereum -- must build, and round-trip through parse,
-    ///         without hitting the encoding's own age ceiling.
-    function test_BuildThenParseRoundTripsMaxStalenessAbovePreviousUint16Ceiling() public view {
-        uint256 oneDay = 86_400;
-        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
-        membersA[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: oneDay});
-        PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
-        membersB[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: oneDay});
-
-        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
-        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
-
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
-        (PortfolioManagerArgsCodec.Group[] memory parsed,,) = this._callParse(args);
-        assertEq(parsed[0].members[0].maxStaleness, oneDay);
-        assertEq(parsed[1].members[0].maxStaleness, oneDay);
-    }
-
-    function test_BuildRevertsOnMaxStalenessAboveUint24Ceiling() public {
-        uint256 tooLarge = uint256(type(uint24).max) + 1;
-        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: tooLarge});
-
-        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
-        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members});
-        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMaxStalenessOutOfRange.selector, tooLarge)
-        );
-        this._callBuild(groups, 0);
-    }
-
     // ---- parse: hand-crafted args must be independently validated, not just trust build() ----
 
     function test_ParseRevertsWhenHandCraftedWeightsDoNotSumToWad() public {
@@ -396,17 +510,15 @@ contract PortfolioManagerArgsCodecTest is Test {
         // bypassing build().
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint64(0.5e18),
+            uint32(0.5e9),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint24(STALENESS),
-            uint64(0.3e18),
+            uint32(0.3e9),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint24(STALENESS),
-            uint32(0)
+            uint8(0) // bridgeCount
         );
 
         vm.expectRevert(
@@ -419,17 +531,15 @@ contract PortfolioManagerArgsCodecTest is Test {
         // Weights [0, WAD] pass the sum check but must fail the nonzero-weight check.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint64(0),
+            uint32(0),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint24(STALENESS),
-            uint64(WAD),
+            uint32(1e9),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint24(STALENESS),
-            uint32(0)
+            uint8(0) // bridgeCount
         );
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroWeight.selector, 0));
@@ -468,7 +578,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         // 2 groups (satisfies MIN_GROUPS) -- group[0]'s member count alone is enough to revert,
         // no member entries or a real group[1] needed.
         bytes memory malformed =
-            abi.encodePacked(uint8(2), uint64(WAD), uint8(PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP + 1));
+            abi.encodePacked(uint8(2), uint32(1e9), uint8(PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP + 1));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -480,7 +590,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnTruncatedGroupHeader() public {
-        // Declares 2 groups (satisfies MIN_GROUPS) but only supplies 4 of the required 9
+        // Declares 2 groups (satisfies MIN_GROUPS) but only supplies 4 of the required 5
         // header bytes for the first one.
         bytes memory malformed = abi.encodePacked(uint8(2), uint32(0));
 
@@ -489,51 +599,53 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnTruncatedMemberEntry() public {
-        // Valid group header (1 member), 2 groups declared, but only 10 of the required 43
-        // bytes supplied for the first member.
-        bytes memory malformed = abi.encodePacked(uint8(2), uint64(WAD), uint8(1), uint80(0));
+        // Valid group header (1 member), 2 groups declared, but only 2 of the required 4 bytes
+        // supplied for the first member.
+        bytes memory malformed = abi.encodePacked(uint8(2), uint32(1e9), uint8(1), uint16(0));
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingMemberEntry.selector);
         this._callParse(malformed);
     }
 
     function test_ParseRevertsOnMultipleNumeraireMembers() public {
-        // Two complete, otherwise-valid single-member groups (weights sum to WAD), both with
-        // feed == address(0) -- parse() must independently reject this, not just build().
+        // One group with two zero-feed members (weights sum to WAD) -- parse() must
+        // independently reject this, not just build().
         bytes memory args = abi.encodePacked(
             uint8(2),
-            uint64(0.5e18),
-            uint8(1),
+            uint32(0.5e9),
+            uint8(2),
             TOKEN_A,
-            address(0),
-            uint24(STALENESS),
-            uint64(0.5e18),
-            uint8(1),
+            NUMERAIRE,
             TOKEN_B,
-            address(0),
-            uint24(STALENESS),
+            NUMERAIRE,
+            uint32(0.5e9),
+            uint8(1),
+            TOKEN_C,
+            FEED_C,
+            uint8(0), // bridgeCount
             uint32(0),
             uint32(0)
         );
 
-        vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector, 0)
+        );
         this._callParse(args);
     }
 
     function test_ParseRevertsOnMissingFeeBps() public {
-        // Valid 2-group universe (sums to WAD) but no trailing feeBps bytes.
+        // Valid 2-group universe (sums to WAD) and an empty bridge list, but no trailing feeBps bytes.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint64(0.5e18),
+            uint32(0.5e9),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint24(STALENESS),
-            uint64(0.5e18),
+            uint32(0.5e9),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint24(STALENESS)
+            uint8(0) // bridgeCount
         );
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingFeeBps.selector);
@@ -541,19 +653,19 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnMissingMaxDeviationBps() public {
-        // Valid 2-group universe plus feeBps, but no trailing maxDeviationBps bytes.
+        // Valid 2-group universe, an empty bridge list, plus feeBps, but no trailing
+        // maxDeviationBps bytes.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint64(0.5e18),
+            uint32(0.5e9),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint24(STALENESS),
-            uint64(0.5e18),
+            uint32(0.5e9),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint24(STALENESS),
+            uint8(0), // bridgeCount
             uint32(0)
         );
 

@@ -30,7 +30,7 @@ interface IPortfolioManagerStrategyValidator {
 
     /// @notice Requires matching token membership in the order and supplied list, in both directions.
     /// @dev The program must start with CURVE_OPCODE. This check does not read balances or prices.
-    function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external pure;
+    function requireUniverseMatches(ISwapVM.Order calldata order, address[] calldata tokens) external view;
 
     /// @notice Requires every cross-group pair's spot price to stay within maxDeviationBps of parity --
     ///         the same metric PortfolioManagerSwap's pre-trade guard checks, so an attested strategy

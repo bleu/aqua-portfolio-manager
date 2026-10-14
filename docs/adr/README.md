@@ -24,4 +24,5 @@ Follow the [documentation style](../STYLE.md).
 | [0014](0014-production-arbitrageur-design.md) | Run the production arbitrageur on Base | Proposed |
 | [0015](0015-two-program-builders-for-the-resolver-kyc-gate.md) | Ship both a gated and an ungated PM strategy builder | Accepted |
 | [0016](0016-per-trade-deviation-step-cap.md) | Cap per-trade deviation step instead of gating on pre-trade state | Accepted |
-| [0017](0017-numeraire-member-and-raw-price-reuse.md) | Let one member be the strategy's numeraire; fetch each feed once per swap | Accepted |
+| [0017](0017-numeraire-member-and-raw-price-reuse.md) | Let each group have its own numeraire member; fetch each feed once per swap | Accepted |
+| [0018](0018-registry-indexed-member-with-per-feed-staleness.md) | Reference tokens and feeds by registry index, with maxStaleness set per feed | Accepted |

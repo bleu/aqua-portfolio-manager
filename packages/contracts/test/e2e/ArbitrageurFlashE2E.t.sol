@@ -21,6 +21,8 @@ import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCod
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {GatedPortfolioManagerProgramBuilder} from "../../src/utils/GatedPortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../../src/utils/PortfolioManagerFeedRegistry.sol";
 import {Arbitrageur} from "../../src/Arbitrageur.sol";
 import {IArbitrageur} from "../../src/interfaces/IArbitrageur.sol";
 
@@ -68,7 +70,6 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     /// @dev Chainlink USDC/USD on Base — https://basescan.org/address/0x7e860098f58bbfc8648a4311b374b1d669a2bc6b
     address internal constant USDC_USD_FEED_BASE = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B;
 
-    uint256 internal constant MAX_STALENESS = 12 hours;
     uint256 internal constant GROUP_WEIGHT = 0.5e18;
 
     uint256 internal constant WETH_FUNDING = 20e18;
@@ -78,8 +79,20 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
     uint256 private constant OWNER_KEY = 0xA12BEE;
 
+    /// @dev Real Chainlink Base heartbeats, confirmed on-chain (BLEUDEV-412/ADR-0018 and
+    ///      packages/addresses/base-mainnet-feeds.json): WETH's feed updates every 1200s;
+    ///      BTC_USD_FEED_BASE here is the generic BTC/USD feed (not the WBTC-specific one in
+    ///      that file), whose own observed round-to-round gaps stay well under 1200s, so the
+    ///      same bound applies safely. Stablecoin feeds (USDT, USDC) almost never move enough
+    ///      to trigger an early update, so they wait out their full 86400s heartbeat round
+    ///      after round in practice.
+    uint32 internal constant MAJOR_MAX_STALENESS = 1200;
+    uint32 internal constant STABLE_MAX_STALENESS = 86400;
+
     PortfolioManagerRouter internal router;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     MultiSendCallOnly internal multiSendCallOnly;
     Safe internal pmSafe;
     Arbitrageur internal arbitrageur;
@@ -103,7 +116,11 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     function setUp() public override {
         super.setUp();
 
-        strategyValidator = new PortfolioManagerStrategyValidator(SEQUENCER_UPTIME_FEED_MAINNET);
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            SEQUENCER_UPTIME_FEED_MAINNET, address(tokenRegistry), address(feedRegistry)
+        );
         router = new PortfolioManagerRouter(
             address(aqua),
             WETH_BASE,
@@ -111,7 +128,9 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             "AquaPortfolioManager",
             "1",
             address(strategyValidator),
-            SEQUENCER_UPTIME_FEED_MAINNET
+            SEQUENCER_UPTIME_FEED_MAINNET,
+            address(tokenRegistry),
+            address(feedRegistry)
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(3); // distinct salt nonce from the other E2E fixtures' Safes
@@ -128,19 +147,23 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
         PortfolioManagerArgsCodec.Member[] memory stables = new PortfolioManagerArgsCodec.Member[](2);
         stables[0] = PortfolioManagerArgsCodec.Member({
-            token: address(usdt), feed: USDT_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(usdt)),
+            feedIndex: feedRegistry.register(USDT_USD_FEED_BASE, STABLE_MAX_STALENESS)
         });
         stables[1] = PortfolioManagerArgsCodec.Member({
-            token: address(usdc), feed: USDC_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(usdc)),
+            feedIndex: feedRegistry.register(USDC_USD_FEED_BASE, STABLE_MAX_STALENESS)
         });
         groups.push(PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: stables}));
 
         PortfolioManagerArgsCodec.Member[] memory majors = new PortfolioManagerArgsCodec.Member[](2);
         majors[0] = PortfolioManagerArgsCodec.Member({
-            token: address(wbtc), feed: BTC_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(wbtc)),
+            feedIndex: feedRegistry.register(BTC_USD_FEED_BASE, MAJOR_MAX_STALENESS)
         });
         majors[1] = PortfolioManagerArgsCodec.Member({
-            token: address(weth), feed: ETH_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(weth)),
+            feedIndex: feedRegistry.register(ETH_USD_FEED_BASE, MAJOR_MAX_STALENESS)
         });
         groups.push(PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: majors}));
     }

@@ -4,19 +4,9 @@
 
 ## Context
 
-[ADR-0012](0012-price-deviation-circuit-breaker.md) added a pre-trade spot-price deviation
-check: before pricing a swap, require the pair's *current* spot-price deviation from parity to
-be within `maxDeviationBps`. That ADR already recorded the consequence explicitly: "A blocked
-pair cannot correct itself through PM."
+[ADR-0012](0012-price-deviation-circuit-breaker.md) added a pre-trade spot-price deviation check: before pricing a swap, require the pair's *current* spot-price deviation from parity to be within `maxDeviationBps`. That ADR already recorded the consequence explicitly: "A blocked pair cannot correct itself through PM."
 
-An AI security audit (BLEUDEV-338, finding BLEUDEV-403) identified that this is reachable by an
-ordinary taker at the cost of one trade, not just an external event. The check only reads the
-pair's balances *before* the trade -- it does not bound what the trade itself does to those
-balances. A single sufficiently large swap can pass the pre-trade check while the pair is
-balanced, then push both directions' spot price past `maxDeviationBps`. Every subsequent trade,
-including the corrective one that would restore the pair, now starts from that excessive state
-and fails the same pre-trade check. The pair stays frozen until an external balance or
-oracle-price change happens, or the LP replaces the strategy.
+That freeze is reachable by an ordinary taker at the cost of one trade, not just an external event. The check only reads the pair's balances *before* the trade -- it does not bound what the trade itself does to those balances. A single sufficiently large swap can pass the pre-trade check while the pair is balanced, then push both directions' spot price past `maxDeviationBps`. Every subsequent trade, including the corrective one that would restore the pair, now starts from that excessive state and fails the same pre-trade check. The pair stays frozen until an external balance or oracle-price change happens, or the LP replaces the strategy.
 
 ## Decision
 
@@ -35,10 +25,7 @@ becomes imbalanced beyond `maxDeviationBps` can still trade; it just cannot cros
 `maxDeviationBps` of distance in one step, so fully correcting a large imbalance may take
 several smaller trades instead of one.
 
-This only changes the swap-side check in `PortfolioManagerSwap._portfolioManagerSwapXD`. The
-validation-time group-share check in `PortfolioManagerStrategyValidator` (ADR-0012's "during
-validation" bullet) is a separate mechanism and is unaffected by this ADR -- see BLEUDEV-407 for
-its own, independent fix aligning it to the swap guard's pairwise metric.
+This only changes the swap-side check in `PortfolioManagerSwap._portfolioManagerSwapXD`. The validation-time group-share check in `PortfolioManagerStrategyValidator` (ADR-0012's "during validation" bullet) is a separate mechanism and is unaffected by this ADR -- it gets its own, independent fix aligning it to the swap guard's pairwise metric.
 
 ## Alternatives considered
 
@@ -69,4 +56,3 @@ its own, independent fix aligning it to the swap guard's pairwise metric.
 ## References
 
 - `packages/contracts/src/PortfolioManagerSwap.sol` -- `_portfolioManagerSwapXD`'s deviation check.
-- BLEUDEV-403 (AI Audit finding, BLEUDEV-338).

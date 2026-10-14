@@ -1,6 +1,6 @@
 /// Single source of truth for the Base mainnet addresses this repo needs in more than one place.
 /// The actual data lives in ../base-mainnet.json, shared with the Solidity side (read live via
-/// vm.readFile/vm.parseJsonAddress in ShipStrategy.s.sol/Deploy.s.sol -- see that file's own
+/// vm.readFile/vm.parseJsonAddress in ShipTestStrategy.s.sol/Deploy.s.sol -- see that file's own
 /// comment). This module just imports it and gives TS consumers a typed, validated shape.
 import raw from "../base-mainnet.json" with { type: "json" };
 

@@ -21,6 +21,8 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
@@ -29,6 +31,7 @@ contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant FEE_BPS_SCALE = 1e9;
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
+    uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
 
     /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (0.1225%) — 1/4 tier.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
@@ -38,6 +41,8 @@ contract PortfolioManagerOpcodesTest is Test {
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     MockAggregatorV3 internal feedA;
@@ -55,9 +60,21 @@ contract PortfolioManagerOpcodesTest is Test {
         MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
 
         aqua = new Aqua();
-        strategyValidator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            address(sequencerFeed), address(tokenRegistry), address(feedRegistry)
+        );
         router = new PortfolioManagerRouter(
-            address(aqua), address(0), address(this), "PM", "1", address(strategyValidator), address(sequencerFeed)
+            address(aqua),
+            address(0),
+            address(this),
+            "PM",
+            "1",
+            address(strategyValidator),
+            address(sequencerFeed),
+            address(tokenRegistry),
+            address(feedRegistry)
         );
 
         tokenA = new TokenMock("Token A", "TKA");
@@ -78,12 +95,12 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function _singleMemberGroup(uint256 weight, address token, address feed)
         internal
-        pure
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        // Keep feeds fresh so these tests isolate ledger and fee behavior.
-        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: 18 hours});
+        members[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(token), feedIndex: feedRegistry.register(feed, DEFAULT_MAX_STALENESS)
+        });
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 

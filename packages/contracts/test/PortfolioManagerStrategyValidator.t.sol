@@ -12,12 +12,18 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Tests validation separately from shipping. Safe batch integration is covered in the E2E suite.
 contract PortfolioManagerStrategyValidatorTest is Test {
+    uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
+
     PortfolioManagerStrategyValidator internal validator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -33,7 +39,11 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
         // that OracleAdapter's post-recovery grace period has already elapsed.
         sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
-        validator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        validator = new PortfolioManagerStrategyValidator(
+            address(sequencerFeed), address(tokenRegistry), address(feedRegistry)
+        );
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -47,28 +57,25 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         maker = vm.addr(0x1234);
     }
 
-    /// @dev Universe checks do not read feeds. Deviation tests use priced feeds separately.
-    address internal constant DUMMY_FEED = address(0xFEED);
+    /// @dev Universe checks (`requireUniverseMatches`) never resolve a feed index at all --
+    ///      flattenTokens only touches tokenIndex. Any nonzero feedIndex works here.
+    uint16 internal constant DUMMY_FEED_INDEX = 1;
 
     function _groups(address[] memory declaredTokens, uint256[] memory weights)
         internal
-        pure
         returns (PortfolioManagerArgsCodec.Group[] memory groups)
     {
         groups = new PortfolioManagerArgsCodec.Group[](declaredTokens.length);
         for (uint256 i = 0; i < declaredTokens.length; i++) {
             PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-            members[0] =
-                PortfolioManagerArgsCodec.Member({token: declaredTokens[i], feed: DUMMY_FEED, maxStaleness: 1 hours});
+            members[0] = PortfolioManagerArgsCodec.Member({
+                tokenIndex: tokenRegistry.register(declaredTokens[i]), feedIndex: DUMMY_FEED_INDEX
+            });
             groups[i] = PortfolioManagerArgsCodec.Group({weight: weights[i], members: members});
         }
     }
 
-    function _order(address[] memory declaredTokens, uint256[] memory weights)
-        internal
-        view
-        returns (ISwapVM.Order memory)
-    {
+    function _order(address[] memory declaredTokens, uint256[] memory weights) internal returns (ISwapVM.Order memory) {
         bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declaredTokens, weights), 0);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -94,7 +101,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         );
     }
 
-    function test_PassesWhenDeclaredAndShippedUniversesMatch() public view {
+    function test_PassesWhenDeclaredAndShippedUniversesMatch() public {
         address[] memory declared = new address[](2);
         declared[0] = address(tokenA);
         declared[1] = address(tokenB);
@@ -231,7 +238,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     /// @dev A trailing non-curve instruction (e.g. the resolver KYC gate) does not re-price
     ///      anything, so it must stay allowed -- this is the real, shipped Gated program shape.
-    function test_AllowsTrailingNonCurveInstruction() public view {
+    function test_AllowsTrailingNonCurveInstruction() public {
         address[] memory declared = new address[](2);
         declared[0] = address(tokenA);
         declared[1] = address(tokenB);
@@ -283,16 +290,20 @@ contract PortfolioManagerStrategyValidatorTest is Test {
     // ===== requireBalancedWithinTolerance (ADR-0012) =====
 
     /// @dev Two single-member groups with unit prices and equal weights for balance checks.
-    function _toleranceOrder(uint32 maxDeviationBps) internal view returns (ISwapVM.Order memory) {
+    function _toleranceOrder(uint32 maxDeviationBps) internal returns (ISwapVM.Order memory) {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
-        membersA[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
+        membersA[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenA)),
+            feedIndex: feedRegistry.register(address(feedA), DEFAULT_MAX_STALENESS)
+        });
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
 
         PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
-        membersB[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        membersB[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenB)),
+            feedIndex: feedRegistry.register(address(feedB), DEFAULT_MAX_STALENESS)
+        });
         groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, maxDeviationBps);
@@ -480,16 +491,19 @@ contract PortfolioManagerStrategyValidatorTest is Test {
     /// @dev The ship-time pairwise deviation check (BLEUDEV-407) is just as unit-agnostic as the
     ///      swap-side step cap (BLEUDEV-403/ADR-0016) -- it only compares groupValuesWad ratios,
     ///      never an absolute USD amount -- so it must keep working unchanged against a numeraire
-    ///      member too. tokenA is its own numeraire (feed == address(0)); only feedB is read.
+    ///      member too. tokenA is its own numeraire (feedIndex == 0); only feedB is read.
     function test_ToleranceWorksWhenOneMemberIsItsOwnNumeraire() public {
         PortfolioManagerArgsCodec.Group[] memory numeraireGroups = new PortfolioManagerArgsCodec.Group[](2);
         PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
-        membersA[0] = PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(0), maxStaleness: 0});
+        membersA[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
         numeraireGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
 
         PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
-        membersB[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        membersB[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenB)),
+            feedIndex: feedRegistry.register(address(feedB), DEFAULT_MAX_STALENESS)
+        });
         numeraireGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
 
         bytes memory program = PortfolioManagerProgramBuilder.build(numeraireGroups, 0, 0.1e9); // 10%
@@ -523,6 +537,65 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         // Push 90% past parity -- same shape as test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand,
         // just denominated in tokenA instead of USD. Confirms the check still fires correctly.
         tokenA.mint(maker, 890_000e18); // tokenA group now 990,000e18 vs tokenB's 100,000e18
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev Group 0's numeraire is tokenA, group 1's is tokenC -- two different units, no shared
+    ///      numeraire (ADR-0017's per-group, bridge-feed design). The registered bridge quotes 1
+    ///      tokenA = 2 tokenC. At target, group 0's 100,000 tokenA bridge-adjusts to 200,000
+    ///      tokenC-equivalent, matching group 1's 200,000 tokenC exactly -- parity, must not
+    ///      revert. Confirms the bridge rate is actually consulted, not just accepted at build time.
+    function test_ToleranceWorksAcrossTwoDifferentGroupNumerairesWithABridgeFeed() public {
+        MockAggregatorV3 bridgeFeed = new MockAggregatorV3(18, 2e18, block.timestamp); // 1 tokenA = 2 tokenC
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+
+        PortfolioManagerArgsCodec.Member[] memory membersC = new PortfolioManagerArgsCodec.Member[](1);
+        membersC[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenC)), feedIndex: 0});
+        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersC});
+
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] =
+            PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(bridgeFeed), maxStaleness: 1 hours});
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, 0.1e9, bridges); // 10%
+        ISwapVM.Order memory order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        tokenA.mint(maker, 100_000e18);
+        tokenC.mint(maker, 200_000e18);
+        validator.requireBalancedWithinTolerance(order, maker); // bridge-adjusted parity, must not revert
+
+        // Drop group 1 far below its bridge-adjusted target share.
+        tokenC.burn(maker, 190_000e18); // tokenC now 10,000e18 vs tokenA's bridge-adjusted 200,000e18
         vm.expectPartialRevert(
             IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
         );
