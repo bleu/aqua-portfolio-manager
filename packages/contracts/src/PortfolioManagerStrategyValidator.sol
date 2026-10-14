@@ -114,5 +114,20 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
 
         uint256 argsLength = uint8(program[1]);
         args = program[2:2 + argsLength];
+
+        // Walks every instruction after the leading curve and rejects a second one -- its args
+        // would never be checked or bound to this validated curve. A non-curve trailing
+        // instruction (e.g. GatedPortfolioManagerProgramBuilder's resolver KYC gate) is fine:
+        // it can't touch pricing, only gate who's allowed to trade at all.
+        uint256 pc = 2 + argsLength;
+        while (pc < program.length) {
+            uint8 opcode = uint8(program[pc]);
+            require(
+                opcode != PortfolioManagerProgramBuilder.CURVE_OPCODE,
+                PortfolioManagerStrategyValidatorTrailingCurveInstruction()
+            );
+            uint256 trailingArgsLength = uint8(program[pc + 1]);
+            pc += 2 + trailingArgsLength;
+        }
     }
 }

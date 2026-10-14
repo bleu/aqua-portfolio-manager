@@ -302,7 +302,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members0});
         groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members1});
 
-        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 463));
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 457));
         this._callBuild(groups, 0);
     }
 
@@ -344,6 +344,41 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS + 1));
     }
 
+    /// @notice A 24-hour maxStaleness -- matching common stablecoin/LST Chainlink feed
+    ///         heartbeats on Base and Ethereum -- must build, and round-trip through parse,
+    ///         without hitting the encoding's own age ceiling.
+    function test_BuildThenParseRoundTripsMaxStalenessAbovePreviousUint16Ceiling() public view {
+        uint256 oneDay = 86_400;
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: oneDay});
+        PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
+        membersB[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_B, feed: FEED_B, maxStaleness: oneDay});
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
+
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        (PortfolioManagerArgsCodec.Group[] memory parsed,,) = this._callParse(args);
+        assertEq(parsed[0].members[0].maxStaleness, oneDay);
+        assertEq(parsed[1].members[0].maxStaleness, oneDay);
+    }
+
+    function test_BuildRevertsOnMaxStalenessAboveUint24Ceiling() public {
+        uint256 tooLarge = uint256(type(uint24).max) + 1;
+        PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
+        members[0] = PortfolioManagerArgsCodec.Member({token: TOKEN_A, feed: FEED_A, maxStaleness: tooLarge});
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: members});
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMaxStalenessOutOfRange.selector, tooLarge)
+        );
+        this._callBuild(groups, 0);
+    }
+
     // ---- parse: hand-crafted args must be independently validated, not just trust build() ----
 
     function test_ParseRevertsWhenHandCraftedWeightsDoNotSumToWad() public {
@@ -351,16 +386,16 @@ contract PortfolioManagerArgsCodecTest is Test {
         // bypassing build().
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint128(0.5e18),
+            uint64(0.5e18),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint16(STALENESS),
-            uint128(0.3e18),
+            uint24(STALENESS),
+            uint64(0.3e18),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint16(STALENESS),
+            uint24(STALENESS),
             uint32(0)
         );
 
@@ -374,16 +409,16 @@ contract PortfolioManagerArgsCodecTest is Test {
         // Weights [0, WAD] pass the sum check but must fail the nonzero-weight check.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint128(0),
+            uint64(0),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint16(STALENESS),
-            uint128(WAD),
+            uint24(STALENESS),
+            uint64(WAD),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint16(STALENESS),
+            uint24(STALENESS),
             uint32(0)
         );
 
@@ -423,7 +458,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         // 2 groups (satisfies MIN_GROUPS) -- group[0]'s member count alone is enough to revert,
         // no member entries or a real group[1] needed.
         bytes memory malformed =
-            abi.encodePacked(uint8(2), uint128(WAD), uint8(PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP + 1));
+            abi.encodePacked(uint8(2), uint64(WAD), uint8(PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP + 1));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -435,18 +470,18 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function test_ParseRevertsOnTruncatedGroupHeader() public {
-        // Declares 2 groups (satisfies MIN_GROUPS) but only supplies 10 of the required 17
+        // Declares 2 groups (satisfies MIN_GROUPS) but only supplies 4 of the required 9
         // header bytes for the first one.
-        bytes memory malformed = abi.encodePacked(uint8(2), uint80(0));
+        bytes memory malformed = abi.encodePacked(uint8(2), uint32(0));
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingGroupHeader.selector);
         this._callParse(malformed);
     }
 
     function test_ParseRevertsOnTruncatedMemberEntry() public {
-        // Valid group header (1 member), 2 groups declared, but only 10 of the required 44
+        // Valid group header (1 member), 2 groups declared, but only 10 of the required 43
         // bytes supplied for the first member.
-        bytes memory malformed = abi.encodePacked(uint8(2), uint128(WAD), uint8(1), uint80(0));
+        bytes memory malformed = abi.encodePacked(uint8(2), uint64(WAD), uint8(1), uint80(0));
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingMemberEntry.selector);
         this._callParse(malformed);
@@ -456,7 +491,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         // group[0]'s own zero-feed check reverts before group[1] would ever need to be
         // present -- 2 groups declared only to satisfy MIN_GROUPS.
         bytes memory malformed =
-            abi.encodePacked(uint8(2), uint128(WAD), uint8(1), TOKEN_A, address(0), uint16(STALENESS));
+            abi.encodePacked(uint8(2), uint64(WAD), uint8(1), TOKEN_A, address(0), uint24(STALENESS));
 
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroFeedAddress.selector, TOKEN_A)
@@ -468,16 +503,16 @@ contract PortfolioManagerArgsCodecTest is Test {
         // Valid 2-group universe (sums to WAD) but no trailing feeBps bytes.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint128(0.5e18),
+            uint64(0.5e18),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint16(STALENESS),
-            uint128(0.5e18),
+            uint24(STALENESS),
+            uint64(0.5e18),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint16(STALENESS)
+            uint24(STALENESS)
         );
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingFeeBps.selector);
@@ -488,16 +523,16 @@ contract PortfolioManagerArgsCodecTest is Test {
         // Valid 2-group universe plus feeBps, but no trailing maxDeviationBps bytes.
         bytes memory malformed = abi.encodePacked(
             uint8(2),
-            uint128(0.5e18),
+            uint64(0.5e18),
             uint8(1),
             TOKEN_A,
             FEED_A,
-            uint16(STALENESS),
-            uint128(0.5e18),
+            uint24(STALENESS),
+            uint64(0.5e18),
             uint8(1),
             TOKEN_B,
             FEED_B,
-            uint16(STALENESS),
+            uint24(STALENESS),
             uint32(0)
         );
 

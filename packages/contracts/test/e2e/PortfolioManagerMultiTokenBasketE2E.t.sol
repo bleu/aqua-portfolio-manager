@@ -52,7 +52,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     /// @dev Chainlink USDC/USD on Base — https://basescan.org/address/0x7e860098f58bbfc8648a4311b374b1d669a2bc6b
     address internal constant USDC_USD_FEED_BASE = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B;
 
-    /// @dev The packed encoding's maxStaleness field is a uint16 (max ~18.2 hours).
+    /// @dev The packed encoding's maxStaleness field is a uint24 (max ~194 days) -- 12 hours
+    ///      here is just a conservative test fixture, not an encoding ceiling.
     uint256 internal constant MULTI_TOKEN_MAX_STALENESS = 12 hours;
 
     uint256 internal constant WETH_FUNDING = 20e18;
