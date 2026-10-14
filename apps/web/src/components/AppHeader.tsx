@@ -3,13 +3,14 @@ import { NetworkBadge } from "./NetworkBadge";
 import { TabNav, type TabNavItem } from "./TabNav";
 
 export type AppHeaderProps = {
-  tabs: TabNavItem[];
+  /** Omit on pages with no tab navigation yet (e.g. the first-access introduction page). */
+  tabs?: TabNavItem[];
   network: string;
   safeAddress: string;
   onSelectTab?: (label: string) => void;
 };
 
-/** Shared top nav bar: brand mark, TabNav, and the network/Safe badge group. Reused on every Portfolio Manager page. */
+/** Shared top nav bar: brand mark, an optional TabNav, and the network/Safe badge group. Reused on every Portfolio Manager page. */
 export function AppHeader({ tabs, network, safeAddress, onSelectTab }: AppHeaderProps) {
   return (
     <header className="relative flex items-center justify-between border-b border-border bg-surface-raised px-6 py-3">
@@ -20,9 +21,11 @@ export function AppHeader({ tabs, network, safeAddress, onSelectTab }: AppHeader
         <span className="text-sm font-medium text-gray-100">Portfolio Manager</span>
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2">
-        <TabNav tabs={tabs} onSelect={onSelectTab} />
-      </div>
+      {tabs && tabs.length > 0 && (
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <TabNav tabs={tabs} onSelect={onSelectTab} />
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <NetworkBadge network={network} />

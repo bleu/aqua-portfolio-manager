@@ -53,7 +53,7 @@ export function GroupSummaryCard({
           )}
           <span className={cn("font-medium text-gray-100", compact ? "text-sm" : "text-base")}>{group.name}</span>
         </div>
-        <span className={cn("font-semibold text-white", compact ? "text-sm" : "text-base")}>{trailingLabel}</span>
+        <span className={cn("font-semibold text-white", compact ? "text-sm" : "text-xl")}>{trailingLabel}</span>
       </div>
 
       {showProgress && group.trailing.kind === "percentage" && (
