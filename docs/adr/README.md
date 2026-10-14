@@ -19,7 +19,8 @@ Follow the [documentation style](../STYLE.md).
 | [0009](0009-deploy-on-an-l2-at-launch.md) | Launch on an L2 | Accepted |
 | [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | Deploy an independent SwapVM router | Accepted |
 | [0011](0011-safe-wallet-with-basket-scope-guard.md) | Require a Safe with a Basket Scope Guard | Accepted |
-| [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Accepted |
+| [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Partially superseded by 0016 |
 | [0013](0013-build-parameter-attestation-gate.md) | Require parameter attestation before trading | Accepted |
 | [0014](0014-production-arbitrageur-design.md) | Run the production arbitrageur on Base | Proposed |
 | [0015](0015-two-program-builders-for-the-resolver-kyc-gate.md) | Ship both a gated and an ungated PM strategy builder | Accepted |
+| [0016](0016-per-trade-deviation-step-cap.md) | Cap per-trade deviation step instead of gating on pre-trade state | Accepted |
