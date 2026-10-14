@@ -79,6 +79,10 @@ contract OracleAdapterTest is Test {
         return OracleAdapter.PriceFeed({feed: AggregatorV3Interface(address(mock)), maxStaleness: maxStaleness});
     }
 
+    function _requireSequencerUp(AggregatorV3Interface sequencerUptimeFeed) external view {
+        OracleAdapter.requireSequencerUp(sequencerUptimeFeed);
+    }
+
     function test_NormalizesEightDecimalFeedToWad() public {
         vm.warp(1_000_000);
         MockAggregatorV3 mock = new MockAggregatorV3(8, 2000e8, block.timestamp); // $2000.00000000
@@ -171,6 +175,37 @@ contract OracleAdapterTest is Test {
         mock.setRound(5, 6);
         uint256 price = OracleAdapter.priceWad(_feed(mock, 1 hours), OracleAdapter.Rounding.Down);
         assertEq(price, 2000e18);
+    }
+
+    function test_RequireSequencerUpRevertsWhenSequencerIsDown() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 1, block.timestamp - 2 hours); // answer 1 == down
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterSequencerDown.selector, address(sequencerFeed))
+        );
+        this._requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
+    }
+
+    function test_RequireSequencerUpRevertsWithinGracePeriodAfterRecovery() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 30 minutes);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OracleAdapter.OracleAdapterSequencerGracePeriodNotElapsed.selector,
+                address(sequencerFeed),
+                uint256(30 minutes),
+                OracleAdapter.SEQUENCER_GRACE_PERIOD
+            )
+        );
+        this._requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
+    }
+
+    function test_RequireSequencerUpAcceptsExactlyAtGracePeriodThreshold() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 1 hours);
+        OracleAdapter.requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
     }
 
     function test_GroupValueSumsAcrossDifferentTokenAndFeedDecimals() public {

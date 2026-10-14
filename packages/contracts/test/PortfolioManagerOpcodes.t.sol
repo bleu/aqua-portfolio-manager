@@ -49,10 +49,16 @@ contract PortfolioManagerOpcodesTest is Test {
     PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+
         aqua = new Aqua();
-        strategyValidator = new PortfolioManagerStrategyValidator();
-        router =
-            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
+        strategyValidator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
+        router = new PortfolioManagerRouter(
+            address(aqua), address(0), address(this), "PM", "1", address(strategyValidator), address(sequencerFeed)
+        );
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");

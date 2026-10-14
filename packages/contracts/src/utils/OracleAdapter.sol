@@ -21,6 +21,17 @@ library OracleAdapter {
     ///      Chainlink's own documented pattern for detecting an incomplete round. A zero roundId
     ///      is never valid either.
     error OracleAdapterIncompleteRound(address feed, uint80 roundId, uint80 answeredInRound);
+    error OracleAdapterSequencerDown(address sequencerUptimeFeed);
+    /// @dev Chainlink's documented L2 pattern: feeds can keep reporting a pre-outage price for a
+    ///      while after the sequencer recovers, since nothing forced an update during the outage.
+    ///      A fixed post-recovery grace period gives feeds time to catch up to the real market
+    ///      before this adapter trusts them again.
+    error OracleAdapterSequencerGracePeriodNotElapsed(
+        address sequencerUptimeFeed, uint256 timeSinceUp, uint256 gracePeriod
+    );
+
+    /// @dev Chainlink's own recommended grace period for L2 sequencer-uptime feeds.
+    uint256 internal constant SEQUENCER_GRACE_PERIOD = 1 hours;
 
     enum Rounding {
         Down,
@@ -55,6 +66,22 @@ library OracleAdapter {
         uint256 lower = FixedPointMath.scaleDown(uint256(answer), decimals, 18);
         require(lower > 0, OracleAdapterInvalidPrice(address(config.feed), answer));
         return rounding == Rounding.Up ? FixedPointMath.scaleUp(uint256(answer), decimals, 18) : lower;
+    }
+
+    /// @notice Reverts unless the L2 sequencer is up and has stayed up through the grace period.
+    /// @dev Chainlink's sequencer-uptime feed reuses AggregatorV3Interface: answer == 0 means up,
+    ///      answer == 1 means down, and startedAt is when that status last changed.
+    function requireSequencerUp(AggregatorV3Interface sequencerUptimeFeed) internal view {
+        (, int256 answer,, uint256 startedAt,) = sequencerUptimeFeed.latestRoundData();
+        require(answer == 0, OracleAdapterSequencerDown(address(sequencerUptimeFeed)));
+
+        uint256 timeSinceUp = block.timestamp - startedAt;
+        require(
+            timeSinceUp >= SEQUENCER_GRACE_PERIOD,
+            OracleAdapterSequencerGracePeriodNotElapsed(
+                address(sequencerUptimeFeed), timeSinceUp, SEQUENCER_GRACE_PERIOD
+            )
+        );
     }
 
     /// @notice Sums member balances multiplied by their prices, with token and feed decimal normalization.
