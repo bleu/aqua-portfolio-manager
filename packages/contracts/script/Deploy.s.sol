@@ -21,14 +21,17 @@ contract Deploy is Script {
         string memory addresses = vm.readFile("../addresses/base-mainnet.json");
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
         address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
+        address sequencerUptimeFeed = vm.parseJsonAddress(addresses, ".sequencerUptimeFeed");
 
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
         vm.startBroadcast(deployerKey);
 
-        validator = new PortfolioManagerStrategyValidator();
-        router = new PortfolioManagerRouter(aqua, weth, deployer, "AquaPortfolioManager", "1", address(validator));
+        validator = new PortfolioManagerStrategyValidator(sequencerUptimeFeed);
+        router = new PortfolioManagerRouter(
+            aqua, weth, deployer, "AquaPortfolioManager", "1", address(validator), sequencerUptimeFeed
+        );
 
         vm.stopBroadcast();
 

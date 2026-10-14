@@ -19,6 +19,7 @@ import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
+import {AggregatorV3Interface} from "../src/interfaces/AggregatorV3Interface.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Tests group valuation, member liquidity, and feed freshness through SwapVM swaps.
@@ -34,6 +35,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     MockAggregatorV3 internal feedA;
     MockAggregatorV3 internal feedB;
     MockAggregatorV3 internal feedC;
+    MockAggregatorV3 internal sequencerFeed;
     MockTaker internal taker;
 
     address internal maker;
@@ -42,10 +44,16 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+
         aqua = new Aqua();
-        strategyValidator = new PortfolioManagerStrategyValidator();
-        router =
-            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
+        strategyValidator = new PortfolioManagerStrategyValidator(address(sequencerFeed));
+        router = new PortfolioManagerRouter(
+            address(aqua), address(0), address(this), "PM", "1", address(strategyValidator), address(sequencerFeed)
+        );
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -79,7 +87,17 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     }
 
     function _buildOrder(uint32 lpFeeBps, uint32 maxDeviationBps) internal view returns (ISwapVM.Order memory) {
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps, maxDeviationBps);
+        return _buildOrderWithGroups(groups, lpFeeBps, maxDeviationBps);
+    }
+
+    /// @dev Lets a test use a custom group set (e.g. a numeraire member) instead of the fixture's
+    ///      own `groups`.
+    function _buildOrderWithGroups(
+        PortfolioManagerArgsCodec.Group[] memory customGroups,
+        uint32 lpFeeBps,
+        uint32 maxDeviationBps
+    ) internal view returns (ISwapVM.Order memory) {
+        bytes memory program = PortfolioManagerProgramBuilder.build(customGroups, lpFeeBps, maxDeviationBps);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,
@@ -340,6 +358,22 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
     }
 
+    /// @dev Proves the swap path actually asks the sequencer feed, not just that wiring a
+    ///      constructor param compiles -- flips the same mock setUp wired in, to "down".
+    function test_RevertsWhenSequencerIsDown() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
+        sequencerFeed.setAnswer(1, block.timestamp); // answer 1 == down
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterSequencerDown.selector, address(sequencerFeed))
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+    }
+
     /// @notice Group value can support a quote while tokenA has only one wei available.
     function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance() public {
         ISwapVM.Order memory order = _buildOrder(0);
@@ -444,13 +478,17 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
     }
 
-    /// @notice A pair can pass the group deviation check but lack enough units of the output member.
+    /// @notice A pair can pass the deviation step cap but lack enough units of the output member.
+    /// @dev The trade must stay small relative to the pool (ADR-0016 bounds the step this trade
+    ///      itself causes, not the pool's starting balance) -- a trade large enough to drain a
+    ///      meaningful fraction of the pool would trip the deviation check first, as it does in
+    ///      test_ExcessivePriceDeviationBlocksTrade below.
     function test_InsufficientMemberBalanceStillFiresWithDeviationCheckArmedAndWithinTolerance() public {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18); // group0 ~= group1 in value -> ~0% deviation
 
         bytes memory takerData = _exactInTakerData();
-        tokenC.mint(address(taker), 1_000_000e18);
+        tokenC.mint(address(taker), 1_000e18);
 
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: 1_000_000e18,
@@ -459,7 +497,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             weightOut: groups[0].weight,
             feeWad: 0
         });
-        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 1_000e18);
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -469,29 +507,62 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
                 1
             )
         );
-        taker.swap(order, address(tokenC), address(tokenA), 500_000e18, takerData);
+        taker.swap(order, address(tokenC), address(tokenA), 1_000e18, takerData);
     }
 
-    // ===== Price-deviation circuit breaker (ADR-0012) =====
+    // ===== Price-deviation step cap (ADR-0012, superseded by ADR-0016) =====
 
+    /// @dev ADR-0016: the cap bounds how far THIS trade moves the pair, not the pool's starting
+    ///      deviation -- so this now starts perfectly balanced and uses one large trade to trip
+    ///      the cap, instead of starting already-skewed with a small trade (which the new check
+    ///      would let through, since its own step would be tiny).
     function test_ExcessivePriceDeviationBlocksTrade() public {
+        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, balanced
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 50_000e18);
+
+        // Equal weights reduce exactIn to xy=k: trading half the pool (50,000 of 100,000) moves
+        // spotPrice(tokenC->tokenA) from 1.0 (balanced) to ~150,000/66,666.67 ~= 2.25 (2 wei under
+        // from fixed-point rounding) -- a ~125% step in one trade, far past the 10% per-trade cap.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 2.25e18 - 2, uint256(0.1e9)
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 50_000e18, takerData);
+    }
+
+    /// @dev The actual BLEUDEV-403 bug this ADR fixes: under the old pre-trade check (ADR-0012),
+    ///      ANY trade against this 90%-deviated pair would have reverted outright, including this
+    ///      corrective one -- freezing the pair until an external balance or price change. The
+    ///      ADR-0016 step cap only bounds what THIS trade itself does, so a corrective trade whose
+    ///      own step stays under the 10% cap now succeeds even though the pool started far outside
+    ///      the band. (The trade stays small enough to also clear BLEUDEV-406's ledger-authorization
+    ///      cap: `_shipOrder` only authorized 50,000e18 of tokenA, not the post-ship mint below.)
+    function test_CorrectiveTradeSucceedsEvenWhenPoolStartedBeyondTheDeviationBand() public {
         ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, at target
 
-        // An external balance change pushes group0 well beyond the 10% deviation limit.
+        // An external balance change pushes group0 to 90% deviation -- spotPrice(tokenC->tokenA)
+        // = 100,000/1,000,000 = 0.1, far outside the 10% band.
         tokenA.mint(maker, 900_000e18);
 
-        bytes memory takerData = _exactInTakerData();
-        tokenC.mint(address(taker), 1_000e18);
+        uint256 amountIn = 4_000e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
-        // spotPrice(tokenC->tokenA) = (100,000/0.5) / (1,000,000/0.5) = 0.1e18 exactly (equal
-        // weights cancel), i.e. 90% deviation from WAD -- well past the 10% ceiling.
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 0.1e18, uint256(0.1e9)
-            )
-        );
-        taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+        // This trade's own step (0.1 -> ~0.108, under 1%) stays well under the 10% cap, so it
+        // prices and settles exactly like any other within-tolerance trade.
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18,
+            balanceOut: 1_000_000e18,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "a corrective trade within its own step cap must succeed");
     }
 
     function test_PriceDeviationWithinToleranceStillPricesNormally() public {
@@ -641,5 +712,127 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
                 || selector == TakerTraitsLib.TakerTraitsAmountOutMustBeGreaterThanZero.selector,
             "unexpected revert reason during round trip"
         );
+    }
+
+    // ===== Gas optimization: oracle call dedup and numeraire members (BLEUDEV-412/ADR-0017) =====
+
+    /// @dev Proves the actual BLEUDEV-412 fix: before it, the traded-out token's feed
+    ///      (`feedA`, group0's member) was read once for group valuation and again for
+    ///      native-unit conversion -- two `latestRoundData()` calls for one swap. Now exactly
+    ///      one, for every traded or non-traded member alike.
+    function test_EachFeedIsReadAtMostOncePerSwap() public {
+        ISwapVM.Order memory order = _buildOrder(0);
+        _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000e18);
+
+        bytes memory latestRoundDataCall = abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector);
+        vm.expectCall(address(feedA), latestRoundDataCall, 1); // traded out, group0
+        vm.expectCall(address(feedB), latestRoundDataCall, 1); // non-traded member, group0
+        vm.expectCall(address(feedC), latestRoundDataCall, 1); // traded in, group1
+
+        taker.swap(order, address(tokenC), address(tokenA), 500e18, takerData);
+    }
+
+    /// @dev Builds and ships a 2-group, single-member-per-side strategy with tokenA as the
+    ///      numeraire (feed == address(0)) and tokenC priced via feedC -- shared by the numeraire
+    ///      tests below.
+    function _shipNumeraireOrder(uint32 maxDeviationBps, uint256 balA, uint256 balC)
+        private
+        returns (ISwapVM.Order memory order)
+    {
+        PortfolioManagerArgsCodec.Member[] memory numeraireMembers = new PortfolioManagerArgsCodec.Member[](1);
+        numeraireMembers[0] =
+            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(0), maxStaleness: 0});
+        PortfolioManagerArgsCodec.Group[] memory customGroups = new PortfolioManagerArgsCodec.Group[](2);
+        customGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembers});
+
+        PortfolioManagerArgsCodec.Member[] memory pricedMembers = new PortfolioManagerArgsCodec.Member[](1);
+        pricedMembers[0] =
+            PortfolioManagerArgsCodec.Member({token: address(tokenC), feed: address(feedC), maxStaleness: 1 hours});
+        customGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: pricedMembers});
+
+        order = _buildOrderWithGroups(customGroups, 0, maxDeviationBps);
+
+        address[] memory shipTokens = new address[](2);
+        shipTokens[0] = address(tokenA);
+        shipTokens[1] = address(tokenC);
+        uint256[] memory shipAmounts = new uint256[](2);
+        shipAmounts[0] = balA;
+        shipAmounts[1] = balC;
+        tokenA.mint(maker, balA);
+        tokenC.mint(maker, balC);
+        vm.startPrank(maker);
+        tokenA.approve(address(aqua), type(uint256).max);
+        tokenC.approve(address(aqua), type(uint256).max);
+        vm.stopPrank();
+        strategyValidator.attestBuildParameters(order, shipTokens);
+        vm.prank(maker);
+        aqua.ship(address(router), abi.encode(order), shipTokens, shipAmounts);
+    }
+
+    /// @dev A numeraire member (feed == address(0)) costs no oracle call at all, in either the
+    ///      group-valuation or native-conversion step, and prices correctly: its native balance
+    ///      is its value, exactly like plain Balancer-style weighted pools need no oracle when
+    ///      both sides are already in one unit.
+    function test_SwapAgainstANumeraireMemberNeedsNoOracleCallForIt() public {
+        ISwapVM.Order memory order = _shipNumeraireOrder(0, 100_000e18, 100_000e18);
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 1_000e18);
+
+        // tokenA is the numeraire -- its own feed address is the zero address, so there is
+        // nothing to call. Only feedC (tokenC, the priced member) should ever be read.
+        vm.expectCall(address(feedC), abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector), 1);
+
+        uint256 amountIn = 1_000e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
+
+        // Equal weights, both groups worth 100,000 WAD units (tokenA's numeraire balance;
+        // tokenC's balance * $1 feed price) -- same xy=k math as any other balanced single-member
+        // pair, just denominated in tokenA instead of USD.
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "numeraire member must price off its native balance directly");
+    }
+
+    /// @dev ADR-0016's per-trade deviation step cap is unit-agnostic by construction -- it only
+    ///      ever compares quote.balanceIn/balanceOut ratios, never an absolute USD value -- so it
+    ///      must keep working unchanged when the pair's shared unit is a numeraire token instead
+    ///      of USD. A trade within the cap settles normally.
+    function test_DeviationStepCapStillPricesNormallyWithinToleranceAgainstANumeraireMember() public {
+        ISwapVM.Order memory order = _shipNumeraireOrder(0.1e9, 100_000e18, 100_000e18); // 10% cap
+
+        // A small trade keeps the step well under 10%.
+        uint256 amountIn = 1_000e18;
+        (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
+
+        PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+        });
+        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        assertEq(actualAmountOut, expectedAmountOut, "a within-cap trade against a numeraire pair must price normally");
+    }
+
+    /// @dev Same guarantee as the test above, from the other side: a trade whose step would
+    ///      exceed the cap must still revert, computed from the numeraire-denominated quote.
+    function test_DeviationStepCapStillBlocksExcessiveStepAgainstANumeraireMember() public {
+        ISwapVM.Order memory order = _shipNumeraireOrder(0.1e9, 100_000e18, 100_000e18); // 10% cap
+
+        bytes memory takerData = _exactInTakerData();
+        tokenC.mint(address(taker), 100_000e18);
+
+        // Equal weights reduce exactIn to xy=k: trading half the pool (50,000 of 100,000) moves
+        // spotPrice(tokenC->tokenA) from 1.0 to ~2.25 -- a ~125% step, same math (and same
+        // expected revert value) as the non-numeraire version of this scenario.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 2.25e18 - 2, uint256(0.1e9)
+            )
+        );
+        taker.swap(order, address(tokenC), address(tokenA), 50_000e18, takerData);
     }
 }

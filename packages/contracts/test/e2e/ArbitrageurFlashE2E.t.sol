@@ -103,9 +103,15 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     function setUp() public override {
         super.setUp();
 
-        strategyValidator = new PortfolioManagerStrategyValidator();
+        strategyValidator = new PortfolioManagerStrategyValidator(SEQUENCER_UPTIME_FEED_MAINNET);
         router = new PortfolioManagerRouter(
-            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+            address(aqua),
+            WETH_BASE,
+            deployer,
+            "AquaPortfolioManager",
+            "1",
+            address(strategyValidator),
+            SEQUENCER_UPTIME_FEED_MAINNET
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(3); // distinct salt nonce from the other E2E fixtures' Safes

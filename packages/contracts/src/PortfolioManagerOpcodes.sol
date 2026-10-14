@@ -9,7 +9,9 @@ import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 
 /// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerRouter`.
 abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
-    constructor(address aqua, address strategyValidator) PortfolioManagerSwap(aqua, strategyValidator) {}
+    constructor(address aqua, address strategyValidator, address sequencerUptimeFeed)
+        PortfolioManagerSwap(aqua, strategyValidator, sequencerUptimeFeed)
+    {}
 
     function _notInstruction(
         Context memory,
