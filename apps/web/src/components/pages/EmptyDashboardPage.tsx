@@ -3,9 +3,10 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import type { TabNavItem } from "@/components/TabNav";
 
+/** Sized to match Figma's 33x33 icon in a 1438-wide frame (33/1438 ≈ 2.29vw). */
 function TargetIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg className="h-[2.29vw] w-[2.29vw]" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
       <circle cx="10" cy="10" r="3.5" stroke="currentColor" strokeWidth="1.5" />
     </svg>
@@ -26,7 +27,7 @@ export function EmptyDashboardPage({ network, safeAddress, onStartSetup }: Empty
     <div className="flex min-h-screen flex-col">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-10">
+      <div className="flex w-full flex-1 flex-col px-6 py-10">
         <h1 className="text-2xl font-semibold text-white">Portfolio Manager</h1>
         <p className="mt-1 text-sm text-gray-400">Monitor group targets, routed trades, and LP fees earned.</p>
 

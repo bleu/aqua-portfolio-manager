@@ -15,7 +15,8 @@ export function EmptyState({ icon, heading, description, action, className }: Em
   return (
     <Card className={cn("flex flex-col items-center justify-center gap-4 py-16 text-center", className)}>
       {icon && (
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 text-accent">
+        /* Sized to match Figma's 88x88 circle in a 1438-wide frame (88/1438 ≈ 6.12vw). */
+        <span className="flex h-[6.12vw] w-[6.12vw] items-center justify-center rounded-full bg-accent/20 text-accent">
           {icon}
         </span>
       )}
