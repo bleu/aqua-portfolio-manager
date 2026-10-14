@@ -18,6 +18,21 @@ type Strategy {
   shippedAtTxHash: String! # also used to tell ship-time Pushed events from later trade-time ones
   dockedAt: BigInt
   dockedAtTxHash: String
+  # Display labels per group, in group order -- copied in from a matching StrategyAttestation row
+  # at Shipped time (see EventHandlers.ts), since BuildParametersAttested only carries a
+  # strategyHash, not the maker/app this entity's id needs. Null when the attesting transaction
+  # (always same-batch, strictly before Shipped per ShipStrategy.s.sol) declined to name groups,
+  # or shipped without ever calling attestBuildParameters at all.
+  groupNames: [String!]
+}
+
+# One row per attestBuildParameters call, keyed purely by strategyHash since
+# BuildParametersAttested doesn't carry maker/app. Looked up by Shipped (same transaction, always
+# strictly after attestation in ShipStrategy.s.sol's batch) to fill in Strategy.groupNames --
+# never queried directly by consumers.
+type StrategyAttestation {
+  id: ID! # strategyHash, lowercase
+  groupNames: [String!]!
 }
 
 # Marks an address as a known Strategy Wallet (a maker with at least one indexed Strategy), set

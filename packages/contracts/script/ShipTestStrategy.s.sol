@@ -82,6 +82,10 @@ contract ShipTestStrategy is Script {
         groups[0] = _majors(tokenIndices[0], tokenIndices[1], feedIndices[0], feedIndices[1]);
         groups[1] = _stables(tokenIndices[2], tokenIndices[3], feedIndices[2], feedIndices[3]);
 
+        string[] memory groupNames = new string[](2);
+        groupNames[0] = "Majors";
+        groupNames[1] = "Stables";
+
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, LP_FEE_BPS, 0);
         ISwapVM.Order memory order = MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -121,7 +125,8 @@ contract ShipTestStrategy is Script {
         batch = abi.encodePacked(
             batch,
             _encodeMultiSendTx(
-                VALIDATOR, abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens))
+                VALIDATOR,
+                abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens, groupNames))
             ),
             _encodeMultiSendTx(aqua, abi.encodeCall(Aqua.ship, (ROUTER, abi.encode(order), tokens, amounts)))
         );

@@ -58,7 +58,11 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
     }
 
     /// @inheritdoc IPortfolioManagerStrategyValidator
-    function attestBuildParameters(ISwapVM.Order calldata order, address[] calldata tokens) external {
+    function attestBuildParameters(
+        ISwapVM.Order calldata order,
+        address[] calldata tokens,
+        string[] calldata groupNames
+    ) external {
         bytes calldata args = _args(order);
         (
             PortfolioManagerArgsCodec.Group[] memory groups,,
@@ -67,10 +71,14 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         ) = PortfolioManagerArgsCodec.parse(args);
         _requireUniverseMatches(groups, tokens);
         _requireBalancedWithinTolerance(groups, maxDeviationBps, args, bridges.length, order.maker);
+        require(
+            groupNames.length == 0 || groupNames.length == groups.length,
+            PortfolioManagerStrategyValidatorGroupNamesLengthMismatch(groupNames.length, groups.length)
+        );
 
         bytes32 strategyHash = keccak256(abi.encode(order));
         buildParamsAttested[strategyHash] = true;
-        emit BuildParametersAttested(strategyHash);
+        emit BuildParametersAttested(strategyHash, groupNames);
     }
 
     /// @dev Resolves every declared member's token index through TOKEN_REGISTRY -- the only
