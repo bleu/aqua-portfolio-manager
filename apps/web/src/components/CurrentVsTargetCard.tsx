@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AllocationBar, type AllocationBarProps } from "@/components/AllocationBar";
+import { Badge } from "@/components/Badge";
 import { ArrowUpRightIcon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 
@@ -22,10 +23,7 @@ function LegendItem({ children, swatch }: { children: ReactNode; swatch: ReactNo
 
 /**
  * Static illustration of how Aqua routing rebalances a 2-basket portfolio toward its target
- * weights -- the entry page's preview of the mechanic, before a Safe is connected. Ported from
- * ConnectSafePage (BLEUDEV-397); not a shared design-system component (the "Aqua routing" badge
- * below is a one-off inline span rather than the Badge component other pages use, since that
- * component's API doesn't support this pill-with-dot style).
+ * weights -- the entry page's preview of the mechanic, before a Safe is connected.
  */
 export function CurrentVsTargetCard({
   title = "Current vs. target",
@@ -41,10 +39,7 @@ export function CurrentVsTargetCard({
           <h2 className="text-lg font-semibold text-white">{title}</h2>
           <p className="mt-1 text-sm text-gray-400">{subtitle}</p>
         </div>
-        <span className="inline-flex items-center gap-2 rounded-full bg-surface-raised px-3.5 py-1.5 text-sm font-medium text-white">
-          <span className="size-1.5 rounded-full bg-accent" />
-          Aqua routing
-        </span>
+        <Badge variant="dot">Aqua routing</Badge>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-4">
