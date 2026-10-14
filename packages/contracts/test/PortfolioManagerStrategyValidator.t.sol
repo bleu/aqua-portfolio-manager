@@ -477,6 +477,58 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.attestBuildParameters(order, tokens);
     }
 
+    /// @dev The ship-time pairwise deviation check (BLEUDEV-407) is just as unit-agnostic as the
+    ///      swap-side step cap (BLEUDEV-403/ADR-0016) -- it only compares groupValuesWad ratios,
+    ///      never an absolute USD amount -- so it must keep working unchanged against a numeraire
+    ///      member too. tokenA is its own numeraire (feed == address(0)); only feedB is read.
+    function test_ToleranceWorksWhenOneMemberIsItsOwnNumeraire() public {
+        PortfolioManagerArgsCodec.Group[] memory numeraireGroups = new PortfolioManagerArgsCodec.Group[](2);
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] = PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(0), maxStaleness: 0});
+        numeraireGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+
+        PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
+        membersB[0] =
+            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        numeraireGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(numeraireGroups, 0, 0.1e9); // 10%
+        ISwapVM.Order memory order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        validator.requireBalancedWithinTolerance(order, maker); // at target, must not revert
+
+        // Push 90% past parity -- same shape as test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand,
+        // just denominated in tokenA instead of USD. Confirms the check still fires correctly.
+        tokenA.mint(maker, 890_000e18); // tokenA group now 990,000e18 vs tokenB's 100,000e18
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
     function test_AttestBuildParametersIsIdempotent() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9);
         tokenA.mint(maker, 100_000e18);

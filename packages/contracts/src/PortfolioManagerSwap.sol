@@ -18,7 +18,8 @@ import {FixedPointMath} from "./utils/FixedPointMath.sol";
 
 /// @title PortfolioManagerSwap
 /// @notice Prices cross-group swaps from real wallet balances, oracle values, and target weights.
-/// @dev Every group member uses its feed, including single-token groups.
+/// @dev Every group member uses its feed, including single-token groups, except the strategy's
+///      optional numeraire member (BLEUDEV-412/ADR-0017), which uses none.
 ///      The DAO fee transfer is inside this opcode so programs cannot omit a separate fee instruction.
 ///      Collection remains best-effort. Fee inheritance supplies the Aqua reference, scale, and skipped-fee event.
 ///      See docs/PRICING.md for formulas and units.
@@ -57,33 +58,29 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         (uint256 groupOutIdx, uint256 memberOutIdx) = _resolve(groups, ctx.query.tokenOut);
         require(groupInIdx != groupOutIdx, PortfolioManagerSwapSameGroupSwap(groupInIdx));
 
-        PortfolioManagerPricing.PoolState memory quote =
-            _buildQuote(groups[groupInIdx], groups[groupOutIdx], ctx.query.maker, feeBps);
+        // Each traded member's feed is read at most once here, however many times its group
+        // valuation and native-unit conversion need its price (BLEUDEV-412): _buildQuote fetches
+        // the raw (answer, decimals) for both traded members and reuses it for every rounding
+        // direction the rest of this function needs, instead of re-reading the same feed.
+        (
+            PortfolioManagerPricing.PoolState memory quote,
+            OracleAdapter.RawPrice memory rawIn,
+            OracleAdapter.RawPrice memory rawOut,
+            uint8 tokenInDecimals,
+            uint8 tokenOutDecimals,
+            uint256 tokenOutWalletBalance
+        ) = _buildQuote(groups[groupInIdx], memberInIdx, groups[groupOutIdx], memberOutIdx, ctx.query.maker, feeBps);
 
         uint256 daoAmount;
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, PortfolioManagerSwapRecomputeDetected());
             (ctx.swap.amountOut, daoAmount) = _priceExactIn(
-                groups[groupInIdx].members[memberInIdx],
-                ctx.query.tokenIn,
-                groups[groupOutIdx].members[memberOutIdx],
-                ctx.query.tokenOut,
-                quote,
-                ctx.swap.amountIn,
-                feeBps,
-                maxDeviationBps
+                quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountIn, feeBps, maxDeviationBps
             );
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
             (ctx.swap.amountIn, daoAmount) = _priceExactOut(
-                groups[groupInIdx].members[memberInIdx],
-                ctx.query.tokenIn,
-                groups[groupOutIdx].members[memberOutIdx],
-                ctx.query.tokenOut,
-                quote,
-                ctx.swap.amountOut,
-                feeBps,
-                maxDeviationBps
+                quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountOut, feeBps, maxDeviationBps
             );
         }
 
@@ -91,8 +88,8 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         // neither does the wallet balance alone: Aqua's own ledger authorization for this
         // strategy (set at ship() time, independent of the wallet's own balance) is a separate
         // settlement constraint. A computed output that fits the wallet but exceeds the
-        // strategy's remaining Aqua allocation can never actually settle.
-        uint256 tokenOutWalletBalance = IERC20(ctx.query.tokenOut).balanceOf(ctx.query.maker);
+        // strategy's remaining Aqua allocation can never actually settle. tokenOutWalletBalance
+        // was already read while valuing groupOut above -- no second balanceOf call here.
         (uint256 tokenOutLedgerBalance,) =
             _AQUA.rawBalances(ctx.query.maker, address(this), ctx.query.orderHash, ctx.query.tokenOut);
         uint256 tokenOutAvailable =
@@ -129,41 +126,62 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         }
     }
 
-    /// @dev Builds the traded pair's pool state from both groups' oracle-valued reserves. Split
-    ///      out of _portfolioManagerSwapXD to keep that function under the stack-depth limit.
+    /// @dev Fetches each traded member's raw price once and values both groups, reusing that
+    ///      single read instead of letting group valuation and native-unit conversion each read
+    ///      the same feed under their own rounding (BLEUDEV-412). Split out of
+    ///      _portfolioManagerSwapXD to keep that function under the stack-depth limit.
     function _buildQuote(
         PortfolioManagerArgsCodec.Group memory groupIn,
+        uint256 memberInIdx,
         PortfolioManagerArgsCodec.Group memory groupOut,
+        uint256 memberOutIdx,
         address maker,
         uint32 feeBps
-    ) private view returns (PortfolioManagerPricing.PoolState memory quote) {
+    )
+        private
+        view
+        returns (
+            PortfolioManagerPricing.PoolState memory quote,
+            OracleAdapter.RawPrice memory rawIn,
+            OracleAdapter.RawPrice memory rawOut,
+            uint8 tokenInDecimals,
+            uint8 tokenOutDecimals,
+            uint256 tokenOutWalletBalance
+        )
+    {
+        rawIn = OracleAdapter.fetchRawPrice(_feedOf(groupIn.members[memberInIdx]));
+        rawOut = OracleAdapter.fetchRawPrice(_feedOf(groupOut.members[memberOutIdx]));
+
+        uint256 balanceInWad;
+        uint256 balanceOutWad;
+        (balanceInWad, tokenInDecimals,) = _groupValueWad(groupIn, maker, OracleAdapter.Rounding.Up, memberInIdx, rawIn);
+        (balanceOutWad, tokenOutDecimals, tokenOutWalletBalance) =
+            _groupValueWad(groupOut, maker, OracleAdapter.Rounding.Down, memberOutIdx, rawOut);
+
         quote = PortfolioManagerPricing.PoolState({
-            balanceIn: _groupValueWad(groupIn, maker, OracleAdapter.Rounding.Up),
-            balanceOut: _groupValueWad(groupOut, maker, OracleAdapter.Rounding.Down),
+            balanceIn: balanceInWad,
+            balanceOut: balanceOutWad,
             weightIn: groupIn.weight,
             weightOut: groupOut.weight,
             feeWad: FixedPointMath.divDown(feeBps, PortfolioManagerArgsCodec.PM_BPS)
         });
     }
 
-    /// @dev Prices an exact-in trade and enforces the ADR-0016 deviation step cap. Split out of
-    ///      _portfolioManagerSwapXD (along with _priceExactOut) to keep that function under the
-    ///      stack-depth limit -- each branch's own price/decimals/unit/curve locals now live in
-    ///      their own call frame instead of the dispatcher's.
+    /// @dev Prices an exact-in trade and enforces the ADR-0016 deviation step cap, from an
+    ///      already-built quote and already-fetched traded-member raw prices (BLEUDEV-412) --
+    ///      no oracle or balanceOf calls happen in this function.
     function _priceExactIn(
-        PortfolioManagerArgsCodec.Member memory memberIn,
-        address tokenIn,
-        PortfolioManagerArgsCodec.Member memory memberOut,
-        address tokenOut,
         PortfolioManagerPricing.PoolState memory quote,
+        OracleAdapter.RawPrice memory rawIn,
+        OracleAdapter.RawPrice memory rawOut,
+        uint8 tokenInDecimals,
+        uint8 tokenOutDecimals,
         uint256 fullAmountIn,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private view returns (uint256 amountOut, uint256 daoAmount) {
-        (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
-            _priceAndDecimals(memberIn, tokenIn, OracleAdapter.Rounding.Down);
-        (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
-            _priceAndDecimals(memberOut, tokenOut, OracleAdapter.Rounding.Up);
+    ) private pure returns (uint256 amountOut, uint256 daoAmount) {
+        uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
+        uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
@@ -181,21 +199,20 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     }
 
     /// @dev Prices an exact-out trade and enforces the ADR-0016 deviation step cap. See
-    ///      _priceExactIn's doc comment for why this is split out.
+    ///      _priceExactIn's doc comment for why this takes a pre-built quote and pre-fetched
+    ///      raw prices instead of fetching its own.
     function _priceExactOut(
-        PortfolioManagerArgsCodec.Member memory memberIn,
-        address tokenIn,
-        PortfolioManagerArgsCodec.Member memory memberOut,
-        address tokenOut,
         PortfolioManagerPricing.PoolState memory quote,
+        OracleAdapter.RawPrice memory rawIn,
+        OracleAdapter.RawPrice memory rawOut,
+        uint8 tokenInDecimals,
+        uint8 tokenOutDecimals,
         uint256 amountOut,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private view returns (uint256 amountIn, uint256 daoAmount) {
-        (uint256 tokenInPriceWad, uint8 tokenInDecimals) =
-            _priceAndDecimals(memberIn, tokenIn, OracleAdapter.Rounding.Down);
-        (uint256 tokenOutPriceWad, uint8 tokenOutDecimals) =
-            _priceAndDecimals(memberOut, tokenOut, OracleAdapter.Rounding.Up);
+    ) private pure returns (uint256 amountIn, uint256 daoAmount) {
+        uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
+        uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
@@ -252,25 +269,26 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         revert PortfolioManagerSwapTokenNotDeclared(token);
     }
 
-    /// @dev Gets the traded member's price and decimals for native-token/value conversion.
-    function _priceAndDecimals(
-        PortfolioManagerArgsCodec.Member memory member,
-        address token,
-        OracleAdapter.Rounding rounding
-    ) private view returns (uint256 priceWad, uint8 decimals) {
-        priceWad = OracleAdapter.priceWad(
-            OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness}),
-            rounding
-        );
-        decimals = IERC20Metadata(token).decimals();
+    function _feedOf(PortfolioManagerArgsCodec.Member memory member)
+        private
+        pure
+        returns (OracleAdapter.PriceFeed memory)
+    {
+        return OracleAdapter.PriceFeed({feed: AggregatorV3Interface(member.feed), maxStaleness: member.maxStaleness});
     }
 
-    /// @dev Values every member through OracleAdapter, including single-token groups.
+    /// @dev Values every member through OracleAdapter, including single-token groups, except the
+    ///      strategy's numeraire member if any (BLEUDEV-412/ADR-0017). Reuses `tradedMemberRaw`
+    ///      for the member at `tradedMemberIdx` instead of fetching its feed again, and returns
+    ///      that member's decimals and native balance alongside the group total so the caller
+    ///      doesn't have to look either up a second time.
     function _groupValueWad(
         PortfolioManagerArgsCodec.Group memory group,
         address maker,
-        OracleAdapter.Rounding rounding
-    ) private view returns (uint256) {
+        OracleAdapter.Rounding rounding,
+        uint256 tradedMemberIdx,
+        OracleAdapter.RawPrice memory tradedMemberRaw
+    ) private view returns (uint256 totalValueWad, uint8 tradedMemberDecimals, uint256 tradedMemberBalance) {
         uint256 n = group.members.length;
         address[] memory tokens = new address[](n);
         uint256[] memory balances = new uint256[](n);
@@ -279,8 +297,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             PortfolioManagerArgsCodec.Member memory m = group.members[i];
             tokens[i] = m.token;
             balances[i] = IERC20(m.token).balanceOf(maker);
-            feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(m.feed), maxStaleness: m.maxStaleness});
+            feeds[i] = _feedOf(m);
         }
-        return OracleAdapter.groupValueWad(tokens, balances, feeds, rounding);
+        (totalValueWad, tradedMemberDecimals) = OracleAdapter.groupValueWadWithOverride(
+            tokens, balances, feeds, rounding, tradedMemberIdx, tradedMemberRaw
+        );
+        tradedMemberBalance = balances[tradedMemberIdx];
     }
 }

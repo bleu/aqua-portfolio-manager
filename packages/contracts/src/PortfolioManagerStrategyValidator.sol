@@ -92,19 +92,39 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
         if (maxDeviationBps == 0) return;
         OracleAdapter.requireSequencerUp(SEQUENCER_UPTIME_FEED);
 
+        uint256[] memory groupValuesWad = _valueEveryGroup(groups, maker);
+        _requireEveryPairWithinTolerance(groups, groupValuesWad, maxDeviationBps);
+    }
+
+    /// @dev Split out of _requireBalancedWithinTolerance to keep that function under the
+    ///      stack-depth limit.
+    function _valueEveryGroup(PortfolioManagerArgsCodec.Group[] memory groups, address maker)
+        private
+        view
+        returns (uint256[] memory groupValuesWad)
+    {
         uint256 n = groups.length;
-        uint256[] memory groupValuesWad = new uint256[](n);
+        groupValuesWad = new uint256[](n);
         uint256 totalValueWad;
         for (uint256 i = 0; i < n; i++) {
             groupValuesWad[i] = PortfolioManagerArgsCodec.groupValueWad(groups[i], maker, OracleAdapter.Rounding.Down);
             totalValueWad += groupValuesWad[i];
         }
         require(totalValueWad > 0, PortfolioManagerStrategyValidatorEmptyPortfolio());
+    }
 
-        // Checks every cross-group pair with PortfolioManagerSwap's own pairwise spot-price
-        // formula, not each group's share of the total -- the two metrics diverge once a
-        // strategy has more than two groups, and only the pairwise one guarantees every
-        // direction a swap could actually trade is still within tolerance right after shipping.
+    /// @dev Checks every cross-group pair with PortfolioManagerSwap's own pairwise spot-price
+    ///      formula, not each group's share of the total -- the two metrics diverge once a
+    ///      strategy has more than two groups, and only the pairwise one guarantees every
+    ///      direction a swap could actually trade is still within tolerance right after shipping.
+    ///      Split out of _requireBalancedWithinTolerance to keep that function under the
+    ///      stack-depth limit.
+    function _requireEveryPairWithinTolerance(
+        PortfolioManagerArgsCodec.Group[] memory groups,
+        uint256[] memory groupValuesWad,
+        uint32 maxDeviationBps
+    ) private pure {
+        uint256 n = groups.length;
         for (uint256 i = 0; i < n; i++) {
             for (uint256 j = i + 1; j < n; j++) {
                 PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
