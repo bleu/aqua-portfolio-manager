@@ -35,7 +35,7 @@ export function FirstAccessIntroductionPage({
           <div className="space-y-3">
             <p className="text-xs font-medium tracking-wide text-gray-500">CURRENT ALLOCATION</p>
             {currentAllocation.map((group) => (
-              <GroupSummaryCard key={group.id} group={group} />
+              <GroupSummaryCard key={group.id} group={group} showIndicator={false} />
             ))}
           </div>
 
@@ -43,8 +43,14 @@ export function FirstAccessIntroductionPage({
 
           <div className="space-y-3">
             <p className="text-xs font-medium tracking-wide text-gray-500">TARGET ALLOCATION</p>
-            {targetAllocation.map((group) => (
-              <GroupSummaryCard key={group.id} group={group} showProgress />
+            {targetAllocation.map((group, index) => (
+              <GroupSummaryCard
+                key={group.id}
+                group={group}
+                showProgress
+                progressTone={index === 0 ? "accent" : "neutral"}
+                showTokens={false}
+              />
             ))}
           </div>
         </div>
