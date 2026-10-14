@@ -27,7 +27,7 @@ export function EmptyDashboardPage({ network, safeAddress, onStartSetup }: Empty
     <div className="flex min-h-screen flex-col">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
-      <div className="flex w-full flex-1 flex-col px-[5.81vw] py-10">
+      <div className="flex w-full flex-1 flex-col px-6 py-10">
         <h1 className="text-2xl font-semibold text-white">Portfolio Manager</h1>
         <p className="mt-1 text-sm text-gray-400">Monitor group targets, routed trades, and LP fees earned.</p>
 
