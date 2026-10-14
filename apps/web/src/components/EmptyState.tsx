@@ -13,7 +13,7 @@ export type EmptyStateProps = {
 /** Generic icon + heading + description + CTA card, built on the shared Card surface. Used for the empty dashboard (BLEUDEV-410) and reusable anywhere else an empty state is needed. */
 export function EmptyState({ icon, heading, description, action, className }: EmptyStateProps) {
   return (
-    <Card className={cn("flex flex-col items-center justify-center gap-4 py-16 text-center", className)}>
+    <Card className={cn("flex flex-col items-center justify-center gap-8 py-16 text-center", className)}>
       {icon && (
         /* Sized to match Figma's 88x88 circle in a 1438-wide frame (88/1438 ≈ 6.12vw). */
         <span className="flex h-[6.12vw] w-[6.12vw] items-center justify-center rounded-full bg-accent/20 text-accent">
