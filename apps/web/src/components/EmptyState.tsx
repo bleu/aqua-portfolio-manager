@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/cn";
 import { Card } from "./Card";
 
 export type EmptyStateProps = {
@@ -6,12 +7,13 @@ export type EmptyStateProps = {
   heading: string;
   description: string;
   action?: ReactNode;
+  className?: string;
 };
 
 /** Generic icon + heading + description + CTA card, built on the shared Card surface. Used for the empty dashboard (BLEUDEV-410) and reusable anywhere else an empty state is needed. */
-export function EmptyState({ icon, heading, description, action }: EmptyStateProps) {
+export function EmptyState({ icon, heading, description, action, className }: EmptyStateProps) {
   return (
-    <Card className="flex flex-col items-center gap-4 py-16 text-center">
+    <Card className={cn("flex flex-col items-center justify-center gap-4 py-16 text-center", className)}>
       {icon && (
         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 text-accent">
           {icon}

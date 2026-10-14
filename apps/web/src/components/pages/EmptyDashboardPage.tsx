@@ -7,7 +7,7 @@ function TargetIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="10" cy="10" r="2.5" fill="currentColor" />
+      <circle cx="10" cy="10" r="3.5" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -23,19 +23,20 @@ const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { labe
 /** BLEUDEV-410 — "03 · Empty dashboard": shown to a returning LP whose Safe has no active strategy. */
 export function EmptyDashboardPage({ network, safeAddress, onStartSetup }: EmptyDashboardPageProps) {
   return (
-    <div className="min-h-screen">
+    <div className="flex min-h-screen flex-col">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-10">
         <h1 className="text-2xl font-semibold text-white">Portfolio Manager</h1>
         <p className="mt-1 text-sm text-gray-400">Monitor group targets, routed trades, and LP fees earned.</p>
 
-        <div className="mt-6">
+        <div className="mt-6 flex flex-1 flex-col">
           <EmptyState
             icon={<TargetIcon />}
             heading="Set up your Portfolio Manager"
             description="Choose tokens, set group targets, and define price protection. Once active, routed trades help maintain the allocation while your portfolio earns LP fees."
             action={<Button onClick={onStartSetup}>Start setup</Button>}
+            className="flex-1"
           />
         </div>
       </div>
