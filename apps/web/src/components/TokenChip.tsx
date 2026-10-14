@@ -61,9 +61,6 @@ export function TokenChip({ token, variant = "display", selected, onToggle, onRe
   }
 
   return (
-    <span className={cn(base, "border-border bg-surface-raised text-gray-300", className)}>
-      <TokenIcon symbol={token.symbol} />
-      {token.symbol}
-    </span>
+    <span className={cn(base, "border-transparent bg-surface-raised text-gray-300", className)}>{token.symbol}</span>
   );
 }
