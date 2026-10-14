@@ -29,6 +29,14 @@ contracts:
         field_selection:
           transaction_fields:
             - hash
+  # Emitted by this deployment's own PortfolioManagerStrategyValidator before a strategy ships
+  # (ShipStrategy.s.sol batches attest then ship, in that order, same transaction). Only carries
+  # strategyHash, not maker/app, so the handler stores it under its own StrategyAttestation row
+  # and the Shipped handler joins it in by strategyHash once the Strategy row exists.
+  - name: PortfolioManagerValidator
+    handler: src/EventHandlers.ts
+    events:
+      - event: "BuildParametersAttested(bytes32 indexed strategyHash, string[] groupNames)"
   # ADR-0014's token allow list (USDC, USDT, WETH, WBTC) -- one contract definition since every
   # ERC20 shares the same Transfer event, listed once per address under `chains` below. The
   # handler filters to Transfers touching a known Strategy Wallet; every other Transfer on these
@@ -71,6 +79,11 @@ chains:
       - name: Aqua
         address:
           - "0x499943e74fb0ce105688beee8ef2abec5d936d31"
+      - name: PortfolioManagerValidator
+        # ShipStrategy.s.sol's own VALIDATOR constant -- deployed in the same Deploy.s.sol run as
+        # the Router above, so it shares that same start_block.
+        address:
+          - "0x88f52fe4a35ad046f37bcf3eb01e99551aa7da92"
       - name: ERC20
         # Base mainnet addresses, matching the constants PortfolioManagerMultiTokenBasketE2E.t.sol
         # already verifies against a real fork, except cbBTC replaces WBTC as the real basket's

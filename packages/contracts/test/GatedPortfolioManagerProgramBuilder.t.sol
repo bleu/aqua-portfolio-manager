@@ -145,7 +145,7 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
         amounts[0] = INITIAL_BALANCE;
         amounts[1] = INITIAL_BALANCE;
 
-        strategyValidator.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens, new string[](0));
 
         vm.prank(maker);
         return aqua.ship(address(router), abi.encode(order), tokens, amounts);

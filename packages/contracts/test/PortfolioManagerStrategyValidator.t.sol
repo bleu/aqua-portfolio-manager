@@ -438,10 +438,50 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         assertFalse(validator.buildParamsAttested(strategyHash), "must be unattested before the call");
 
         vm.expectEmit(true, false, false, false, address(validator));
-        emit IPortfolioManagerStrategyValidator.BuildParametersAttested(strategyHash);
-        validator.attestBuildParameters(order, tokens);
+        emit IPortfolioManagerStrategyValidator.BuildParametersAttested(strategyHash, new string[](0));
+        validator.attestBuildParameters(order, tokens, new string[](0));
 
         assertTrue(validator.buildParamsAttested(strategyHash), "must be attested after a successful call");
+    }
+
+    function test_AttestBuildParametersEmitsSuppliedGroupNames() external {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9);
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+
+        string[] memory groupNames = new string[](2);
+        groupNames[0] = "Stablecoins";
+        groupNames[1] = "Crypto majors";
+
+        vm.expectEmit(true, true, true, true, address(validator));
+        emit IPortfolioManagerStrategyValidator.BuildParametersAttested(keccak256(abi.encode(order)), groupNames);
+        validator.attestBuildParameters(order, tokens, groupNames);
+    }
+
+    function test_AttestBuildParametersRevertsOnGroupNamesLengthMismatch() external {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9);
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+
+        string[] memory groupNames = new string[](1);
+        groupNames[0] = "Only one name for two groups";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorGroupNamesLengthMismatch.selector,
+                1,
+                2
+            )
+        );
+        validator.attestBuildParameters(order, tokens, groupNames);
     }
 
     function test_AttestBuildParametersRevertsOnUniverseMismatchSameAsRequireUniverseMatches() public {
@@ -464,7 +504,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
                 address(tokenC)
             )
         );
-        validator.attestBuildParameters(order, shipped);
+        validator.attestBuildParameters(order, shipped, new string[](0));
 
         assertFalse(
             validator.buildParamsAttested(keccak256(abi.encode(order))), "a reverted attestation must not be recorded"
@@ -485,7 +525,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         vm.expectPartialRevert(
             IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
         );
-        validator.attestBuildParameters(order, tokens);
+        validator.attestBuildParameters(order, tokens, new string[](0));
     }
 
     /// @dev The ship-time pairwise deviation check (BLEUDEV-407) is just as unit-agnostic as the
@@ -611,8 +651,8 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         tokens[0] = address(tokenA);
         tokens[1] = address(tokenB);
 
-        validator.attestBuildParameters(order, tokens);
-        validator.attestBuildParameters(order, tokens); // must not revert
+        validator.attestBuildParameters(order, tokens, new string[](0));
+        validator.attestBuildParameters(order, tokens, new string[](0)); // must not revert
 
         assertTrue(validator.buildParamsAttested(keccak256(abi.encode(order))));
     }
