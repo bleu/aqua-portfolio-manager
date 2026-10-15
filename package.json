@@ -10,5 +10,10 @@
     "web:dev": "pnpm --filter @aqua-portfolio-manager/web dev",
     "web:build": "pnpm --filter @aqua-portfolio-manager/web build",
     "web:storybook": "pnpm --filter @aqua-portfolio-manager/web storybook"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "^7.0.0"
+    }
   }
 }

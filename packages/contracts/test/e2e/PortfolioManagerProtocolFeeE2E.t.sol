@@ -7,31 +7,42 @@ import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerFee} from "../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
-/// @notice The 1IP-103 tiered protocol fee lands in the real 1inch DAO Treasury
-/// address after a real swap against the actually deployed router.
+/// @notice The 1IP-103 tiered protocol fee splits 50/50 between the real 1inch DAO Treasury and
+/// Bleu's treasury (agreed separately between Bleu and 1inch, outside 1IP-103) after a real swap
+/// against the actually deployed router.
 contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant TRADE_AMOUNT = 1_000e18;
 
     /// @dev Distinct fee gives this order a distinct strategy hash.
     uint32 internal constant FEE_TEST_BPS = LOW_TIER_FEE_BPS + 2;
 
-    function test_ProtocolFeeLandsInRealDaoTreasury() public {
+    function test_ProtocolFeeSplitsBetweenDaoAndBleuTreasuries() public {
         ISwapVM.Order memory order = _buildOrder(FEE_TEST_BPS);
         _fundAndShip(order, INITIAL_BALANCE);
 
         uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "taker pays the exact amount they specified");
 
-        uint256 expectedDaoAmount = TRADE_AMOUNT * PortfolioManagerFee.daoFeeBps(FEE_TEST_BPS) / FEE_BPS_SCALE;
-        uint256 daoBalanceAfter = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 expectedTotalFee = TRADE_AMOUNT * PortfolioManagerFee.daoFeeBps(FEE_TEST_BPS) / FEE_BPS_SCALE;
+        uint256 expectedBleuAmount = expectedTotalFee / 2;
+        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
 
-        assertGt(expectedDaoAmount, 0, "sanity: this tier/amount must produce a nonzero fee");
+        uint256 daoBalanceAfter = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 bleuBalanceAfter = pmTokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
+
+        assertGt(expectedTotalFee, 0, "sanity: this tier/amount must produce a nonzero fee");
         assertEq(
             daoBalanceAfter - daoBalanceBefore,
             expectedDaoAmount,
-            "the real DAO Treasury address must receive exactly the 1/4-tier amount"
+            "the real DAO Treasury address must receive exactly its half (plus any odd remainder unit)"
+        );
+        assertEq(
+            bleuBalanceAfter - bleuBalanceBefore,
+            expectedBleuAmount,
+            "the real Bleu Treasury address must receive exactly its half"
         );
     }
 }

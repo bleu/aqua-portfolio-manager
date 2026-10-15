@@ -8,16 +8,21 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
 import {MultiSendCallOnly} from "safe-smart-account/contracts/libraries/MultiSendCallOnly.sol";
+import {TokenMock} from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {TakerTraitsLib} from "swap-vm/libs/TakerTraits.sol";
+import {Controls} from "swap-vm/instructions/Controls.sol";
 import {Aqua} from "aqua/Aqua.sol";
 
 import {AquaE2EBase} from "./base/AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../src/utils/PortfolioManagerProgramBuilder.sol";
+import {GatedPortfolioManagerProgramBuilder} from "../../src/utils/GatedPortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../../src/utils/PortfolioManagerFeedRegistry.sol";
 import {Arbitrageur} from "../../src/Arbitrageur.sol";
 import {IArbitrageur} from "../../src/interfaces/IArbitrageur.sol";
 
@@ -65,7 +70,6 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     /// @dev Chainlink USDC/USD on Base — https://basescan.org/address/0x7e860098f58bbfc8648a4311b374b1d669a2bc6b
     address internal constant USDC_USD_FEED_BASE = 0x7e860098F58bBFC8648a4311b374B1D669a2bc6B;
 
-    uint256 internal constant MAX_STALENESS = 12 hours;
     uint256 internal constant GROUP_WEIGHT = 0.5e18;
 
     uint256 internal constant WETH_FUNDING = 20e18;
@@ -75,8 +79,20 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
     uint256 private constant OWNER_KEY = 0xA12BEE;
 
+    /// @dev Real Chainlink Base heartbeats, confirmed on-chain (BLEUDEV-412/ADR-0018 and
+    ///      packages/addresses/base-mainnet-feeds.json): WETH's feed updates every 1200s;
+    ///      BTC_USD_FEED_BASE here is the generic BTC/USD feed (not the WBTC-specific one in
+    ///      that file), whose own observed round-to-round gaps stay well under 1200s, so the
+    ///      same bound applies safely. Stablecoin feeds (USDT, USDC) almost never move enough
+    ///      to trigger an early update, so they wait out their full 86400s heartbeat round
+    ///      after round in practice.
+    uint32 internal constant MAJOR_MAX_STALENESS = 1200;
+    uint32 internal constant STABLE_MAX_STALENESS = 86400;
+
     PortfolioManagerRouter internal router;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     MultiSendCallOnly internal multiSendCallOnly;
     Safe internal pmSafe;
     Arbitrageur internal arbitrageur;
@@ -92,12 +108,29 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     ///      feature is built for.
     PortfolioManagerArgsCodec.Group[] internal groups;
 
+    /// @dev Stands in for 1inch's real per-chain resolver KYC credential (`KycNFT`/`RES`) --
+    ///      `Controls._onlyTxOriginTokenBalanceNonZero` only calls `balanceOf(tx.origin)`, so any
+    ///      ERC20-shaped mock is faithful (same interface call as the real ERC721 credential).
+    TokenMock internal resolverKycToken;
+
     function setUp() public override {
         super.setUp();
 
-        strategyValidator = new PortfolioManagerStrategyValidator();
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            SEQUENCER_UPTIME_FEED_MAINNET, address(tokenRegistry), address(feedRegistry)
+        );
         router = new PortfolioManagerRouter(
-            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+            address(aqua),
+            WETH_BASE,
+            deployer,
+            "AquaPortfolioManager",
+            "1",
+            address(strategyValidator),
+            SEQUENCER_UPTIME_FEED_MAINNET,
+            address(tokenRegistry),
+            address(feedRegistry)
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(3); // distinct salt nonce from the other E2E fixtures' Safes
@@ -110,22 +143,27 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         arbitrageurOwner = vm.addr(OWNER_KEY);
         arbitrageur = new Arbitrageur(address(router), POOL_MANAGER_BASE, arbitrageurOwner);
         fyndRouter = new MockFyndRouter();
+        resolverKycToken = new TokenMock("Aqua Resolver", "RES");
 
         PortfolioManagerArgsCodec.Member[] memory stables = new PortfolioManagerArgsCodec.Member[](2);
         stables[0] = PortfolioManagerArgsCodec.Member({
-            token: address(usdt), feed: USDT_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(usdt)),
+            feedIndex: feedRegistry.register(USDT_USD_FEED_BASE, STABLE_MAX_STALENESS)
         });
         stables[1] = PortfolioManagerArgsCodec.Member({
-            token: address(usdc), feed: USDC_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(usdc)),
+            feedIndex: feedRegistry.register(USDC_USD_FEED_BASE, STABLE_MAX_STALENESS)
         });
         groups.push(PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: stables}));
 
         PortfolioManagerArgsCodec.Member[] memory majors = new PortfolioManagerArgsCodec.Member[](2);
         majors[0] = PortfolioManagerArgsCodec.Member({
-            token: address(wbtc), feed: BTC_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(wbtc)),
+            feedIndex: feedRegistry.register(BTC_USD_FEED_BASE, MAJOR_MAX_STALENESS)
         });
         majors[1] = PortfolioManagerArgsCodec.Member({
-            token: address(weth), feed: ETH_USD_FEED_BASE, maxStaleness: MAX_STALENESS
+            tokenIndex: tokenRegistry.register(address(weth)),
+            feedIndex: feedRegistry.register(ETH_USD_FEED_BASE, MAJOR_MAX_STALENESS)
         });
         groups.push(PortfolioManagerArgsCodec.Group({weight: GROUP_WEIGHT, members: majors}));
     }
@@ -134,6 +172,36 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, lpFeeBps);
+        return MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: address(pmSafe),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                receiver: address(0),
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+    }
+
+    /// @dev Same as `_buildOrder`, but the strategy carries the resolver KYC gate (ADR-0015):
+    ///      only a `tx.origin` holding `resolverKycToken` can trade against it. Proves the
+    ///      arbitrageur -- as the actual resolver/taker role the gate exists to protect -- works
+    ///      correctly against a strategy that requires it, not just an ungated one.
+    function _buildGatedOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
+        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, lpFeeBps, address(resolverKycToken));
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: address(pmSafe),
@@ -183,7 +251,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         vm.stopPrank();
 
         bytes memory attestData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
+            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens, new string[](0)));
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(
@@ -229,6 +297,33 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
         assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped strategy");
         _ensurePoolManagerLiquidity(usdt, amountIn * 10);
+    }
+
+    /// @dev Same as `_setUpFlashArb`, for a resolver-KYC-gated strategy (`_buildGatedOrder`).
+    ///      `runLoop` executes every instruction in the program for a `quote()` call exactly like
+    ///      it does for a real `swap()` -- so `quoteExactIn` on a gated strategy reverts too
+    ///      unless `tx.origin` holds the credential (discovered running this test: the original
+    ///      assumption here, that a `view` call sidesteps the gate, was wrong). `quotingOrigin`
+    ///      is pranked for this call the same way the real bot would need to: `eth_call`ing with
+    ///      `from` set to its own resolver EOA, since that's the identity it intends to trade as.
+    ///      Split from the quote step itself (`_shipGatedOrder` below) so a test that expects the
+    ///      quote call to revert can arm `vm.expectRevert` immediately before it -- `expectRevert`
+    ///      attaches to the very next call, and shipping alone makes several real external calls
+    ///      (deal, approve, `execTransaction`) that would otherwise be the ones it catches.
+    function _setUpGatedFlashArb(uint256 amountIn, address quotingOrigin)
+        internal
+        returns (ISwapVM.Order memory order, uint256 quotedOut)
+    {
+        order = _shipGatedOrder();
+        vm.prank(quotingOrigin, quotingOrigin);
+        quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
+        assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped gated strategy");
+        _ensurePoolManagerLiquidity(usdt, amountIn * 10);
+    }
+
+    function _shipGatedOrder() internal returns (ISwapVM.Order memory order) {
+        order = _buildGatedOrder(0);
+        _shipOnly(order);
     }
 
     /// @dev Funds the mock Fynd router with `fyndReturnAmount` USDT and builds the params for a
@@ -386,5 +481,55 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         vm.prank(arbitrageurOwner);
         vm.expectRevert(TakerTraitsLib.TakerTraitsDeadlineExpired.selector);
         arbitrageur.executeFlashArbitrage(params);
+    }
+
+    /// @notice The arbitrageur bot's own EOA is the resolver the KYC gate (ADR-0015) checks -- it
+    /// calls both `quoteExactIn` and `executeFlashArbitrage` directly, with no intermediate
+    /// contract, so `tx.origin` equals its own address in production for either call.
+    ///
+    /// Real finding from writing this test: `runLoop` executes every instruction in the program
+    /// -- including the gate -- for a `quote()` call exactly like it does for a real `swap()`.
+    /// The original assumption here was that a `view` quote call would sidestep the gate; it
+    /// doesn't. So an uncredentialed resolver can't even *size* a trade against a gated strategy,
+    /// let alone execute one -- `_setUpGatedFlashArb` itself reverts, before `executeFlashArbitrage`
+    /// is ever reached. This has a real consequence for the off-chain bot: it must `eth_call`
+    /// `quoteExactIn` with `from` set to its own resolver EOA, or every quote against a gated
+    /// strategy fails, not just execution.
+    /// @dev Uses `vm.prank`'s two-arg form deliberately: the one-arg form only ever changes
+    ///      `msg.sender`, never `tx.origin`, and this test is specifically about `tx.origin`.
+    function test_FlashArbitrageRevertsForGatedStrategyWithoutResolverCredential() public {
+        uint256 amountIn = 1_000e6;
+        ISwapVM.Order memory order = _shipGatedOrder();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Controls.TxOriginTokenBalanceIsZero.selector, arbitrageurOwner, address(resolverKycToken)
+            )
+        );
+        vm.prank(arbitrageurOwner, arbitrageurOwner);
+        arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
+    }
+
+    /// @notice Same gated strategy, this time with the arbitrageur owner actually holding the
+    /// resolver credential before even quoting -- proves the flash arbitrage completes exactly
+    /// like the ungated case once the gate is satisfied at both the quote and execute steps, not
+    /// that gating silently breaks something else in the path.
+    function test_FlashArbitrageSucceedsForGatedStrategyWithResolverCredential() public {
+        uint256 amountIn = 1_000e6;
+        resolverKycToken.mint(arbitrageurOwner, 1);
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpGatedFlashArb(amountIn, arbitrageurOwner);
+
+        uint256 owed = amountIn;
+        uint256 fyndReturnAmount = (owed * 105) / 100;
+        IArbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
+
+        vm.prank(arbitrageurOwner, arbitrageurOwner);
+        arbitrageur.executeFlashArbitrage(params);
+
+        uint256 expectedProfit = fyndReturnAmount - owed;
+        assertEq(
+            usdt.balanceOf(address(arbitrageur)), expectedProfit, "profit must remain on the contract, gate satisfied"
+        );
     }
 }

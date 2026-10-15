@@ -1,0 +1,20 @@
+{
+  "name": "@aqua-portfolio-manager/addresses",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single source of truth for the Base mainnet addresses this repo needs in more than one place -- base-mainnet.json, imported directly by TS consumers and read live by Solidity scripts via vm.readFile. Nothing generated.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepare": "tsc",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "check-config-drift": "tsx scripts/check-config-drift.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

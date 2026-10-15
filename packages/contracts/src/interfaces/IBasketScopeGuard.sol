@@ -22,6 +22,10 @@ interface IBasketScopeGuard {
     ///         computed off-chain before this guard is deployed.
     function TRUSTED_PM_STRATEGY_HASH() external view returns (bytes32);
 
+    /// @notice The PM router app address a `ship()` call must target to use the cross-basket
+    ///         exemption. The strategy hash alone does not identify which app will run it.
+    function TRUSTED_PM_ROUTER() external view returns (address);
+
     /// @notice `basketOf[token] == 0` means the token is outside the declared universe.
     function basketOf(address token) external view returns (uint256);
 }

@@ -10,7 +10,7 @@ Follow the [documentation style](../STYLE.md).
 |---|---|---|
 | [0001](0001-license-under-aqua-source-not-mit.md) | Use Aqua-Source-1.1 | Accepted |
 | [0002](0002-dedicated-maker-wallet-as-portfolio-scope.md) | Use a dedicated maker wallet | Accepted |
-| [0003](0003-oracle-valued-token-groups.md) | Value exposure by token group | Accepted |
+| [0003](0003-oracle-valued-token-groups.md) | Value exposure by token group | Refined by 0017 |
 | [0004](0004-constant-mean-weighted-curve-pricing.md) | Use a constant-mean weighted curve | Accepted |
 | [0005](0005-chainlink-push-oracles.md) | Use Chainlink-style push feeds | Accepted |
 | [0006](0006-exposure-smoothing.md) | Price current exposure without smoothing | Accepted |
@@ -19,6 +19,10 @@ Follow the [documentation style](../STYLE.md).
 | [0009](0009-deploy-on-an-l2-at-launch.md) | Launch on an L2 | Accepted |
 | [0010](0010-on-chain-form-aquaapp-vs-swapvm-instruction.md) | Deploy an independent SwapVM router | Accepted |
 | [0011](0011-safe-wallet-with-basket-scope-guard.md) | Require a Safe with a Basket Scope Guard | Accepted |
-| [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Accepted |
+| [0012](0012-price-deviation-circuit-breaker.md) | Block trades with excessive price deviation | Partially superseded by 0016 |
 | [0013](0013-build-parameter-attestation-gate.md) | Require parameter attestation before trading | Accepted |
 | [0014](0014-production-arbitrageur-design.md) | Run the production arbitrageur on Base | Proposed |
+| [0015](0015-two-program-builders-for-the-resolver-kyc-gate.md) | Ship both a gated and an ungated PM strategy builder | Accepted |
+| [0016](0016-per-trade-deviation-step-cap.md) | Cap per-trade deviation step instead of gating on pre-trade state | Accepted |
+| [0017](0017-numeraire-member-and-raw-price-reuse.md) | Let each group have its own numeraire member; fetch each feed once per swap | Accepted |
+| [0018](0018-registry-indexed-member-with-per-feed-staleness.md) | Reference tokens and feeds by registry index, with maxStaleness set per feed | Accepted |

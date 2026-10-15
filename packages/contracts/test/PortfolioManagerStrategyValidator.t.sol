@@ -12,11 +12,18 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerStrategyValidator} from "../src/interfaces/IPortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
+import {OracleAdapter} from "../src/utils/OracleAdapter.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
 /// @notice Tests validation separately from shipping. Safe batch integration is covered in the E2E suite.
 contract PortfolioManagerStrategyValidatorTest is Test {
+    uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
+
     PortfolioManagerStrategyValidator internal validator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     TokenMock internal tokenC;
@@ -25,9 +32,18 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     MockAggregatorV3 internal feedA;
     MockAggregatorV3 internal feedB;
+    MockAggregatorV3 internal sequencerFeed;
 
     function setUp() public {
-        validator = new PortfolioManagerStrategyValidator();
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        validator = new PortfolioManagerStrategyValidator(
+            address(sequencerFeed), address(tokenRegistry), address(feedRegistry)
+        );
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -41,28 +57,25 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         maker = vm.addr(0x1234);
     }
 
-    /// @dev Universe checks do not read feeds. Deviation tests use priced feeds separately.
-    address internal constant DUMMY_FEED = address(0xFEED);
+    /// @dev Universe checks (`requireUniverseMatches`) never resolve a feed index at all --
+    ///      flattenTokens only touches tokenIndex. Any nonzero feedIndex works here.
+    uint16 internal constant DUMMY_FEED_INDEX = 1;
 
     function _groups(address[] memory declaredTokens, uint256[] memory weights)
         internal
-        pure
         returns (PortfolioManagerArgsCodec.Group[] memory groups)
     {
         groups = new PortfolioManagerArgsCodec.Group[](declaredTokens.length);
         for (uint256 i = 0; i < declaredTokens.length; i++) {
             PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-            members[0] =
-                PortfolioManagerArgsCodec.Member({token: declaredTokens[i], feed: DUMMY_FEED, maxStaleness: 1 hours});
+            members[0] = PortfolioManagerArgsCodec.Member({
+                tokenIndex: tokenRegistry.register(declaredTokens[i]), feedIndex: DUMMY_FEED_INDEX
+            });
             groups[i] = PortfolioManagerArgsCodec.Group({weight: weights[i], members: members});
         }
     }
 
-    function _order(address[] memory declaredTokens, uint256[] memory weights)
-        internal
-        view
-        returns (ISwapVM.Order memory)
-    {
+    function _order(address[] memory declaredTokens, uint256[] memory weights) internal returns (ISwapVM.Order memory) {
         bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declaredTokens, weights), 0);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -88,7 +101,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         );
     }
 
-    function test_PassesWhenDeclaredAndShippedUniversesMatch() public view {
+    function test_PassesWhenDeclaredAndShippedUniversesMatch() public {
         address[] memory declared = new address[](2);
         declared[0] = address(tokenA);
         declared[1] = address(tokenB);
@@ -152,6 +165,94 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireUniverseMatches(order, shipped);
     }
 
+    /// @dev Builds an order from an arbitrary program, bypassing _order/_groups so the trailing-
+    ///      instruction tests can append raw bytes after a legitimate leading curve.
+    function _orderWithProgram(bytes memory program) internal view returns (ISwapVM.Order memory) {
+        return MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+    }
+
+    /// @dev A trailing curve instruction after the leading, validated one must never be silently
+    ///      accepted into the attested scope -- its own args were never checked.
+    function test_RevertsOnTrailingCurveInstruction() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        // Appends a second, unvalidated curve instruction after the first's own args.
+        bytes memory trailingCurve = abi.encodePacked(uint8(PortfolioManagerProgramBuilder.CURVE_OPCODE), uint8(0));
+        program = abi.encodePacked(program, trailingCurve);
+
+        vm.expectRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorTrailingCurveInstruction.selector
+        );
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
+    /// @dev A trailing curve must be rejected even when it comes after a legitimate non-curve
+    ///      instruction, not just immediately after the leading curve -- the walk must not stop
+    ///      at the first trailing instruction.
+    function test_RevertsOnTrailingCurveInstructionAfterANonCurveInstruction() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        // KYC_GATE_OPCODE = 1, matching GatedPortfolioManagerProgramBuilder's own wire format.
+        bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
+        bytes memory trailingCurve = abi.encodePacked(uint8(PortfolioManagerProgramBuilder.CURVE_OPCODE), uint8(0));
+        program = abi.encodePacked(program, kycGate, trailingCurve);
+
+        vm.expectRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorTrailingCurveInstruction.selector
+        );
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
+    /// @dev A trailing non-curve instruction (e.g. the resolver KYC gate) does not re-price
+    ///      anything, so it must stay allowed -- this is the real, shipped Gated program shape.
+    function test_AllowsTrailingNonCurveInstruction() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
+        program = abi.encodePacked(program, kycGate);
+
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
     function test_RevertsOnNonPortfolioManagerProgram() public {
         bytes memory program = abi.encodePacked(uint8(99), uint8(0));
         ISwapVM.Order memory order = MakerTraitsLib.build(
@@ -189,16 +290,20 @@ contract PortfolioManagerStrategyValidatorTest is Test {
     // ===== requireBalancedWithinTolerance (ADR-0012) =====
 
     /// @dev Two single-member groups with unit prices and equal weights for balance checks.
-    function _toleranceOrder(uint32 maxDeviationBps) internal view returns (ISwapVM.Order memory) {
+    function _toleranceOrder(uint32 maxDeviationBps) internal returns (ISwapVM.Order memory) {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
         PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
-        membersA[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenA), feed: address(feedA), maxStaleness: 1 hours});
+        membersA[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenA)),
+            feedIndex: feedRegistry.register(address(feedA), DEFAULT_MAX_STALENESS)
+        });
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
 
         PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
-        membersB[0] =
-            PortfolioManagerArgsCodec.Member({token: address(tokenB), feed: address(feedB), maxStaleness: 1 hours});
+        membersB[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenB)),
+            feedIndex: feedRegistry.register(address(feedB), DEFAULT_MAX_STALENESS)
+        });
         groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, maxDeviationBps);
@@ -236,7 +341,8 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     function test_TolerancePassesWithinBand() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
-        // 105,000 / 205,000 = 51.2%, only ~2.4% off the 50% target -- inside the 10% band.
+        // Equal weights -- pairwise spot price is 105,000/100,000 = 1.05, 5% off the 1.0 parity
+        // the swap guard also checks -- inside the 10% band.
         tokenA.mint(maker, 105_000e18);
         tokenB.mint(maker, 100_000e18);
 
@@ -245,19 +351,44 @@ contract PortfolioManagerStrategyValidatorTest is Test {
 
     function test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand() public {
         ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
-        // A 9.09% actual share against a 50% target gives about 82% relative deviation.
+        // Equal weights -- pairwise spot price is 10,000/100,000 = 0.1, 90% off the 1.0 parity
+        // the swap guard also checks -- well past the 10% band.
         uint256 balA = 10_000e18;
         uint256 balB = 100_000e18;
         tokenA.mint(maker, balA);
         tokenB.mint(maker, balB);
 
-        uint256 actualShareWad = balA * 1e18 / (balA + balB);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector,
                 uint256(0),
-                actualShareWad,
-                uint256(0.5e18)
+                uint256(1),
+                uint256(0.1e18),
+                uint256(0.1e9)
+            )
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev The actual BLEUDEV-407 bug: a wallet the OLD per-group-share metric would have passed
+    ///      (8.1% share deviation, under the 10% band) but whose pairwise spot price is already
+    ///      15% off parity -- exactly the gap between the two metrics. Proves attestation now
+    ///      rejects a strategy that would have shipped fine under the old check and then had every
+    ///      cross-group swap immediately revert against PortfolioManagerSwap's own pairwise guard.
+    function test_ToleranceRevertsOnPairwiseSpotPriceEvenWhenTheOldShareMetricWouldHavePassed() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
+        uint256 balA = 85_000e18;
+        uint256 balB = 100_000e18;
+        tokenA.mint(maker, balA);
+        tokenB.mint(maker, balB);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector,
+                uint256(0),
+                uint256(1),
+                uint256(0.85e18),
+                uint256(0.1e9)
             )
         );
         validator.requireBalancedWithinTolerance(order, maker);
@@ -268,6 +399,20 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         tokenA.mint(maker, 10_000e18);
         tokenB.mint(maker, 100_000e18);
 
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev Proves the deviation check actually asks the sequencer feed, not just that wiring a
+    ///      constructor param compiles -- flips the same mock setUp wired in, to "down".
+    function test_ToleranceRevertsWhenSequencerIsDown() public {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9); // 10%
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        sequencerFeed.setAnswer(1, block.timestamp); // answer 1 == down
+
+        vm.expectRevert(
+            abi.encodeWithSelector(OracleAdapter.OracleAdapterSequencerDown.selector, address(sequencerFeed))
+        );
         validator.requireBalancedWithinTolerance(order, maker);
     }
 
@@ -293,10 +438,50 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         assertFalse(validator.buildParamsAttested(strategyHash), "must be unattested before the call");
 
         vm.expectEmit(true, false, false, false, address(validator));
-        emit IPortfolioManagerStrategyValidator.BuildParametersAttested(strategyHash);
-        validator.attestBuildParameters(order, tokens);
+        emit IPortfolioManagerStrategyValidator.BuildParametersAttested(strategyHash, new string[](0));
+        validator.attestBuildParameters(order, tokens, new string[](0));
 
         assertTrue(validator.buildParamsAttested(strategyHash), "must be attested after a successful call");
+    }
+
+    function test_AttestBuildParametersEmitsSuppliedGroupNames() external {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9);
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+
+        string[] memory groupNames = new string[](2);
+        groupNames[0] = "Stablecoins";
+        groupNames[1] = "Crypto majors";
+
+        vm.expectEmit(true, true, true, true, address(validator));
+        emit IPortfolioManagerStrategyValidator.BuildParametersAttested(keccak256(abi.encode(order)), groupNames);
+        validator.attestBuildParameters(order, tokens, groupNames);
+    }
+
+    function test_AttestBuildParametersRevertsOnGroupNamesLengthMismatch() external {
+        ISwapVM.Order memory order = _toleranceOrder(0.1e9);
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+
+        string[] memory groupNames = new string[](1);
+        groupNames[0] = "Only one name for two groups";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorGroupNamesLengthMismatch.selector,
+                1,
+                2
+            )
+        );
+        validator.attestBuildParameters(order, tokens, groupNames);
     }
 
     function test_AttestBuildParametersRevertsOnUniverseMismatchSameAsRequireUniverseMatches() public {
@@ -319,7 +504,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
                 address(tokenC)
             )
         );
-        validator.attestBuildParameters(order, shipped);
+        validator.attestBuildParameters(order, shipped, new string[](0));
 
         assertFalse(
             validator.buildParamsAttested(keccak256(abi.encode(order))), "a reverted attestation must not be recorded"
@@ -340,7 +525,121 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         vm.expectPartialRevert(
             IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
         );
-        validator.attestBuildParameters(order, tokens);
+        validator.attestBuildParameters(order, tokens, new string[](0));
+    }
+
+    /// @dev The ship-time pairwise deviation check (BLEUDEV-407) is just as unit-agnostic as the
+    ///      swap-side step cap (BLEUDEV-403/ADR-0016) -- it only compares groupValuesWad ratios,
+    ///      never an absolute USD amount -- so it must keep working unchanged against a numeraire
+    ///      member too. tokenA is its own numeraire (feedIndex == 0); only feedB is read.
+    function test_ToleranceWorksWhenOneMemberIsItsOwnNumeraire() public {
+        PortfolioManagerArgsCodec.Group[] memory numeraireGroups = new PortfolioManagerArgsCodec.Group[](2);
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
+        numeraireGroups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+
+        PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
+        membersB[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenB)),
+            feedIndex: feedRegistry.register(address(feedB), DEFAULT_MAX_STALENESS)
+        });
+        numeraireGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(numeraireGroups, 0, 0.1e9); // 10%
+        ISwapVM.Order memory order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+        validator.requireBalancedWithinTolerance(order, maker); // at target, must not revert
+
+        // Push 90% past parity -- same shape as test_ToleranceRevertsWhenWalletIsFundedOffTargetBeyondBand,
+        // just denominated in tokenA instead of USD. Confirms the check still fires correctly.
+        tokenA.mint(maker, 890_000e18); // tokenA group now 990,000e18 vs tokenB's 100,000e18
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+    }
+
+    /// @dev Group 0's numeraire is tokenA, group 1's is tokenC -- two different units, no shared
+    ///      numeraire (ADR-0017's per-group, bridge-feed design). The registered bridge quotes 1
+    ///      tokenA = 2 tokenC. At target, group 0's 100,000 tokenA bridge-adjusts to 200,000
+    ///      tokenC-equivalent, matching group 1's 200,000 tokenC exactly -- parity, must not
+    ///      revert. Confirms the bridge rate is actually consulted, not just accepted at build time.
+    function test_ToleranceWorksAcrossTwoDifferentGroupNumerairesWithABridgeFeed() public {
+        MockAggregatorV3 bridgeFeed = new MockAggregatorV3(18, 2e18, block.timestamp); // 1 tokenA = 2 tokenC
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenA)), feedIndex: 0});
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+
+        PortfolioManagerArgsCodec.Member[] memory membersC = new PortfolioManagerArgsCodec.Member[](1);
+        membersC[0] =
+            PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenC)), feedIndex: 0});
+        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersC});
+
+        PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
+        bridges[0] =
+            PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(bridgeFeed), maxStaleness: 1 hours});
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, 0.1e9, bridges); // 10%
+        ISwapVM.Order memory order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        tokenA.mint(maker, 100_000e18);
+        tokenC.mint(maker, 200_000e18);
+        validator.requireBalancedWithinTolerance(order, maker); // bridge-adjusted parity, must not revert
+
+        // Drop group 1 far below its bridge-adjusted target share.
+        tokenC.burn(maker, 190_000e18); // tokenC now 10,000e18 vs tokenA's bridge-adjusted 200,000e18
+        vm.expectPartialRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorExcessivePriceDeviation.selector
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
     }
 
     function test_AttestBuildParametersIsIdempotent() public {
@@ -352,8 +651,8 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         tokens[0] = address(tokenA);
         tokens[1] = address(tokenB);
 
-        validator.attestBuildParameters(order, tokens);
-        validator.attestBuildParameters(order, tokens); // must not revert
+        validator.attestBuildParameters(order, tokens, new string[](0));
+        validator.attestBuildParameters(order, tokens, new string[](0)); // must not revert
 
         assertTrue(validator.buildParamsAttested(keccak256(abi.encode(order))));
     }

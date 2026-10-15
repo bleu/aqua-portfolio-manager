@@ -76,7 +76,7 @@ library PortfolioManagerPricing {
     }
 
     /// @dev `B_i == 0` or `B_o == 0`: a weighted pool's price is undefined at a zero balance
-    ///      on either side — same requirement `BasketXYCSwap.sol`'s PoC already enforces.
+    ///      on either side.
     function _requireNonZeroBalances(PoolState memory q) private pure {
         require(q.balanceIn > 0 && q.balanceOut > 0, PortfolioManagerPricingZeroBalance());
     }

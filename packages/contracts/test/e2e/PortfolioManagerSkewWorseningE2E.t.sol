@@ -15,10 +15,10 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant TRADE_AMOUNT = 100e18;
 
     /// @dev Reverse group order to produce a distinct hash while preserving the equal-weight configuration.
-    function _buildOrderWithReversedUniverse() internal view returns (ISwapVM.Order memory) {
+    function _buildOrderWithReversedUniverse() internal returns (ISwapVM.Order memory) {
         PortfolioManagerArgsCodec.Group[] memory reversedGroups = new PortfolioManagerArgsCodec.Group[](2);
-        reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE);
-        reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE);
+        reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE, STABLE_MAX_STALENESS);
+        reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE, MAJOR_MAX_STALENESS);
         bytes memory program = PortfolioManagerProgramBuilder.build(reversedGroups, 0);
 
         return MakerTraitsLib.build(

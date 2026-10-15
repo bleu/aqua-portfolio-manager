@@ -18,6 +18,8 @@ import {PortfolioManagerArgsCodec} from "../../../src/utils/PortfolioManagerArgs
 import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerFee} from "../../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerStrategyValidator} from "../../../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../../../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../../../src/utils/PortfolioManagerFeedRegistry.sol";
 import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 
 /// @notice Deploys PM contracts and a WETH/DAI Safe with two single-member groups on the Base fork.
@@ -25,6 +27,13 @@ import {MockTaker} from "../../../lib/swap-vm/test/mocks/MockTaker.sol";
 abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant FEE_BPS_SCALE = 1e9;
+
+    /// @dev Real Chainlink Base heartbeats, confirmed on-chain (BLEUDEV-412/ADR-0018 and
+    ///      packages/addresses/base-mainnet-feeds.json): ETH/USD updates every 1200s; DAI/USD,
+    ///      a stablecoin feed, almost never moves enough to trigger an early update, so it
+    ///      waits out its full 86400s heartbeat round after round in practice.
+    uint32 internal constant MAJOR_MAX_STALENESS = 1200;
+    uint32 internal constant STABLE_MAX_STALENESS = 86400;
 
     /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (≈0.1225%) — 1/4 tier.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
@@ -37,8 +46,6 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     address internal constant ETH_USD_FEED_BASE = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
     /// @dev Chainlink DAI/USD on Base — https://basescan.org/address/0x591e79239a7d679378ec8c847e5038150364c78f
     address internal constant DAI_USD_FEED_BASE = 0x591e79239a7d679378eC8c847e5038150364C78F;
-    /// @dev Keep feeds fresh to isolate curve and fee behavior.
-    uint256 internal constant PM_MAX_STALENESS = 12 hours;
 
     PortfolioManagerRouter internal router;
     Safe internal pmSafe;
@@ -46,6 +53,8 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     IERC20 internal pmTokenB;
     MockTaker internal taker;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     MultiSendCallOnly internal multiSendCallOnly;
 
     PortfolioManagerArgsCodec.Group[] internal groups;
@@ -53,9 +62,21 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     function setUp() public virtual override {
         super.setUp();
 
-        strategyValidator = new PortfolioManagerStrategyValidator();
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            SEQUENCER_UPTIME_FEED_MAINNET, address(tokenRegistry), address(feedRegistry)
+        );
         router = new PortfolioManagerRouter(
-            address(aqua), WETH_BASE, deployer, "AquaPortfolioManager", "1", address(strategyValidator)
+            address(aqua),
+            WETH_BASE,
+            deployer,
+            "AquaPortfolioManager",
+            "1",
+            address(strategyValidator),
+            SEQUENCER_UPTIME_FEED_MAINNET,
+            address(tokenRegistry),
+            address(feedRegistry)
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(1); // distinct salt nonce from BasketScopeGuardE2E's/the multi-token fixture's Safes
@@ -64,17 +85,18 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
         pmTokenB = IERC20(DAI_BASE);
         taker = new MockTaker(aqua, router, address(this));
 
-        groups.push(_singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE));
-        groups.push(_singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE));
+        groups.push(_singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE, MAJOR_MAX_STALENESS));
+        groups.push(_singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE, STABLE_MAX_STALENESS));
     }
 
-    function _singleMemberGroup(uint256 weight, address token, address feed)
+    function _singleMemberGroup(uint256 weight, address token, address feed, uint32 maxStaleness)
         internal
-        pure
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: PM_MAX_STALENESS});
+        members[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(token), feedIndex: feedRegistry.register(feed, maxStaleness)
+        });
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
@@ -137,8 +159,9 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
         internal
         returns (bool)
     {
-        bytes memory attestData =
-            abi.encodeCall(PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens));
+        bytes memory attestData = abi.encodeCall(
+            PortfolioManagerStrategyValidator.attestBuildParameters, (order, tokens, new string[](0))
+        );
         bytes memory shipData = abi.encodeCall(Aqua.ship, (address(router), abi.encode(order), tokens, amounts));
 
         bytes memory batch = abi.encodePacked(

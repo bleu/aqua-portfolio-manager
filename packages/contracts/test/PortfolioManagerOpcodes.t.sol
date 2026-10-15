@@ -21,6 +21,8 @@ import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
+import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
+import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {IPortfolioManagerSwap} from "../src/interfaces/IPortfolioManagerSwap.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
@@ -29,6 +31,7 @@ contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant FEE_BPS_SCALE = 1e9;
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
+    uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
 
     /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (0.1225%) — 1/4 tier.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
@@ -38,6 +41,8 @@ contract PortfolioManagerOpcodesTest is Test {
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
     PortfolioManagerStrategyValidator internal strategyValidator;
+    PortfolioManagerTokenRegistry internal tokenRegistry;
+    PortfolioManagerFeedRegistry internal feedRegistry;
     TokenMock internal tokenA;
     TokenMock internal tokenB;
     MockAggregatorV3 internal feedA;
@@ -49,10 +54,28 @@ contract PortfolioManagerOpcodesTest is Test {
     PortfolioManagerArgsCodec.Group[] internal groups;
 
     function setUp() public {
+        vm.warp(1_000_000);
+        // answer 0 == sequencer up (Chainlink's uptime-feed convention); started long enough ago
+        // that OracleAdapter's post-recovery grace period has already elapsed.
+        MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 2 hours);
+
         aqua = new Aqua();
-        strategyValidator = new PortfolioManagerStrategyValidator();
-        router =
-            new PortfolioManagerRouter(address(aqua), address(0), address(this), "PM", "1", address(strategyValidator));
+        tokenRegistry = new PortfolioManagerTokenRegistry();
+        feedRegistry = new PortfolioManagerFeedRegistry(address(this));
+        strategyValidator = new PortfolioManagerStrategyValidator(
+            address(sequencerFeed), address(tokenRegistry), address(feedRegistry)
+        );
+        router = new PortfolioManagerRouter(
+            address(aqua),
+            address(0),
+            address(this),
+            "PM",
+            "1",
+            address(strategyValidator),
+            address(sequencerFeed),
+            address(tokenRegistry),
+            address(feedRegistry)
+        );
 
         tokenA = new TokenMock("Token A", "TKA");
         tokenB = new TokenMock("Token B", "TKB");
@@ -72,12 +95,12 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function _singleMemberGroup(uint256 weight, address token, address feed)
         internal
-        pure
         returns (PortfolioManagerArgsCodec.Group memory)
     {
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](1);
-        // Keep feeds fresh so these tests isolate ledger and fee behavior.
-        members[0] = PortfolioManagerArgsCodec.Member({token: token, feed: feed, maxStaleness: 18 hours});
+        members[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(token), feedIndex: feedRegistry.register(feed, DEFAULT_MAX_STALENESS)
+        });
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
     }
 
@@ -134,7 +157,7 @@ contract PortfolioManagerOpcodesTest is Test {
         amounts[0] = tokenInLedgerAmount;
         amounts[1] = INITIAL_BALANCE;
 
-        strategyValidator.attestBuildParameters(order, tokens);
+        strategyValidator.attestBuildParameters(order, tokens, new string[](0));
 
         vm.prank(maker);
         bytes32 strategyHash = aqua.ship(address(router), abi.encode(order), tokens, amounts);
@@ -228,14 +251,18 @@ contract PortfolioManagerOpcodesTest is Test {
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
         assertEq(amountIn, SWAP_AMOUNT, "taker pays the exact amount they specified");
 
-        uint256 expectedDaoAmount = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        uint256 expectedTotalFee = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        uint256 expectedBleuAmount = expectedTotalFee / 2;
+        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
         uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/4-tier formula");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/4-tier formula");
+        assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/4-tier formula");
         assertEq(
             tokenA.balanceOf(maker),
-            INITIAL_BALANCE + amountIn - daoAmount,
+            INITIAL_BALANCE + amountIn - daoAmount - bleuAmount,
             "wallet's net gain is amountIn minus the protocol pull"
         );
     }
@@ -246,11 +273,15 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactIn(order, SWAP_AMOUNT);
 
-        uint256 expectedDaoAmount = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 6) / FEE_BPS_SCALE;
+        uint256 expectedTotalFee = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 6) / FEE_BPS_SCALE;
+        uint256 expectedBleuAmount = expectedTotalFee / 2;
+        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
         uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/6-tier formula");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/6-tier formula");
+        assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/6-tier formula");
     }
 
     function test_ZeroLpFeeMeansZeroProtocolFee() public {
@@ -266,27 +297,33 @@ contract PortfolioManagerOpcodesTest is Test {
     function test_ProtocolFeeSkipsWhenMakerUnderfunded() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
-        // Ship zero ledger for tokenA -- the DAO pull cannot be covered at all.
+        // Ship zero ledger for tokenA -- neither the DAO nor the Bleu pull can be covered at all.
         _shipOrder(order, 0);
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
-        assertEq(amountIn, SWAP_AMOUNT, "swap still completes even though the fee pull was skipped");
+        assertEq(amountIn, SWAP_AMOUNT, "swap still completes even though both fee pulls were skipped");
         assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
+        assertEq(tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS), 0, "Bleu gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256 skippedEvents = 0;
+        uint256 daoSkipped = 0;
+        uint256 bleuSkipped = 0;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0 && logs[i].topics[0] == Fee.ProtocolFeeSkipped.selector) {
-                skippedEvents++;
                 (, address token, address to, uint256 skippedAmount) =
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 token;
-                assertEq(to, PortfolioManagerFee.DAO_TREASURY_ADDRESS);
                 assertGt(skippedAmount, 0);
+                if (to == PortfolioManagerFee.DAO_TREASURY_ADDRESS) {
+                    daoSkipped++;
+                } else if (to == PortfolioManagerFee.BLEU_TREASURY_ADDRESS) {
+                    bleuSkipped++;
+                }
             }
         }
-        assertEq(skippedEvents, 1, "exactly one ProtocolFeeSkipped");
+        assertEq(daoSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's half");
+        assertEq(bleuSkipped, 1, "exactly one ProtocolFeeSkipped for Bleu's half");
     }
 
     function test_ProtocolFeeLandsInDaoTreasuryAtLowTierExactOut() public {
@@ -295,11 +332,17 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactOut(order, SWAP_AMOUNT);
 
-        uint256 expectedDaoAmount = _expectedExactOutDaoAmount(LOW_TIER_FEE_BPS, SWAP_AMOUNT);
+        uint256 expectedTotalFee = _expectedExactOutDaoAmount(LOW_TIER_FEE_BPS, SWAP_AMOUNT);
+        uint256 expectedBleuAmount = expectedTotalFee / 2;
+        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
         uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/4-tier exact-out formula");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/4-tier exact-out formula");
+        assertEq(
+            bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/4-tier exact-out formula"
+        );
     }
 
     function test_ProtocolFeeLandsInDaoTreasuryAtHighTierExactOut() public {
@@ -308,11 +351,17 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactOut(order, SWAP_AMOUNT);
 
-        uint256 expectedDaoAmount = _expectedExactOutDaoAmount(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
+        uint256 expectedTotalFee = _expectedExactOutDaoAmount(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
+        uint256 expectedBleuAmount = expectedTotalFee / 2;
+        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
         uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
+        uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the 1/6-tier exact-out formula");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/6-tier exact-out formula");
+        assertEq(
+            bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/6-tier exact-out formula"
+        );
     }
 
     function test_ZeroLpFeeMeansZeroProtocolFeeExactOut() public {
@@ -425,13 +474,14 @@ contract PortfolioManagerOpcodesTest is Test {
     function test_ProtocolFeeSkipsWhenMakerUnderfundedExactOut() public {
         ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
 
-        // Ship zero ledger for tokenA -- the DAO pull cannot be covered at all.
+        // Ship zero ledger for tokenA -- neither the DAO nor the Bleu pull can be covered at all.
         _shipOrder(order, 0);
 
         vm.recordLogs();
         (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
-        assertEq(amountOut, SWAP_AMOUNT, "swap still completes even though the fee pull was skipped");
+        assertEq(amountOut, SWAP_AMOUNT, "swap still completes even though both fee pulls were skipped");
         assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0, "DAO gets nothing");
+        assertEq(tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS), 0, "Bleu gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 skippedEvents = 0;
@@ -440,7 +490,7 @@ contract PortfolioManagerOpcodesTest is Test {
                 skippedEvents++;
             }
         }
-        assertEq(skippedEvents, 1, "exactly one ProtocolFeeSkipped");
+        assertEq(skippedEvents, 2, "one ProtocolFeeSkipped per recipient");
     }
 
     function test_LpOwnCurveFeeStillAppliesOnTopOfProtocolFee() public {
@@ -500,7 +550,7 @@ contract PortfolioManagerOpcodesTest is Test {
         address[] memory declaredTokens = new address[](2);
         declaredTokens[0] = address(tokenA);
         declaredTokens[1] = address(tokenB);
-        strategyValidator.attestBuildParameters(order, declaredTokens);
+        strategyValidator.attestBuildParameters(order, declaredTokens, new string[](0));
 
         address[] memory tokens = new address[](3);
         tokens[0] = address(tokenA);
@@ -554,18 +604,25 @@ contract PortfolioManagerOpcodesTest is Test {
         taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
-    /// @notice Hand-packed programs still pay the DAO fee when they execute the PM curve opcode.
+    /// @notice Hand-packed programs still pay the DAO/Bleu split when they execute the PM curve opcode.
     function test_ProtocolFeeIsMandatoryEvenBypassingOurProgramBuilder() public {
         ISwapVM.Order memory order = _buildOrderFromHandCraftedProgram(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
 
         _swapExactIn(order, SWAP_AMOUNT);
 
-        uint256 expectedDaoAmount = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        uint256 expectedTotalFee = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        uint256 expectedBleuAmount = expectedTotalFee / 2;
+        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
         assertEq(
             tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS),
             expectedDaoAmount,
-            "the DAO still gets paid even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
+            "the DAO still gets its half even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
+        );
+        assertEq(
+            tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS),
+            expectedBleuAmount,
+            "Bleu still gets its half even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
         );
     }
 }

@@ -12,11 +12,21 @@ export type TokenChipProps = {
   selected?: boolean;
   onToggle?: () => void;
   onRemove?: () => void;
+  /** display only: hide the leading icon and border for a compact context (e.g. the allocation-comparison card). Default true (icon shown). */
+  showIcon?: boolean;
   className?: string;
 };
 
 /** Token icon + ticker chip, shared across every page that lists or picks tokens. */
-export function TokenChip({ token, variant = "display", selected, onToggle, onRemove, className }: TokenChipProps) {
+export function TokenChip({
+  token,
+  variant = "display",
+  selected,
+  onToggle,
+  onRemove,
+  showIcon = true,
+  className,
+}: TokenChipProps) {
   const base = "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium";
 
   if (variant === "toggle") {
@@ -56,8 +66,14 @@ export function TokenChip({ token, variant = "display", selected, onToggle, onRe
   }
 
   return (
-    <span className={cn(base, "border-border bg-surface-raised text-gray-300", className)}>
-      <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />
+    <span
+      className={cn(
+        base,
+        showIcon ? "border-border bg-surface-raised text-gray-300" : "border-transparent bg-surface-raised text-gray-300",
+        className,
+      )}
+    >
+      {showIcon && <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />}
       {token.symbol}
     </span>
   );

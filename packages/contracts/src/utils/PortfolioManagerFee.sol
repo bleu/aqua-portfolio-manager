@@ -9,6 +9,10 @@ library PortfolioManagerFee {
     /// @dev DAO treasury address disclosed in 1IP-103.
     address internal constant DAO_TREASURY_ADDRESS = 0x7951c7ef839e26F63DA87a42C9a87986507f1c07;
 
+    /// @dev Bleu treasury address. Bleu's 50% share of the protocol-fee cut sits outside 1IP-103,
+    /// agreed separately between Bleu and 1inch.
+    address internal constant BLEU_TREASURY_ADDRESS = 0x5958599c16f6138f2B0fb65040ddEb639FCA5B9A;
+
     /// @dev Implements 1IP-103's approximate 0.1225% tier boundary with a 1e9 scale.
     uint32 internal constant TIER_THRESHOLD_BPS = 1_225_000;
 
