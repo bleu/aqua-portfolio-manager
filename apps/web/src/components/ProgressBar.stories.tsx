@@ -16,3 +16,7 @@ export const PartiallyFilled: Story = {
 export const NearlyFull: Story = {
   args: { value: 0.95 },
 };
+
+export const CustomColor: Story = {
+  args: { value: 0.667, color: "#22c55e" },
+};
