@@ -61,7 +61,7 @@ export function PortfolioManagerActivatedPage({
     <div className="min-h-screen">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
-      <div className="mx-auto mt-16 max-w-2xl px-6 text-center">
+      <div className="mx-auto mt-16 max-w-3xl px-6 text-center">
         <StatusIcon variant="success" className="mx-auto" />
         <h1 className="mt-4 text-2xl font-bold text-white">Portfolio Manager activated</h1>
         <p className="mt-2 text-sm text-gray-400">
@@ -71,7 +71,7 @@ export function PortfolioManagerActivatedPage({
 
         <div className="mt-6 rounded-xl border border-border bg-surface-card p-6 text-left">
           <div className="flex justify-center">
-            <Badge className="border-positive/40 bg-positive/10 text-positive" dotColor="#22c55e">
+            <Badge className="border-transparent bg-positive/15 text-positive" dotColor="#22c55e">
               Strategy active
             </Badge>
           </div>
@@ -87,15 +87,10 @@ export function PortfolioManagerActivatedPage({
             {baskets.map((basket) => (
               <div key={basket.id} className="rounded-lg border border-border bg-surface-raised px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: basket.color }} />
-                    <span className="font-medium text-white">{basket.name}</span>
-                  </div>
-                  <span className="font-semibold" style={{ color: basket.color }}>
-                    {basket.currentPct.toFixed(1)}%
-                  </span>
+                  <span className="font-medium text-white">{basket.name}</span>
+                  <span className="font-semibold text-accent">{basket.currentPct.toFixed(1)}%</span>
                 </div>
-                <p className="mt-0.5 pl-4 text-xs text-gray-500">{basket.tokenSymbols.join(" · ")}</p>
+                <p className="mt-0.5 text-xs text-gray-500">{basket.tokenSymbols.join(" · ")}</p>
               </div>
             ))}
           </div>
