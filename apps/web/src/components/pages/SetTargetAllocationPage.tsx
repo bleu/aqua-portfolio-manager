@@ -87,7 +87,9 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
               <h2 className="text-lg font-semibold text-white">Target allocation</h2>
               <p className="mt-1 text-sm text-gray-400">Targets are prefilled from the portfolio&apos;s current allocation.</p>
             </div>
-            <Badge className="shrink-0 border-accent/40 bg-accent/10 text-accent">Total {total.toFixed(0)}%</Badge>
+            <Badge className="shrink-0">
+              Total <span className="font-semibold text-white">{total.toFixed(0)}%</span>
+            </Badge>
           </div>
 
           <div className="mt-5 divide-y divide-border">
@@ -124,6 +126,7 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
             <AllocationPreviewBar
               className="mt-3"
               baskets={baskets.map((b) => ({ id: b.id, name: b.name, color: b.color, targetPct: targets[b.id] }))}
+              noInitialRebalance={!needsRebalance}
             />
           </div>
         </div>
