@@ -39,10 +39,12 @@ export function TargetAllocationRow({
         <p className="mt-0.5 truncate text-xs text-gray-500">{tokenSymbols.join(" · ")}</p>
       </div>
 
-      <div className="shrink-0 text-right">
-        <p className="text-sm text-white">{currentPct.toFixed(1)}%</p>
-        <p className="text-xs text-gray-500">{formatUsd(currentValue)}</p>
-      </div>
+      {!readOnly && (
+        <div className="shrink-0 text-right">
+          <p className="text-sm text-white">{currentPct.toFixed(1)}%</p>
+          <p className="text-xs text-gray-500">{formatUsd(currentValue)}</p>
+        </div>
+      )}
 
       <div className="w-28 shrink-0">
         {readOnly ? (
