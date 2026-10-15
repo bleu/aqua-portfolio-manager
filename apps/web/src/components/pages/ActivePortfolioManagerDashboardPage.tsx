@@ -76,7 +76,7 @@ export function ActivePortfolioManagerDashboardPage({
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-white">Portfolio Manager</h1>
-              <Badge className="border-positive/40 bg-positive/10 text-positive" dotColor="#22c55e">
+              <Badge className="border-transparent bg-positive/15 text-positive" dotColor="#22c55e">
                 Active
               </Badge>
             </div>
@@ -103,12 +103,21 @@ export function ActivePortfolioManagerDashboardPage({
             <div className="mt-4">
               <MetricRow
                 label="Total managed value"
-                value={formatUsd(managedValue)}
+                value={`$${managedValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 caption="Assets managed by this Portfolio Manager"
                 size="large"
               />
               <div className="mt-4 space-y-4">
-                <MetricRow label="Net LP fees earned" value={formatUsd(netLpFeesEarned)} caption="After protocol fee" divider />
+                <MetricRow
+                  label="Net LP fees earned"
+                  value={
+                    <span className="text-positive">
+                      ${netLpFeesEarned.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  }
+                  caption="After protocol fee"
+                  divider
+                />
                 <MetricRow
                   label="Routed volume"
                   value={formatUsd(routedVolume)}
@@ -179,6 +188,7 @@ export function ActivePortfolioManagerDashboardPage({
                     value={token.value}
                     readOnly
                     tokenName={token.name}
+                    color={basket.color}
                   />
                 ))}
               </div>

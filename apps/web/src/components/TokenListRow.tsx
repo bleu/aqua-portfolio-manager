@@ -22,6 +22,9 @@ export type TokenListRowProps = {
   readOnly?: boolean;
   /** Only shown when `readOnly` -- e.g. "USD Coin" instead of a truncated address. */
   tokenName?: string;
+  /** Only meaningful when `readOnly` -- the owning basket's color, applied to the token's
+   *  fallback-avatar icon on the dashboard's basket-composition rows. */
+  color?: string;
 };
 
 /** One row in the Safe's full token list: checkbox, icon, name + address, balance + value, "Added" state. */
@@ -35,6 +38,7 @@ export function TokenListRow({
   onToggle,
   readOnly,
   tokenName,
+  color,
 }: TokenListRowProps) {
   const blocked = disabled && !added;
   const Wrapper = readOnly ? "div" : "label";
@@ -56,7 +60,7 @@ export function TokenListRow({
           className="h-4 w-4 shrink-0 rounded border-border bg-surface-raised accent-accent disabled:cursor-not-allowed"
         />
       )}
-      <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} size={28} className="text-xs" />
+      <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} size={28} color={color} className="text-xs" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-gray-100">{token.symbol}</span>
         <span className="block truncate text-xs text-gray-500">
@@ -64,7 +68,10 @@ export function TokenListRow({
         </span>
       </span>
       <span className="shrink-0 text-right">
-        <span className="block text-sm text-gray-200">{balance.toLocaleString("en-US")}</span>
+        <span className="block text-sm text-gray-200">
+          {balance.toLocaleString("en-US")}
+          {readOnly && ` ${token.symbol}`}
+        </span>
         <span className="block text-xs text-gray-500">{formatUsd(value)}</span>
       </span>
       {added && <Badge className="shrink-0 border-positive/40 bg-positive/10 text-positive">Added</Badge>}
