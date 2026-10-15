@@ -13,6 +13,7 @@ import { TokenListRow } from "@/components/TokenListRow";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
+import { cn } from "@/lib/cn";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
@@ -51,6 +52,7 @@ export function CreateBasketsPage({
   const [selectedBasketId, setSelectedBasketId] = useState(baskets[0]?.id);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  const [balanceOnly, setBalanceOnly] = useState(true);
 
   // Applied after mount, not as useState's initializer, so the first render always matches the
   // server-rendered baskets prop -- avoids a hydration mismatch between what the server sent and
@@ -78,10 +80,11 @@ export function CreateBasketsPage({
           query.trim() === "" ||
           token.symbol.toLowerCase().includes(query.toLowerCase()) ||
           token.address.toLowerCase().includes(query.toLowerCase());
-        return matchesFilter && matchesQuery;
+        const matchesBalance = !balanceOnly || token.balance > 0;
+        return matchesFilter && matchesQuery && matchesBalance;
       })
       .sort((a, b) => b.value - a.value);
-  }, [safeTokens, activeFilters, query]);
+  }, [safeTokens, activeFilters, query, balanceOnly]);
 
   const popularTokens = useMemo(
     () =>
@@ -215,7 +218,26 @@ export function CreateBasketsPage({
               )}
 
               <div>
-                <p className="mb-2 text-xs text-gray-500">Add tokens</p>
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500">Add tokens</p>
+                    <p className="text-[11px] text-gray-600">Only supported tokens from this Safe are shown.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBalanceOnly((prev) => !prev)}
+                    aria-pressed={balanceOnly}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                      balanceOnly
+                        ? "border-accent bg-accent/20 text-white"
+                        : "border-border bg-surface-raised text-gray-300",
+                    )}
+                  >
+                    {balanceOnly && <span aria-hidden="true">✓</span>}
+                    Balance only
+                  </button>
+                </div>
                 <SearchInput
                   placeholder="Search by token name or address"
                   value={query}

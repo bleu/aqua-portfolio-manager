@@ -43,7 +43,9 @@ export function TokenListRow({ token, balance, value, added, highlighted, disabl
         <span className="block truncate text-xs text-gray-500">{truncateAddress(token.address)}</span>
       </span>
       <span className="shrink-0 text-right">
-        <span className="block text-sm text-gray-200">{balance.toLocaleString("en-US")}</span>
+        <span className="block text-sm text-gray-200">
+          {balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
         <span className="block text-xs text-gray-500">{formatUsd(value)}</span>
       </span>
       {added && <Badge className="shrink-0 border-positive/40 bg-positive/10 text-positive">Added</Badge>}
