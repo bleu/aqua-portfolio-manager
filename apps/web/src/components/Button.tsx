@@ -20,7 +20,7 @@ export function Button({ variant = "primary", size = "default", className, ...re
         size === "default" ? "px-6" : "px-14",
         variant === "primary" && "bg-white text-surface hover:bg-gray-200 active:bg-gray-400",
         variant === "secondary" && "border border-border bg-transparent text-white hover:bg-surface-raised",
-        variant === "accent" && "bg-accent text-white hover:bg-accent/90 active:bg-accent/80",
+        variant === "accent" && "bg-accent text-surface hover:bg-accent/90 active:bg-accent/80",
         className,
       )}
       {...rest}
