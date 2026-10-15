@@ -8,8 +8,8 @@ export type StatusIconProps = {
 
 const VARIANT_STYLES = {
   pending: "bg-amber-400/15 text-amber-400",
-  success: "bg-positive/15 text-positive",
-  error: "bg-red-400/15 text-red-400",
+  success: "border border-positive/50 bg-positive/10 text-positive",
+  error: "border border-red-400/50 bg-red-400/10 text-red-400",
 } as const;
 
 /** The round status icon at the top of post-wizard pages -- pending (waiting for signatures),
