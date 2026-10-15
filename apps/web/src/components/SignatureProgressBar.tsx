@@ -19,7 +19,7 @@ export function SignatureProgressBar({ total, signed, className }: SignatureProg
       aria-valuemax={total}
     >
       {segments.map((filled, i) => (
-        <div key={i} className={cn("h-1.5 flex-1 rounded-full", filled ? "bg-accent" : "bg-surface-raised")} />
+        <div key={i} className={cn("h-1.5 flex-1 rounded-full", filled ? "bg-accent" : "bg-border")} />
       ))}
     </div>
   );

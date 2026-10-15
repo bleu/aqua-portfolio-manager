@@ -7,9 +7,9 @@ export type StatusIconProps = {
 };
 
 const VARIANT_STYLES = {
-  pending: "border-amber-400/30 bg-amber-400/10 text-amber-400",
-  success: "border-positive/30 bg-positive/10 text-positive",
-  error: "border-red-400/30 bg-red-400/10 text-red-400",
+  pending: "bg-amber-400/15 text-amber-400",
+  success: "bg-positive/15 text-positive",
+  error: "bg-red-400/15 text-red-400",
 } as const;
 
 /** The round status icon at the top of post-wizard pages -- pending (waiting for signatures),
@@ -19,7 +19,7 @@ export function StatusIcon({ variant, className }: StatusIconProps) {
   return (
     <span
       className={cn(
-        "flex size-14 shrink-0 items-center justify-center rounded-full border",
+        "flex size-14 shrink-0 items-center justify-center rounded-full",
         VARIANT_STYLES[variant],
         className,
       )}
