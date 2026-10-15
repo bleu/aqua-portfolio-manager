@@ -149,9 +149,15 @@ export function CreateBasketsPage({
 
         <div className="mt-8 grid grid-cols-[280px_1fr] gap-4">
           <div className="space-y-2">
-            <p className="text-xs font-medium text-gray-500">
-              Your baskets <span className="ml-1 text-gray-600">{draftBaskets.length}</span>
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-white">Your baskets</h2>
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-surface-raised text-xs text-gray-300">
+                  {draftBaskets.length}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-gray-500">Select a basket to manage its tokens.</p>
+            </div>
             {draftBaskets.map((basket) => {
               const tokens = safeTokens.filter((t) => basket.tokenAddresses.includes(t.address));
               const value = tokens.reduce((sum, t) => sum + t.value, 0);
@@ -197,6 +203,7 @@ export function CreateBasketsPage({
                       key={token.address}
                       token={token}
                       variant="removable"
+                      value={token.value}
                       onRemove={() => toggleTokenInSelectedBasket(token.address)}
                     />
                   ))}

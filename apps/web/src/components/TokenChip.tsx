@@ -2,6 +2,7 @@
 
 import { TokenIcon } from "./TokenIcon";
 import { cn } from "@/lib/cn";
+import { formatUsd } from "@/lib/format";
 import type { Token } from "@/lib/types";
 
 export type TokenChipProps = {
@@ -10,6 +11,8 @@ export type TokenChipProps = {
   variant?: "display" | "toggle" | "removable";
   /** Only meaningful for variant="toggle". */
   selected?: boolean;
+  /** Only meaningful for variant="removable": shows a $ value under the ticker. */
+  value?: number;
   onToggle?: () => void;
   onRemove?: () => void;
   /** display only: hide the leading icon and border for a compact context (e.g. the allocation-comparison card). Default true (icon shown). */
@@ -22,6 +25,7 @@ export function TokenChip({
   token,
   variant = "display",
   selected,
+  value,
   onToggle,
   onRemove,
   showIcon = true,
@@ -44,15 +48,19 @@ export function TokenChip({
       >
         <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />
         {token.symbol}
+        {selected && <span aria-hidden="true">✓</span>}
       </button>
     );
   }
 
   if (variant === "removable") {
     return (
-      <span className={cn(base, "border-border bg-surface-raised text-gray-200", className)}>
+      <span className={cn(base, "gap-2 py-1.5", "border-border bg-surface-raised text-gray-200", className)}>
         <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} />
-        {token.symbol}
+        <span className="flex flex-col leading-tight">
+          <span>{token.symbol}</span>
+          {value !== undefined && <span className="text-[10px] text-gray-500">{formatUsd(value)}</span>}
+        </span>
         <button
           type="button"
           onClick={onRemove}

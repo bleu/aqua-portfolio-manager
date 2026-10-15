@@ -62,7 +62,9 @@ export function BasketPanelHeader({ name, color, tokenCount, totalValue, onRenam
           {tokenCount} {tokenCount === 1 ? "token" : "tokens"} · {formatUsd(totalValue)} current value
         </p>
       </div>
-      <Badge className="border-accent/40 bg-accent/10 text-accent">Selected basket</Badge>
+      <Badge dotColor="#6366f1" className="border-accent/40 bg-accent/10 text-accent">
+        Selected basket
+      </Badge>
     </div>
   );
 }
