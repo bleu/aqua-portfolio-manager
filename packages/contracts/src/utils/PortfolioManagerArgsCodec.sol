@@ -428,7 +428,7 @@ library PortfolioManagerArgsCodec {
             address token = tokenRegistry.tokenAt(m.tokenIndex);
             tokens[i] = token;
             balances[i] = IERC20(token).balanceOf(maker);
-            (address feed, uint32 maxStaleness) = feedRegistry.feedAt(m.feedIndex);
+            (address feed, uint32 maxStaleness,) = feedRegistry.feedAt(m.feedIndex);
             feeds[i] = OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feed), maxStaleness: maxStaleness});
         }
         return OracleAdapter.groupValueWad(tokens, balances, feeds, rounding);
