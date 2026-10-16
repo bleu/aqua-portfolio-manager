@@ -21,3 +21,7 @@ export const Secondary: Story = {
 export const Disabled: Story = {
   args: { variant: "primary", children: "Connect Safe", disabled: true },
 };
+
+export const Accent: Story = {
+  args: { variant: "accent", children: "Create transaction" },
+};
