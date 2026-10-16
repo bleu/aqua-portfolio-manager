@@ -8,12 +8,13 @@ export type PercentInputProps = {
   min?: number;
   max?: number;
   disabled?: boolean;
+  placeholder?: string;
   className?: string;
 };
 
 /** Bordered numeric field with a trailing "%" suffix -- the "Custom %" / target-percent input
  *  shared by the wizard's Targets and Parameters steps. */
-export function PercentInput({ value, onChange, min, max, disabled, className }: PercentInputProps) {
+export function PercentInput({ value, onChange, min, max, disabled, placeholder, className }: PercentInputProps) {
   return (
     <div
       className={cn(
@@ -40,8 +41,9 @@ export function PercentInput({ value, onChange, min, max, disabled, className }:
             }
           }
         }}
+        placeholder={placeholder}
         disabled={disabled}
-        className="w-full min-w-0 bg-transparent text-right text-sm text-gray-100 outline-none"
+        className="w-full min-w-0 bg-transparent text-right text-sm text-gray-100 outline-none placeholder:text-left placeholder:text-gray-500"
       />
       <span className="shrink-0 text-sm text-gray-500">%</span>
     </div>
