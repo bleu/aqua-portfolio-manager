@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { SetStrategyParametersPage } from "@/components/pages/SetStrategyParametersPage";
+import { saveDraftParameters } from "@/lib/parametersDraftStorage";
 
 export default function Page() {
   const router = useRouter();
@@ -17,7 +18,10 @@ export default function Page() {
       network="Base"
       safeAddress={address}
       onBack={() => router.push("/setup/targets")}
-      onContinue={() => router.push("/setup/review")}
+      onContinue={(params) => {
+        saveDraftParameters(address, params);
+        router.push("/setup/review");
+      }}
     />
   );
 }

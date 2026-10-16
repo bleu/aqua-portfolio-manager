@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { SetTargetAllocationPage } from "@/components/pages/SetTargetAllocationPage";
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
+import { saveDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 
 export default function Page() {
@@ -34,7 +35,10 @@ export default function Page() {
       safeAddress={address}
       baskets={baskets}
       onBack={() => router.push("/setup/baskets")}
-      onContinue={() => router.push("/setup/parameters")}
+      onContinue={(targetsPct) => {
+        saveDraftTargets(address, targetsPct);
+        router.push("/setup/parameters");
+      }}
     />
   );
 }
