@@ -7,6 +7,14 @@ import { cn } from "@/lib/cn";
 import { formatPercentage, formatUsd } from "@/lib/format";
 import type { GroupSummary } from "@/lib/types";
 
+function ChevronIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-gray-500">
+      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export type GroupSummaryCardProps = {
   group: GroupSummary;
   /** Shows a ProgressBar under the trailing value (used by the target-allocation column). */
@@ -35,27 +43,54 @@ export function GroupSummaryCard({
   const trailingLabel =
     group.trailing.kind === "percentage" ? formatPercentage(group.trailing.value) : formatUsd(group.trailing.value);
 
+  const cardProps = {
+    padding: "compact" as const,
+    radius: "lg" as const,
+    onClick,
+    role: onClick ? ("button" as const) : undefined,
+    tabIndex: onClick ? 0 : undefined,
+    className: cn(
+      onClick && "cursor-pointer transition-colors hover:border-accent/60",
+      group.selected && "border-accent bg-surface-raised",
+    ),
+  };
+
+  // Compact (basket list, BLEUDEV-411): name + chevron on one row, then a second row pairing
+  // the plain-text token list with the trailing value -- a different layout from the larger
+  // allocation card below, not just a smaller version of it.
+  if (compact) {
+    return (
+      <Card {...cardProps} className={cn(cardProps.className, "space-y-1.5")}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {showIndicator && (
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
+            )}
+            <span className="text-sm font-medium text-gray-100">{group.name}</span>
+          </div>
+          {onClick && <ChevronIcon />}
+        </div>
+
+        <div className="flex items-center justify-between">
+          {showTokens && (
+            <span className="text-xs text-gray-500">{group.tokens.map((token) => token.symbol).join(" · ")}</span>
+          )}
+          <span className="text-sm font-semibold text-white">{trailingLabel}</span>
+        </div>
+      </Card>
+    );
+  }
+
   return (
-    <Card
-      padding="compact"
-      radius="lg"
-      onClick={onClick}
-      role={onClick ? "button" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      className={cn(
-        onClick && "cursor-pointer transition-colors hover:border-accent/60",
-        group.selected && "border-accent bg-surface-raised",
-        compact ? "space-y-1.5" : "space-y-3",
-      )}
-    >
+    <Card {...cardProps} className={cn(cardProps.className, "space-y-3")}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {showIndicator && (
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
           )}
-          <span className={cn("font-medium text-gray-100", compact ? "text-sm" : "text-base")}>{group.name}</span>
+          <span className="text-base font-medium text-gray-100">{group.name}</span>
         </div>
-        <span className={cn("font-semibold text-white", compact ? "text-sm" : "text-xl")}>{trailingLabel}</span>
+        <span className="text-xl font-semibold text-white">{trailingLabel}</span>
       </div>
 
       {showProgress && group.trailing.kind === "percentage" && (
@@ -65,7 +100,7 @@ export function GroupSummaryCard({
       {showTokens && (
         <div className="flex flex-wrap gap-1.5">
           {group.tokens.map((token) => (
-            <TokenChip key={token.address} token={token} variant="display" />
+            <TokenChip key={token.address} token={token} variant="display" showIcon={false} />
           ))}
         </div>
       )}
