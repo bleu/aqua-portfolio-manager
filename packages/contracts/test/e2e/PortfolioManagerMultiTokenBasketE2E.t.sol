@@ -332,7 +332,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     {
         for (uint256 i = 0; i < members.length; i++) {
             address token = tokenRegistry.tokenAt(members[i].tokenIndex);
-            (address feedAddr, uint32 feedMaxStaleness) = feedRegistry.feedAt(members[i].feedIndex);
+            (address feedAddr, uint32 feedMaxStaleness,) = feedRegistry.feedAt(members[i].feedIndex);
             OracleAdapter.PriceFeed memory feed =
                 OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feedAddr), maxStaleness: feedMaxStaleness});
             uint256 price =

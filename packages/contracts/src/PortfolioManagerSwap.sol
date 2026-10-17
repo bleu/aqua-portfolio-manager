@@ -12,6 +12,7 @@ import {IPortfolioManagerStrategyValidator} from "./interfaces/IPortfolioManager
 import {PortfolioManagerArgsCodec} from "./utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "./utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerFee} from "./utils/PortfolioManagerFee.sol";
+import {PortfolioManagerDynamicFee} from "./utils/PortfolioManagerDynamicFee.sol";
 import {PortfolioManagerTokenRegistry} from "./utils/PortfolioManagerTokenRegistry.sol";
 import {PortfolioManagerFeedRegistry} from "./utils/PortfolioManagerFeedRegistry.sol";
 import {OracleAdapter} from "./utils/OracleAdapter.sol";
@@ -40,6 +41,18 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     AggregatorV3Interface private immutable SEQUENCER_UPTIME_FEED;
     PortfolioManagerTokenRegistry private immutable TOKEN_REGISTRY;
     PortfolioManagerFeedRegistry private immutable FEED_REGISTRY;
+
+    /// @dev BLEUDEV-425's dynamic-fee complement to the TWAP work: one shared state per feed
+    ///      index, not per strategy -- every strategy trading the same feed observes and benefits
+    ///      from the same record of its last price and current boost, since the risk being priced
+    ///      (this feed just moved more than its deviation threshold allows) is a fact about the
+    ///      feed, not about any one strategy. See PortfolioManagerDynamicFee for the formula.
+    struct DynamicFeeState {
+        uint256 lastPriceWad;
+        uint256 boostWad;
+    }
+
+    mapping(uint16 feedIndex => DynamicFeeState) private _dynamicFeeState;
 
     constructor(
         address aqua,
@@ -89,6 +102,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             uint8 tokenOutDecimals,
             uint256 tokenOutWalletBalance
         ) = _buildQuote(groups[groupInIdx], memberInIdx, groups[groupOutIdx], memberOutIdx, ctx.query.maker, feeBps);
+
+        // BLEUDEV-425: on top of the base LP fee already folded into quote.feeWad, add a boost
+        // per traded feed whenever that feed's price just moved more than its own deviation
+        // threshold allows -- see PortfolioManagerDynamicFee. Mutating the already-built `quote`
+        // in place needs no changes to _priceExactIn/_priceExactOut, which only ever consume
+        // quote.feeWad as one opaque value. Reuses rawIn/rawOut exactly as fetched for pricing --
+        // no extra oracle call, only one more PortfolioManagerFeedRegistry read per feed.
+        quote.feeWad += _applyDynamicFeeBoostWad(groups[groupInIdx].members[memberInIdx].feedIndex, rawIn)
+        + _applyDynamicFeeBoostWad(groups[groupOutIdx].members[memberOutIdx].feedIndex, rawOut);
 
         uint256 daoAmount;
         if (ctx.query.isExactIn) {
@@ -297,8 +319,39 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         view
         returns (OracleAdapter.PriceFeed memory)
     {
-        (address feed, uint32 maxStaleness) = FEED_REGISTRY.feedAt(member.feedIndex);
+        (address feed, uint32 maxStaleness,) = FEED_REGISTRY.feedAt(member.feedIndex);
         return OracleAdapter.PriceFeed({feed: AggregatorV3Interface(feed), maxStaleness: maxStaleness});
+    }
+
+    /// @dev BLEUDEV-425: reads and updates this feed's dynamic-fee state, returning the WAD-scaled
+    ///      boost to add to this swap's fee. A numeraire member (feedIndex 0, ADR-0017) never
+    ///      moves relative to its own group by definition, so it's skipped outright -- same guard
+    ///      OracleAdapter already applies for the price read itself. A feed registered without a
+    ///      deviation threshold (PortfolioManagerFeedRegistry's two-argument `register`) stays
+    ///      permanently at zero boost, deliberately: the dynamic fee is opt-in per feed, not a
+    ///      silent default. The very first observation of any feed records its price with zero
+    ///      boost -- there is no prior price to compare it against yet.
+    function _applyDynamicFeeBoostWad(uint16 feedIndex, OracleAdapter.RawPrice memory raw)
+        private
+        returns (uint256 boostWad)
+    {
+        if (raw.isNumeraire) return 0;
+        (,, uint16 deviationThresholdBps) = FEED_REGISTRY.feedAt(feedIndex);
+        if (deviationThresholdBps == 0) return 0;
+
+        uint256 currentPriceWad = OracleAdapter.roundPrice(raw, OracleAdapter.Rounding.Down);
+        DynamicFeeState storage state = _dynamicFeeState[feedIndex];
+
+        if (state.lastPriceWad == 0) {
+            state.lastPriceWad = currentPriceWad;
+            return 0;
+        }
+
+        boostWad = PortfolioManagerDynamicFee.computeBoostWad(
+            state.lastPriceWad, currentPriceWad, deviationThresholdBps, state.boostWad
+        );
+        state.lastPriceWad = currentPriceWad;
+        state.boostWad = boostWad;
     }
 
     /// @dev Values every member through OracleAdapter, including single-token groups, except
