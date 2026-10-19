@@ -12,8 +12,8 @@ contract PortfolioManagerSkewReducingE2ETest is PortfolioManagerE2EBase {
     uint256 internal constant TRADE_AMOUNT = 100e18;
 
     function test_SkewReducingTradeGetsRewardedRate() public {
-        // Disable fees to isolate price impact.
-        ISwapVM.Order memory order = _buildOrder(0);
+        // Fee floor only (PortfolioManagerArgsCodec.MIN_FEE_BPS); kept low to isolate price impact.
+        ISwapVM.Order memory order = _buildOrder(5_000_000);
         _fundAndShip(order, INITIAL_BALANCE);
 
         // Make tokenA overweight by donation.

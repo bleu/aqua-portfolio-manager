@@ -15,6 +15,7 @@ import {PortfolioManagerRouter} from "../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgramBuilder.sol";
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
+import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
@@ -115,6 +116,46 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     /// @dev Lets a test use a custom group set (e.g. a numeraire member) instead of the fixture's
     ///      own `groups`.
+    /// @dev Replicates _priceExactIn's full fee pipeline (DAO skim off the raw input, then the
+    ///      curve's own feeWad) so expected-value computations below match the real swap path now
+    ///      that PortfolioManagerArgsCodec.MIN_FEE_BPS makes a nonzero fee mandatory -- a bare
+    ///      PortfolioManagerPricing.exactIn call with feeWad set only accounts for the curve's own
+    ///      cut, not the DAO's. Valid only under this file's unit-price fixtures (every feed priced
+    ///      at 1e18), where native amountIn and WAD-value amountIn are numerically identical, so
+    ///      the real contract's native-then-WAD conversion step can be skipped here.
+    function _expectedAmountOutWithFees(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
+        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount);
+    }
+
+    /// @dev Mirrors _requireWithinDeviationStep's own post-trade spotPrice computation, including
+    ///      the same DAO-skim-then-curve-fee pipeline as _expectedAmountOutWithFees, so a test
+    ///      expecting PortfolioManagerSwapExcessivePriceDeviation's exact reported value doesn't
+    ///      have to hand-derive it assuming the full (pre-fee) amountIn entered the curve.
+    function _expectedPostTradeSpotPriceWad(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
+        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
+        uint256 netAmountIn = fullAmountIn - daoAmount;
+        uint256 curveAmountOut = PortfolioManagerPricing.exactIn(quote, netAmountIn);
+        PortfolioManagerPricing.PoolState memory postQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: quote.balanceIn + netAmountIn,
+            balanceOut: quote.balanceOut - curveAmountOut,
+            weightIn: quote.weightIn,
+            weightOut: quote.weightOut,
+            feeWad: quote.feeWad
+        });
+        return PortfolioManagerPricing.spotPrice(postQuote);
+    }
+
     function _buildOrderWithGroups(
         PortfolioManagerArgsCodec.Group[] memory customGroups,
         uint32 lpFeeBps,
@@ -286,7 +327,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         groups[0].members[0].feedIndex = feedRegistry.register(address(feedA), DEFAULT_MAX_STALENESS);
         feedB.setAnswer(1, block.timestamp);
         feedC.setAnswer(1, block.timestamp);
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         uint256 balanceA = fractionalInput ? 100e18 : 1000e18;
         _shipOrder(order, balanceA, 1000e18, 1000e18);
 
@@ -305,10 +346,13 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     function test_FractionalMemberValuesPreserveSettledGroupInvariant() public {
         feedA.setAnswer(0.5e18, block.timestamp);
         feedB.setAnswer(0.5e18, block.timestamp);
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, 3, 1, 100e18);
 
-        _swapExactIn(order, address(tokenA), address(tokenC), 2);
+        // Scaled up from the original 2-wei trade: PortfolioManagerArgsCodec.MIN_FEE_BPS now
+        // makes a ~0.58% fee mandatory (LP's own 0.5% plus the DAO's skim on top), which rounds a
+        // 2-wei output straight to zero.
+        _swapExactIn(order, address(tokenA), address(tokenC), 400);
 
         // A and B have the same fixed price: multiply by two to cancel it exactly.
         uint256 afterInvariant = (tokenA.balanceOf(maker) + tokenB.balanceOf(maker)) * tokenC.balanceOf(maker);
@@ -316,7 +360,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     }
 
     function test_SameGroupSwapReverts() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
 
         bytes memory takerData = _exactInTakerData();
@@ -334,7 +378,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint256 balB = 99_000e18;
         uint256 balC = 100_000e18;
 
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, balA, balB, balC);
 
         uint256 amountIn = 500e18;
@@ -342,16 +386,20 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
         // Correct expectation: balanceOut is group0's FULL oracle-valued sum (balA + balB).
         PortfolioManagerPricing.PoolState memory correctPoolState = PortfolioManagerPricing.PoolState({
-            balanceIn: balC, balanceOut: balA + balB, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
+            balanceIn: balC,
+            balanceOut: balA + balB,
+            weightIn: groups[1].weight,
+            weightOut: groups[0].weight,
+            feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(correctPoolState, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(correctPoolState, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "must price off group0's full 2-member sum");
 
         // Omitting tokenB understates the output reserve and therefore the quote.
         PortfolioManagerPricing.PoolState memory wrongPoolState = PortfolioManagerPricing.PoolState({
-            balanceIn: balC, balanceOut: balA, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 0
+            balanceIn: balC, balanceOut: balA, weightIn: groups[1].weight, weightOut: groups[0].weight, feeWad: 5e15
         });
-        uint256 wrongAmountOut = PortfolioManagerPricing.exactIn(wrongPoolState, amountIn);
+        uint256 wrongAmountOut = _expectedAmountOutWithFees(wrongPoolState, amountIn);
         assertGt(
             actualAmountOut, wrongAmountOut, "must clearly differ from a single-token-only (tokenA-balance-only) quote"
         );
@@ -363,7 +411,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         feedA.setAnswer(1e18, block.timestamp);
         feedC.setAnswer(1e18, block.timestamp);
 
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
 
         // A stale non-traded member must still block the group's trade.
@@ -384,7 +432,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     /// @dev Proves the swap path actually asks the sequencer feed, not just that wiring a
     ///      constructor param compiles -- flips the same mock setUp wired in, to "down".
     function test_RevertsWhenSequencerIsDown() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
         sequencerFeed.setAnswer(1, block.timestamp); // answer 1 == down
 
@@ -399,7 +447,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     /// @notice Group value can support a quote while tokenA has only one wei available.
     function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalance() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
 
         bytes memory takerData = _exactInTakerData();
@@ -411,9 +459,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             balanceOut: 1 + 1_000_000e18,
             weightIn: groups[1].weight,
             weightOut: groups[0].weight,
-            feeWad: 0
+            feeWad: 5e15
         });
-        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+        uint256 expectedRequested = _expectedAmountOutWithFees(quote, 500_000e18);
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -427,7 +475,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     }
 
     function test_RevertsOnInsufficientMemberBalanceFromRawBalanceImbalanceExactOut() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18);
 
         bytes memory takerData = _exactOutTakerData();
@@ -448,7 +496,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     ///         this strategy is actually authorized to pull from Aqua's own ledger -- the wallet
     ///         balance and the Aqua ledger amount are independent, not the same number.
     function test_RevertsOnInsufficientLedgerAuthorizationEvenWhenWalletBalanceIsAmple() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
 
         // Wallet holds plenty of every token -- the OLD wallet-only check would pass.
         tokenA.mint(maker, 1_000_000e18);
@@ -484,9 +532,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             balanceOut: 2_000_000e18,
             weightIn: groups[1].weight,
             weightOut: groups[0].weight,
-            feeWad: 0
+            feeWad: 5e15
         });
-        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 500_000e18);
+        uint256 expectedRequested = _expectedAmountOutWithFees(quote, 500_000e18);
 
         // `available` reflects the ledger's 1 wei, not the wallet's ample balance -- confirms
         // the ledger check actually bound the result, not just the pre-existing wallet one.
@@ -507,7 +555,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     ///      meaningful fraction of the pool would trip the deviation check first, as it does in
     ///      test_ExcessivePriceDeviationBlocksTrade below.
     function test_InsufficientMemberBalanceStillFiresWithDeviationCheckArmedAndWithinTolerance() public {
-        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        ISwapVM.Order memory order = _buildOrder(5e6, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 1, 1_000_000e18, 1_000_000e18); // group0 ~= group1 in value -> ~0% deviation
 
         bytes memory takerData = _exactInTakerData();
@@ -518,9 +566,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             balanceOut: 1 + 1_000_000e18,
             weightIn: groups[1].weight,
             weightOut: groups[0].weight,
-            feeWad: 0
+            feeWad: 5e15
         });
-        uint256 expectedRequested = PortfolioManagerPricing.exactIn(quote, 1_000e18);
+        uint256 expectedRequested = _expectedAmountOutWithFees(quote, 1_000e18);
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -540,18 +588,25 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     ///      the cap, instead of starting already-skewed with a small trade (which the new check
     ///      would let through, since its own step would be tiny).
     function test_ExcessivePriceDeviationBlocksTrade() public {
-        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        ISwapVM.Order memory order = _buildOrder(5e6, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, balanced
 
         bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), 50_000e18);
 
-        // Equal weights reduce exactIn to xy=k: trading half the pool (50,000 of 100,000) moves
-        // spotPrice(tokenC->tokenA) from 1.0 (balanced) to ~150,000/66,666.67 ~= 2.25 (2 wei under
-        // from fixed-point rounding) -- a ~125% step in one trade, far past the 10% per-trade cap.
+        // Equal weights reduce exactIn to xy=k: trading half the pool (50,000 of 100,000, net of
+        // the mandatory DAO/LP fee) moves spotPrice(tokenC->tokenA) from 1.0 (balanced) to ~2.24 --
+        // a ~124% step in one trade, far past the 10% per-trade cap. Computed, not hand-derived,
+        // since PortfolioManagerArgsCodec.MIN_FEE_BPS means the fee pipeline now always runs.
+        PortfolioManagerPricing.PoolState memory preTradeQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 5e15
+        });
+        uint256 expectedSpotPriceWad = _expectedPostTradeSpotPriceWad(preTradeQuote, 50_000e18);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 2.25e18 - 2, uint256(0.1e9)
+                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector,
+                expectedSpotPriceWad,
+                uint256(0.1e9)
             )
         );
         taker.swap(order, address(tokenC), address(tokenA), 50_000e18, takerData);
@@ -565,7 +620,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     ///      the band. (The trade stays small enough to also clear BLEUDEV-406's ledger-authorization
     ///      cap: `_shipOrder` only authorized 50,000e18 of tokenA, not the post-ship mint below.)
     function test_CorrectiveTradeSucceedsEvenWhenPoolStartedBeyondTheDeviationBand() public {
-        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        ISwapVM.Order memory order = _buildOrder(5e6, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18, at target
 
         // An external balance change pushes group0 to 90% deviation -- spotPrice(tokenC->tokenA)
@@ -582,14 +637,14 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             balanceOut: 1_000_000e18,
             weightIn: groups[1].weight,
             weightOut: groups[0].weight,
-            feeWad: 0
+            feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "a corrective trade within its own step cap must succeed");
     }
 
     function test_PriceDeviationWithinToleranceStillPricesNormally() public {
-        ISwapVM.Order memory order = _buildOrder(0, 0.1e9); // maxDeviationBps = 10%
+        ISwapVM.Order memory order = _buildOrder(5e6, 0.1e9); // maxDeviationBps = 10%
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18); // group0 = group1 = 100,000e18
 
         // A 5% skew stays within the 10% limit.
@@ -603,14 +658,14 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             balanceOut: 105_000e18,
             weightIn: groups[1].weight,
             weightOut: groups[0].weight,
-            feeWad: 0
+            feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "within-tolerance trade must price exactly as without the check");
     }
 
     function test_ZeroMaxDeviationBpsDisablesTheCheckEvenUnderExtremeSkew() public {
-        ISwapVM.Order memory order = _buildOrder(0, 0); // disabled
+        ISwapVM.Order memory order = _buildOrder(5e6, 0); // disabled
         _shipOrder(order, 50_000e18, 50_000e18, 100_000e18);
 
         // Same extreme 90%-deviation skew as test_ExcessivePriceDeviationBlocksTrade -- with the
@@ -625,9 +680,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             balanceOut: 1_000_000e18,
             weightIn: groups[1].weight,
             weightOut: groups[0].weight,
-            feeWad: 0
+            feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "maxDeviationBps == 0 must be a true no-op");
     }
 
@@ -657,7 +712,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         feedA.setAnswer(int256(priceA), block.timestamp);
         feedB.setAnswer(int256(priceB), block.timestamp);
 
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6); // MIN_FEE_BPS floor -- a nonzero fee only adds more protection to the no-profit invariant below, never less
         _shipOrder(order, balA, balB, balC);
 
         // A real fraction of balC, not near-dust -- large enough that neither leg rounds to zero.
@@ -694,7 +749,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         feedA.setAnswer(int256(priceA), block.timestamp);
         feedB.setAnswer(int256(priceB), block.timestamp);
 
-        ISwapVM.Order memory order = _buildOrder(0); // feeBps = 0 isolates the curve's own invariant from the fee's own additional slack
+        ISwapVM.Order memory order = _buildOrder(5e6); // MIN_FEE_BPS floor -- zero-fee isolation is no longer achievable; a nonzero fee only adds more protection to the invariant below, never less
         _shipOrder(order, balA, balB, balC);
 
         amountIn = bound(amountIn, 1e6, balC / 10);
@@ -744,7 +799,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     ///      native-unit conversion -- two `latestRoundData()` calls for one swap. Now exactly
     ///      one, for every traded or non-traded member alike.
     function test_EachFeedIsReadAtMostOncePerSwap() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5e6);
         _shipOrder(order, INITIAL_BALANCE, INITIAL_BALANCE, INITIAL_BALANCE);
 
         bytes memory takerData = _exactInTakerData();
@@ -778,7 +833,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         });
         customGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: pricedMembers});
 
-        order = _buildOrderWithGroups(customGroups, 0, maxDeviationBps);
+        order = _buildOrderWithGroups(customGroups, 5e6, maxDeviationBps);
 
         address[] memory shipTokens = new address[](2);
         shipTokens[0] = address(tokenA);
@@ -818,9 +873,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         // tokenC's balance * $1 feed price) -- same xy=k math as any other balanced single-member
         // pair, just denominated in tokenA instead of USD.
         PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
-            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "numeraire member must price off its native balance directly");
     }
 
@@ -844,7 +899,7 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             PortfolioManagerArgsCodec.Member({tokenIndex: tokenRegistry.register(address(tokenB)), feedIndex: 0});
         customGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: numeraireMembersB});
 
-        ISwapVM.Order memory order = _buildOrderWithGroups(customGroups, 0, 0);
+        ISwapVM.Order memory order = _buildOrderWithGroups(customGroups, 5e6, 0);
 
         address[] memory shipTokens = new address[](2);
         shipTokens[0] = address(tokenA);
@@ -873,9 +928,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         // Equal weights, both groups worth 100,000 raw-balance units -- same xy=k math as any
         // other balanced single-member pair, just with neither side ever priced by an oracle.
         PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
-            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "two numeraire members must price off raw balances alone");
     }
 
@@ -891,9 +946,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         (, uint256 actualAmountOut) = _swapExactIn(order, address(tokenC), address(tokenA), amountIn);
 
         PortfolioManagerPricing.PoolState memory expectedQuote = PortfolioManagerPricing.PoolState({
-            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 0
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 5e15
         });
-        uint256 expectedAmountOut = PortfolioManagerPricing.exactIn(expectedQuote, amountIn);
+        uint256 expectedAmountOut = _expectedAmountOutWithFees(expectedQuote, amountIn);
         assertEq(actualAmountOut, expectedAmountOut, "a within-cap trade against a numeraire pair must price normally");
     }
 
@@ -905,12 +960,19 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         bytes memory takerData = _exactInTakerData();
         tokenC.mint(address(taker), 100_000e18);
 
-        // Equal weights reduce exactIn to xy=k: trading half the pool (50,000 of 100,000) moves
-        // spotPrice(tokenC->tokenA) from 1.0 to ~2.25 -- a ~125% step, same math (and same
-        // expected revert value) as the non-numeraire version of this scenario.
+        // Equal weights reduce exactIn to xy=k: trading half the pool moves spotPrice(tokenC->tokenA)
+        // from 1.0 to ~2.24, same math (and same expected revert value) as the non-numeraire
+        // version of this scenario -- see _expectedPostTradeSpotPriceWad's doc comment for why
+        // this is computed instead of hand-derived now that a fee is always mandatory.
+        PortfolioManagerPricing.PoolState memory preTradeQuote = PortfolioManagerPricing.PoolState({
+            balanceIn: 100_000e18, balanceOut: 100_000e18, weightIn: 0.5e18, weightOut: 0.5e18, feeWad: 5e15
+        });
+        uint256 expectedSpotPriceWad = _expectedPostTradeSpotPriceWad(preTradeQuote, 50_000e18);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector, 2.25e18 - 2, uint256(0.1e9)
+                IPortfolioManagerSwap.PortfolioManagerSwapExcessivePriceDeviation.selector,
+                expectedSpotPriceWad,
+                uint256(0.1e9)
             )
         );
         taker.swap(order, address(tokenC), address(tokenA), 50_000e18, takerData);

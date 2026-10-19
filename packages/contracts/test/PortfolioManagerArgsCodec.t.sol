@@ -75,7 +75,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5); // 2bps, ADR-0008 default
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6); // 0.5%, MIN_FEE_BPS
         (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
 
@@ -85,7 +85,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         assertEq(parsed[0].members[0].tokenIndex, TOKEN_A);
         assertEq(parsed[0].members[0].feedIndex, FEED_A);
         assertEq(parsed[1].weight, 0.5e18);
-        assertEq(parsedFeeBps, 2e5);
+        assertEq(parsedFeeBps, 5e6);
         assertEq(parsedMaxDeviationBps, 0);
     }
 
@@ -94,7 +94,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 2e5, 5e7); // 5% circuit breaker
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6, 5e7); // 5% circuit breaker
         (,, uint32 parsedMaxDeviationBps,) = this._callParse(args);
 
         assertEq(parsedMaxDeviationBps, 5e7);
@@ -106,7 +106,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.3e18, TOKEN_B, FEED_B);
         groups[2] = _singleMemberGroup(0.2e18, TOKEN_C, FEED_C);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6);
         (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, 3);
@@ -114,7 +114,7 @@ contract PortfolioManagerArgsCodecTest is Test {
             assertEq(parsed[i].members[0].tokenIndex, groups[i].members[0].tokenIndex);
             assertEq(parsed[i].weight, groups[i].weight);
         }
-        assertEq(parsedFeeBps, 0);
+        assertEq(parsedFeeBps, 5e6);
     }
 
     function test_BuildThenParseRoundTripsMultiTokenGroup() public view {
@@ -126,7 +126,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.6e18, members: members});
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6);
         (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps,,) = this._callParse(args);
 
         assertEq(parsed.length, 2);
@@ -137,11 +137,11 @@ contract PortfolioManagerArgsCodecTest is Test {
         assertEq(parsed[0].members[1].tokenIndex, TOKEN_B);
         assertEq(parsed[0].members[1].feedIndex, FEED_B);
         assertEq(parsed[1].weight, 0.4e18);
-        assertEq(parsedFeeBps, 1e5);
+        assertEq(parsedFeeBps, 5e6);
     }
 
     function testFuzz_BuildThenParseRoundTrips(uint8 seed, uint32 feeBps) public view {
-        feeBps = uint32(bound(feeBps, 0, PortfolioManagerArgsCodec.PM_BPS));
+        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -179,7 +179,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.6e18, members: members});
         groups[1] = _singleMemberGroup(0.4e18, TOKEN_C, FEED_C);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 1e5, 5e7);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6, 5e7);
         (PortfolioManagerArgsCodec.Group[] memory parsed, uint32 parsedFeeBps, uint32 parsedMaxDeviationBps,) =
             this._callParse(args);
         (PortfolioManagerArgsCodec.Group[] memory decoded, uint32 decodedFeeBps, uint32 decodedMaxDeviationBps,) =
@@ -199,7 +199,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_DecodeTrustedMatchesParse(uint8 seed, uint32 feeBps, uint32 maxDeviationBps) public view {
-        feeBps = uint32(bound(feeBps, 0, PortfolioManagerArgsCodec.PM_BPS));
+        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -231,7 +231,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](0);
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerEmptyUniverse.selector);
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnEmptyGroup() public {
@@ -242,7 +242,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(WAD, TOKEN_B, FEED_B);
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerEmptyGroup.selector, 0));
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsWhenWeightsDoNotSumToWad() public {
@@ -253,7 +253,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerWeightsMustSumToWad.selector, 0.9e18)
         );
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnZeroWeight() public {
@@ -262,7 +262,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(WAD, TOKEN_B, FEED_B);
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroWeight.selector, 0));
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnTooFewGroups() public {
@@ -270,7 +270,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = _singleMemberGroup(WAD, TOKEN_A, FEED_A);
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooFewGroups.selector, 1));
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnTooManyGroups() public {
@@ -279,7 +279,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         // Values don't need to sum to WAD -- the length check reverts before the weights loop.
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyGroups.selector, n));
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnTooManyMembers() public {
@@ -295,7 +295,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(WAD, TOKEN_B, FEED_B);
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyMembers.selector, n));
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     /// @notice Valid group/member counts can still exceed the 255-byte encoding limit --
@@ -326,7 +326,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         }
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerArgsTooLarge.selector, 260));
-        this._callBuildWithBridges(groups, 0, 0, bridges);
+        this._callBuildWithBridges(groups, 5e6, 0, bridges);
     }
 
     /// @dev Feed index 0 designates its own group's numeraire (BLEUDEV-412/ADR-0017) -- it no
@@ -336,7 +336,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, NUMERAIRE);
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6);
         (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
 
         assertEq(parsed[0].members[0].feedIndex, NUMERAIRE);
@@ -352,7 +352,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, NUMERAIRE);
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, NUMERAIRE);
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6);
         (PortfolioManagerArgsCodec.Group[] memory parsed,,,) = this._callParse(args);
 
         assertEq(parsed[0].members[0].feedIndex, NUMERAIRE);
@@ -371,7 +371,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerMultipleNumeraireMembers.selector, 0)
         );
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnZeroTokenIndex() public {
@@ -380,7 +380,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerZeroTokenIndex.selector, 0, 0));
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     // ---- bridges (ADR-0017): feeds between groups whose units differ, for the ship-time
@@ -400,7 +400,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         PortfolioManagerArgsCodec.Bridge[] memory bridges = new PortfolioManagerArgsCodec.Bridge[](1);
         bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: BRIDGE_FEED, maxStaleness: 3600});
 
-        bytes memory args = PortfolioManagerArgsCodec.build(groups, 0, 0, bridges);
+        bytes memory args = PortfolioManagerArgsCodec.build(groups, 5e6, 0, bridges);
         (,,, PortfolioManagerArgsCodec.Bridge[] memory parsed) = this._callParse(args);
 
         assertEq(parsed.length, 1);
@@ -413,7 +413,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     /// @dev A 2-group universe with no bridges round-trips exactly as before -- the new section
     ///      is an empty, 1-byte count, not a required-but-unused field.
     function test_BuildThenParseRoundTripsNoBridges() public view {
-        bytes memory args = PortfolioManagerArgsCodec.build(_twoGroupUniverse(), 0);
+        bytes memory args = PortfolioManagerArgsCodec.build(_twoGroupUniverse(), 5e6);
         (,,, PortfolioManagerArgsCodec.Bridge[] memory parsed) = this._callParse(args);
         assertEq(parsed.length, 0);
     }
@@ -425,7 +425,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerBridgeInvalidGroupIndex.selector, 2)
         );
-        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+        this._callBuildWithBridges(_twoGroupUniverse(), 5e6, 0, bridges);
     }
 
     function test_BuildRevertsOnBridgeSameGroup() public {
@@ -433,7 +433,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 0, feed: BRIDGE_FEED, maxStaleness: 3600});
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerBridgeSameGroup.selector, 0));
-        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+        this._callBuildWithBridges(_twoGroupUniverse(), 5e6, 0, bridges);
     }
 
     function test_BuildRevertsOnBridgeZeroFeedAddress() public {
@@ -441,7 +441,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         bridges[0] = PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(0), maxStaleness: 3600});
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerBridgeZeroFeedAddress.selector);
-        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+        this._callBuildWithBridges(_twoGroupUniverse(), 5e6, 0, bridges);
     }
 
     /// @dev Registering a pair twice is ambiguous regardless of which side is groupA/groupB in
@@ -454,7 +454,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerDuplicateBridge.selector, 1, 0)
         );
-        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+        this._callBuildWithBridges(_twoGroupUniverse(), 5e6, 0, bridges);
     }
 
     function test_BuildRevertsOnTooManyBridges() public {
@@ -465,7 +465,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         }
 
         vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerTooManyBridges.selector, n));
-        this._callBuildWithBridges(_twoGroupUniverse(), 0, 0, bridges);
+        this._callBuildWithBridges(_twoGroupUniverse(), 5e6, 0, bridges);
     }
 
     function test_ParseRevertsOnMissingBridgeCount() public {
@@ -486,7 +486,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerDuplicateToken.selector, TOKEN_A)
         );
-        this._callBuild(groups, 0);
+        this._callBuild(groups, 5e6);
     }
 
     function test_BuildRevertsOnFeeBpsAboveHundredPercent() public {
@@ -666,7 +666,7 @@ contract PortfolioManagerArgsCodecTest is Test {
             TOKEN_B,
             FEED_B,
             uint8(0), // bridgeCount
-            uint32(0)
+            uint32(5e6)
         );
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingMaxDeviationBps.selector);

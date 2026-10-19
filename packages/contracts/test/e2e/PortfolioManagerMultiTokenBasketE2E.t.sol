@@ -25,6 +25,7 @@ import {IPortfolioManagerSwap} from "../../src/interfaces/IPortfolioManagerSwap.
 import {PortfolioManagerPricing} from "../../src/utils/PortfolioManagerPricing.sol";
 import {OracleAdapter} from "../../src/utils/OracleAdapter.sol";
 import {AggregatorV3Interface} from "../../src/interfaces/AggregatorV3Interface.sol";
+import {PortfolioManagerFee} from "../../src/utils/PortfolioManagerFee.sol";
 import {MockTaker} from "../../lib/swap-vm/test/mocks/MockTaker.sol";
 
 /// @notice Tests {WETH, WBTC} and {DAI, USDT, USDC} groups with Base balances and Chainlink feeds.
@@ -360,12 +361,25 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return (feed == wethFeed || feed == wbtcFeed) ? MAJOR_MAX_STALENESS : STABLE_MAX_STALENESS;
     }
 
+    /// @dev The real swap path skims the DAO fee off the full native amountIn first, then feeds
+    ///      the remainder into the curve (which applies its own feeWad cut). Reference PoolStates
+    ///      built with feeWad: 0 only capture the curve's cut, so this replicates both stages.
+    function _expectedAmountOutWithFees(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
+        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount);
+    }
+
     // ===== Tests =====
 
     // Distinct fees give these test orders distinct strategy hashes.
 
     function test_ShipsTwoGroupStrategyAndLedgerReflectsIt() public {
-        ISwapVM.Order memory order = _buildOrder(0);
+        ISwapVM.Order memory order = _buildOrder(5_000_000);
 
         bytes32 strategyHash = _shipOnly(order);
 
@@ -376,7 +390,8 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     }
 
     function test_CrossGroupTradePricesOffBothGroupsFullOracleValuedSum() public {
-        ISwapVM.Order memory order = _buildOrder(1);
+        uint32 lpFeeBps = 5_000_001;
+        ISwapVM.Order memory order = _buildOrder(lpFeeBps);
         _shipOnly(order);
 
         // USDC enters stables and WETH leaves majors. The output reserve includes WBTC too.
@@ -385,12 +400,15 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
         uint256 usdcAmountIn = 300e6; // 300 USDC, well within the stables group's funded balance
 
+        // feeWad mirrors lpFeeBps (PM_BPS-scaled) so the fee helpers below can recover it.
+        uint256 feeWad = uint256(lpFeeBps) * 1e9;
+
         PortfolioManagerPricing.PoolState memory correctPoolState = PortfolioManagerPricing.PoolState({
             balanceIn: correctBalanceIn,
             balanceOut: correctBalanceOut,
             weightIn: STABLES_WEIGHT,
             weightOut: MAJORS_WEIGHT,
-            feeWad: 0
+            feeWad: feeWad
         });
 
         // Wrong expectation (what a regression to single-token-only pricing would compute):
@@ -401,13 +419,13 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             balanceOut: wethOnlyValueWad,
             weightIn: STABLES_WEIGHT,
             weightOut: MAJORS_WEIGHT,
-            feeWad: 0
+            feeWad: feeWad
         });
 
         // Convert native USDC to value WAD before pricing, then convert output value to native WETH.
         uint256 usdcAmountInValueWad = _usdValueWad(address(usdc), usdcFeed, usdcAmountIn);
-        uint256 expectedCorrectOutValueWad = PortfolioManagerPricing.exactIn(correctPoolState, usdcAmountInValueWad);
-        uint256 expectedWrongOutValueWad = PortfolioManagerPricing.exactIn(wrongPoolState, usdcAmountInValueWad);
+        uint256 expectedCorrectOutValueWad = _expectedAmountOutWithFees(correctPoolState, usdcAmountInValueWad);
+        uint256 expectedWrongOutValueWad = _expectedAmountOutWithFees(wrongPoolState, usdcAmountInValueWad);
 
         uint256 wethPriceWad = OracleAdapter.priceWad(
             OracleAdapter.PriceFeed({feed: AggregatorV3Interface(wethFeed), maxStaleness: MAJOR_MAX_STALENESS}),
@@ -435,7 +453,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
     /// @notice Consecutive same-direction trades use updated balances and give a worse second rate.
     function test_SecondTradeInSameDirectionGetsWorseRateThanTheFirst() public {
-        ISwapVM.Order memory order = _buildOrder(6);
+        ISwapVM.Order memory order = _buildOrder(5_000_006);
         _shipOnly(order);
 
         uint256 amountIn = 300e6; // 300 USDC each time, well within the funded stables balance
@@ -451,7 +469,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     }
 
     function test_SkewReducingBeatsSkewWorseningAtTheSameTradeSize() public {
-        ISwapVM.Order memory order = _buildOrder(2);
+        ISwapVM.Order memory order = _buildOrder(5_000_002);
         _shipOnly(order);
 
         // Donate DAI to make stables overweight.
@@ -483,7 +501,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     }
 
     function test_StaleFeedEventuallyBlocksTrade() public {
-        ISwapVM.Order memory order = _buildOrder(3);
+        ISwapVM.Order memory order = _buildOrder(5_000_003);
         _shipOnly(order);
 
         // Expire whichever feed breaches its own staleness bound first and assert its exact
@@ -529,12 +547,12 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
 
     function test_ShipSucceedsWithGenerousToleranceUnderNormalFunding() public {
         // A wide limit checks that validation accepts the fixture's normal funding.
-        ISwapVM.Order memory order = _buildOrder(4, 0.9e9);
+        ISwapVM.Order memory order = _buildOrder(5_000_004, 0.9e9);
         _shipOnly(order);
     }
 
     function test_ShipRevertsWhenWalletIsExtremelySkewedBeyondDeviationTolerance() public {
-        ISwapVM.Order memory order = _buildOrder(5, 0.1e9); // 10% band
+        ISwapVM.Order memory order = _buildOrder(5_000_005, 0.1e9); // 10% band
 
         // Funding stables 1000x above normal produces excessive deviation from the 50/50 target.
         (address[] memory tokens, uint256[] memory amounts) =
@@ -551,7 +569,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     // ===== Build-parameter attestation gate =====
 
     function test_SwapRevertsWhenShippedWithoutAttestingBuildParameters() public {
-        ISwapVM.Order memory order = _buildOrder(7);
+        ISwapVM.Order memory order = _buildOrder(5_000_007);
 
         // Real Safe/MultiSendCallOnly path, but with only the ship() leg -- exactly what a
         // caller that skips the recommended attest+ship batch would do.

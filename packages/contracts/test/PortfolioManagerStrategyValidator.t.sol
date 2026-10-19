@@ -76,7 +76,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
     }
 
     function _order(address[] memory declaredTokens, uint256[] memory weights) internal returns (ISwapVM.Order memory) {
-        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declaredTokens, weights), 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declaredTokens, weights), 5e6);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,
@@ -202,7 +202,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         weights[0] = 0.5e18;
         weights[1] = 0.5e18;
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 5e6);
         // Appends a second, unvalidated curve instruction after the first's own args.
         bytes memory trailingCurve = abi.encodePacked(uint8(PortfolioManagerProgramBuilder.CURVE_OPCODE), uint8(0));
         program = abi.encodePacked(program, trailingCurve);
@@ -224,7 +224,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         weights[0] = 0.5e18;
         weights[1] = 0.5e18;
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 5e6);
         // KYC_GATE_OPCODE = 1, matching GatedPortfolioManagerProgramBuilder's own wire format.
         bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
         bytes memory trailingCurve = abi.encodePacked(uint8(PortfolioManagerProgramBuilder.CURVE_OPCODE), uint8(0));
@@ -246,7 +246,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         weights[0] = 0.5e18;
         weights[1] = 0.5e18;
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 5e6);
         bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
         program = abi.encodePacked(program, kycGate);
 
@@ -306,7 +306,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         });
         groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, maxDeviationBps);
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 5e6, maxDeviationBps);
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,
@@ -546,7 +546,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         });
         numeraireGroups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(numeraireGroups, 0, 0.1e9); // 10%
+        bytes memory program = PortfolioManagerProgramBuilder.build(numeraireGroups, 5e6, 0.1e9); // 10%
         ISwapVM.Order memory order = MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,
@@ -606,7 +606,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         bridges[0] =
             PortfolioManagerArgsCodec.Bridge({groupA: 0, groupB: 1, feed: address(bridgeFeed), maxStaleness: 1 hours});
 
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0, 0.1e9, bridges); // 10%
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 5e6, 0.1e9, bridges); // 10%
         ISwapVM.Order memory order = MakerTraitsLib.build(
             MakerTraitsLib.Args({
                 maker: maker,

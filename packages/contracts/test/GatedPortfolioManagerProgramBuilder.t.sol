@@ -192,7 +192,7 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     // ===== Tests =====
 
     function test_GatedStrategyRevertsForUncredentialedResolver() public {
-        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 0, address(resolverKycToken));
+        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 5e6, address(resolverKycToken));
         ISwapVM.Order memory order = _orderForProgram(program);
         _shipOrder(order);
         MockTaker taker = _fundedTakerFor(uncredentialedResolver);
@@ -210,7 +210,7 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     ///      empty returndata instead of hitting `TxOriginTokenBalanceIsZero` -- still fails safe
     ///      (no uncredentialed swap goes through), just with a different, less informative revert.
     function test_GatedStrategyRevertsForZeroAddressToken() public {
-        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 0, address(0));
+        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 5e6, address(0));
         ISwapVM.Order memory order = _orderForProgram(program);
         _shipOrder(order);
         MockTaker taker = _fundedTakerFor(uncredentialedResolver);
@@ -221,7 +221,7 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     }
 
     function test_GatedStrategySucceedsForCredentialedResolver() public {
-        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 0, address(resolverKycToken));
+        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 5e6, address(resolverKycToken));
         ISwapVM.Order memory order = _orderForProgram(program);
         _shipOrder(order);
         MockTaker taker = _fundedTakerFor(credentialedResolver);
@@ -236,7 +236,7 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     /// for strategies built with the plain, ungated builder -- proves adding the gate opcode
     /// didn't change behavior for anything that doesn't reference it.
     function test_UngatedStrategyUnaffectedByNewOpcodePresence() public {
-        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 5e6);
         ISwapVM.Order memory order = _orderForProgram(program);
         _shipOrder(order);
         // Neither resolver holds anything special here -- the point is that it doesn't matter.

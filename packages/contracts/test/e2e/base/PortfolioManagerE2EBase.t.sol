@@ -35,8 +35,11 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint32 internal constant MAJOR_MAX_STALENESS = 1200;
     uint32 internal constant STABLE_MAX_STALENESS = 86400;
 
-    /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (≈0.1225%) — 1/4 tier.
-    uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
+    /// @dev PortfolioManagerArgsCodec.MIN_FEE_BPS's floor (0.5%) now sits above
+    ///      PortfolioManagerFee.TIER_THRESHOLD_BPS (≈0.1225%), so this no longer lands in the DAO
+    ///      fee's 1/4 tier -- every real strategy lands in the 1/6 tier now. Kept the name since
+    ///      e2e tests here use it as "a baseline valid fee", not to exercise tier math.
+    uint32 internal constant LOW_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%, the floor
 
     /// @dev WETH predeploy address, standard across every OP-stack chain (Base included).
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;

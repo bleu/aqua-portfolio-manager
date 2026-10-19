@@ -23,7 +23,7 @@ contract PortfolioManagerProgramBuilderTest is Test {
 
     function test_BuildProducesCorrectWireFormat() public pure {
         PortfolioManagerArgsCodec.Group[] memory groups = _groups();
-        uint32 feeBps = 200_000; // 2 bps at PM_BPS = 1e9 scale
+        uint32 feeBps = 5_000_000; // 0.5% at PM_BPS = 1e9 scale, the floor
 
         bytes memory program = PortfolioManagerProgramBuilder.build(groups, feeBps);
         bytes memory expectedArgs = PortfolioManagerArgsCodec.build(groups, feeBps);

@@ -32,6 +32,11 @@ library PortfolioManagerArgsCodec {
     /// @dev Matches SwapVM's fee scale: 1e9 = 100%. One conventional basis point is 100_000.
     uint256 internal constant PM_BPS = 1e9;
 
+    /// @dev Floor on the LP-configured curve fee, PM_BPS-scaled: 0.5% = 5_000_000. Previously
+    ///      feeBps = 0 was deliberately allowed (BLEUDEV-327: "genuinely LP-optional"); this
+    ///      reverses that ahead of mainnet deployment.
+    uint256 internal constant MIN_FEE_BPS = 5_000_000;
+
     uint256 private constant WAD = FixedPointMath.WAD;
     /// @dev WAD/PM_BPS -- exact (1e18 / 1e9 = 1e9), so expanding an encoded weight back to WAD
     ///      never rounds. Only narrowing WAD down to PM_BPS at build() time can lose precision.
@@ -152,7 +157,7 @@ library PortfolioManagerArgsCodec {
         require(groups.length > 0, PortfolioManagerEmptyUniverse());
         require(groups.length >= MIN_GROUPS, PortfolioManagerTooFewGroups(groups.length));
         require(groups.length <= MAX_GROUPS, PortfolioManagerTooManyGroups(groups.length));
-        require(feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
+        require(feeBps >= MIN_FEE_BPS && feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
 
         args = abi.encodePacked(uint8(groups.length));
 
@@ -258,7 +263,7 @@ library PortfolioManagerArgsCodec {
         offset = afterBridges;
 
         feeBps = uint32(bytes4(args.slice(offset, offset + 4, PortfolioManagerMissingFeeBps.selector)));
-        require(feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
+        require(feeBps >= MIN_FEE_BPS && feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
         offset += 4;
 
         maxDeviationBps =

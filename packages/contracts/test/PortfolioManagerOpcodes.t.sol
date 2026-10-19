@@ -33,10 +33,17 @@ contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
     uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
 
-    /// @dev Below PortfolioManagerFee.TIER_THRESHOLD_BPS (0.1225%) — 1/4 tier.
-    uint32 internal constant LOW_TIER_FEE_BPS = 0.02e9 / 100; // 2 bps, the existing ADR-0008 default
-    /// @dev Above the threshold — 1/6 tier.
-    uint32 internal constant HIGH_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%
+    /// @dev PortfolioManagerArgsCodec.MIN_FEE_BPS's own floor (0.5%) sits above
+    ///      PortfolioManagerFee.TIER_THRESHOLD_BPS (0.1225%), so no strategy built through the
+    ///      real encode/decode path can land in the DAO fee's low (/4) tier anymore -- only the
+    ///      high (/6) tier is reachable. Kept the name (most uses here just need "a baseline
+    ///      valid fee", not the tier math itself) but the value is now the floor, not 2bps.
+    ///      test_DaoFeeBpsLowTierMathStillComputesQuarter below tests the /4 branch directly
+    ///      against the library instead, since no order can reach it here anymore.
+    uint32 internal constant LOW_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%, the floor
+    /// @dev Above the threshold — 1/6 tier. Distinct from LOW_TIER_FEE_BPS now that both must
+    ///      clear the 0.5% floor.
+    uint32 internal constant HIGH_TIER_FEE_BPS = 1e9 / 100; // 1%
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
@@ -102,6 +109,12 @@ contract PortfolioManagerOpcodesTest is Test {
             tokenIndex: tokenRegistry.register(token), feedIndex: feedRegistry.register(feed, DEFAULT_MAX_STALENESS)
         });
         return PortfolioManagerArgsCodec.Group({weight: weight, members: members});
+    }
+
+    /// @dev vm.expectRevert needs an external call boundary to intercept a revert at -- _buildOrder
+    ///      and the library calls inside it are all inlined into the caller's own frame otherwise.
+    function _externalBuildOrder(uint32 lpFeeBps) external view returns (ISwapVM.Order memory) {
+        return _buildOrder(lpFeeBps);
     }
 
     function _buildOrder(uint32 lpFeeBps) internal view returns (ISwapVM.Order memory) {
@@ -244,27 +257,13 @@ contract PortfolioManagerOpcodesTest is Test {
 
     // ===== Tests =====
 
-    function test_ProtocolFeeLandsInDaoTreasuryAtLowTier() public {
-        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
-        _shipOrder(order, INITIAL_BALANCE);
-
-        (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
-        assertEq(amountIn, SWAP_AMOUNT, "taker pays the exact amount they specified");
-
-        uint256 expectedTotalFee = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
-        uint256 expectedBleuAmount = expectedTotalFee / 2;
-        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
-        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
-        uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
-
-        assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/4-tier formula");
-        assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/4-tier formula");
-        assertEq(
-            tokenA.balanceOf(maker),
-            INITIAL_BALANCE + amountIn - daoAmount - bleuAmount,
-            "wallet's net gain is amountIn minus the protocol pull"
-        );
+    /// @dev PortfolioManagerArgsCodec.MIN_FEE_BPS (0.5%) sits above TIER_THRESHOLD_BPS (0.1225%),
+    ///      so no order built through the real encode/decode path can land in the /4 tier anymore
+    ///      -- tested as a direct library call instead of a full ship+swap, unlike its /6 sibling
+    ///      below, which a real order can still reach.
+    function test_DaoFeeBpsLowTierMathStillComputesQuarter() public pure {
+        uint32 belowThreshold = 0.1e9 / 100; // 0.1%, below TIER_THRESHOLD_BPS
+        assertEq(PortfolioManagerFee.daoFeeBps(belowThreshold), belowThreshold / 4);
     }
 
     function test_ProtocolFeeLandsInDaoTreasuryAtHighTier() public {
@@ -284,14 +283,12 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/6-tier formula");
     }
 
-    function test_ZeroLpFeeMeansZeroProtocolFee() public {
-        ISwapVM.Order memory order = _buildOrder(0);
-        _shipOrder(order, INITIAL_BALANCE);
-
-        (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
-        assertEq(amountIn, SWAP_AMOUNT);
-        assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
-        assertEq(tokenA.balanceOf(maker), INITIAL_BALANCE + amountIn, "with no LP fee, the full amountIn lands");
+    /// @dev A zero LP fee used to be allowed (BLEUDEV-327: "genuinely LP-optional") and this test
+    ///      checked it produced zero protocol fee. PortfolioManagerArgsCodec.MIN_FEE_BPS now
+    ///      forbids feeBps = 0 entirely, so the meaningful behavior to check is the revert itself.
+    function test_ZeroLpFeeNowRevertsAtTheFeeFloor() public {
+        vm.expectRevert(abi.encodeWithSelector(PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, 0));
+        this._externalBuildOrder(0);
     }
 
     function test_ProtocolFeeSkipsWhenMakerUnderfunded() public {
@@ -326,25 +323,6 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(bleuSkipped, 1, "exactly one ProtocolFeeSkipped for Bleu's half");
     }
 
-    function test_ProtocolFeeLandsInDaoTreasuryAtLowTierExactOut() public {
-        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
-        _shipOrder(order, INITIAL_BALANCE);
-
-        _swapExactOut(order, SWAP_AMOUNT);
-
-        uint256 expectedTotalFee = _expectedExactOutDaoAmount(LOW_TIER_FEE_BPS, SWAP_AMOUNT);
-        uint256 expectedBleuAmount = expectedTotalFee / 2;
-        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
-        uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
-        uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
-
-        assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/4-tier exact-out formula");
-        assertEq(
-            bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/4-tier exact-out formula"
-        );
-    }
-
     function test_ProtocolFeeLandsInDaoTreasuryAtHighTierExactOut() public {
         ISwapVM.Order memory order = _buildOrder(HIGH_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
@@ -362,15 +340,6 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(
             bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/6-tier exact-out formula"
         );
-    }
-
-    function test_ZeroLpFeeMeansZeroProtocolFeeExactOut() public {
-        ISwapVM.Order memory order = _buildOrder(0);
-        _shipOrder(order, INITIAL_BALANCE);
-
-        (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
-        assertEq(amountOut, SWAP_AMOUNT);
-        assertEq(tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS), 0);
     }
 
     function test_ExactInPreservesInvariantWithFractionalInputReserve() public {
@@ -399,18 +368,20 @@ contract PortfolioManagerOpcodesTest is Test {
         assertGe(tokenA.balanceOf(maker) * tokenB.balanceOf(maker), 300e18);
     }
 
+    /// @dev No longer fuzzes a zero-fee order (withFee=false) alongside a fee-bearing one --
+    ///      PortfolioManagerArgsCodec.MIN_FEE_BPS makes zero-fee strategies unbuildable, so that's
+    ///      no longer a reachable state worth covering here.
     function testFuzz_FractionalReservesPreserveSettledInvariant(
         uint256 balanceIn,
         uint256 balanceOut,
         uint256 amount,
-        bool exactIn,
-        bool withFee
+        bool exactIn
     ) public {
         balanceIn = bound(balanceIn, 3, 1e6);
         balanceOut = bound(balanceOut, 8, INITIAL_BALANCE);
         feedA.setAnswer(0.5e18, block.timestamp);
         feedB.setAnswer(0.75e18, block.timestamp);
-        ISwapVM.Order memory order = _buildOrder(withFee ? LOW_TIER_FEE_BPS : 0);
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
         tokenA.burn(maker, INITIAL_BALANCE - balanceIn);
         tokenB.burn(maker, INITIAL_BALANCE - balanceOut);
@@ -433,7 +404,10 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function test_ExactOutRoundsRequestedOutputValueUp() public {
         feedB.setAnswer(0.5e18, block.timestamp);
-        ISwapVM.Order memory order = _buildOrder(0);
+        // The fee here only affects amountIn, never the requested amountOut, and can only help
+        // (not hurt) the >= invariant check below, so a mandatory nonzero fee changes nothing
+        // this test actually asserts.
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
         tokenA.burn(maker, INITIAL_BALANCE - 100);
         tokenB.burn(maker, INITIAL_BALANCE - 100);
@@ -454,7 +428,8 @@ contract PortfolioManagerOpcodesTest is Test {
 
     function test_ExactOutRoundsRequiredNativeInputUp() public {
         feedA.setAnswer(2e18, block.timestamp);
-        ISwapVM.Order memory order = _buildOrder(0);
+        // Same reasoning as test_ExactOutRoundsRequestedOutputValueUp.
+        ISwapVM.Order memory order = _buildOrder(LOW_TIER_FEE_BPS);
         _shipOrder(order, INITIAL_BALANCE);
         tokenA.burn(maker, INITIAL_BALANCE - 100);
         tokenB.burn(maker, INITIAL_BALANCE - 100);
@@ -493,21 +468,27 @@ contract PortfolioManagerOpcodesTest is Test {
         assertEq(skippedEvents, 2, "one ProtocolFeeSkipped per recipient");
     }
 
+    /// @dev Used to compare a zero-fee order against LOW_TIER_FEE_BPS to prove the LP's own fee
+    ///      has a real effect; PortfolioManagerArgsCodec.MIN_FEE_BPS removed the zero-fee baseline
+    ///      entirely, so this now compares two nonzero fees instead -- a larger LP fee must still
+    ///      reduce quoted output further than a smaller one.
     function test_LpOwnCurveFeeStillAppliesOnTopOfProtocolFee() public {
         uint256 snapshot = vm.snapshotState();
 
-        ISwapVM.Order memory zeroFeeOrder = _buildOrder(0);
-        _shipOrder(zeroFeeOrder, INITIAL_BALANCE);
-        (, uint256 amountOutNoLpFee) = _swapExactIn(zeroFeeOrder, SWAP_AMOUNT);
+        ISwapVM.Order memory lowFeeOrder = _buildOrder(LOW_TIER_FEE_BPS);
+        _shipOrder(lowFeeOrder, INITIAL_BALANCE);
+        (, uint256 amountOutLowLpFee) = _swapExactIn(lowFeeOrder, SWAP_AMOUNT);
 
         vm.revertToState(snapshot);
 
-        ISwapVM.Order memory feeOrder = _buildOrder(LOW_TIER_FEE_BPS);
-        _shipOrder(feeOrder, INITIAL_BALANCE);
-        (, uint256 amountOutWithLpFee) = _swapExactIn(feeOrder, SWAP_AMOUNT);
+        ISwapVM.Order memory highFeeOrder = _buildOrder(HIGH_TIER_FEE_BPS);
+        _shipOrder(highFeeOrder, INITIAL_BALANCE);
+        (, uint256 amountOutHighLpFee) = _swapExactIn(highFeeOrder, SWAP_AMOUNT);
 
         // Restore identical balances to isolate the effect of the LP fee.
-        assertLt(amountOutWithLpFee, amountOutNoLpFee, "a nonzero LP curve fee must strictly reduce quoted output");
+        assertLt(
+            amountOutHighLpFee, amountOutLowLpFee, "a larger LP curve fee must strictly reduce quoted output further"
+        );
     }
 
     /// @notice Aqua rejects unshipped tokens before PM dispatch.
@@ -611,7 +592,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactIn(order, SWAP_AMOUNT);
 
-        uint256 expectedTotalFee = SWAP_AMOUNT * (LOW_TIER_FEE_BPS / 4) / FEE_BPS_SCALE;
+        uint256 expectedTotalFee = SWAP_AMOUNT * PortfolioManagerFee.daoFeeBps(LOW_TIER_FEE_BPS) / FEE_BPS_SCALE;
         uint256 expectedBleuAmount = expectedTotalFee / 2;
         uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
         assertEq(

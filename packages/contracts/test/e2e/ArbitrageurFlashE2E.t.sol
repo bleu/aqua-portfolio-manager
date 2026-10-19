@@ -292,7 +292,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     ///      USDT -> WBTC, and funds the manager so the flash loan itself is never the bottleneck
     ///      -- each test only supplies what it's actually varying (see `_flashParams`).
     function _setUpFlashArb(uint256 amountIn) internal returns (ISwapVM.Order memory order, uint256 quotedOut) {
-        order = _buildOrder(0);
+        order = _buildOrder(5_000_000);
         _shipOnly(order);
         quotedOut = arbitrageur.quoteExactIn(order, address(usdt), address(wbtc), amountIn);
         assertGt(quotedOut, 0, "curve quote must be non-zero for a funded, shipped strategy");
@@ -322,7 +322,7 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     }
 
     function _shipGatedOrder() internal returns (ISwapVM.Order memory order) {
-        order = _buildGatedOrder(0);
+        order = _buildGatedOrder(5_000_000);
         _shipOnly(order);
     }
 

@@ -19,7 +19,7 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
         PortfolioManagerArgsCodec.Group[] memory reversedGroups = new PortfolioManagerArgsCodec.Group[](2);
         reversedGroups[0] = _singleMemberGroup(0.5e18, address(pmTokenB), DAI_USD_FEED_BASE, STABLE_MAX_STALENESS);
         reversedGroups[1] = _singleMemberGroup(0.5e18, address(pmTokenA), ETH_USD_FEED_BASE, MAJOR_MAX_STALENESS);
-        bytes memory program = PortfolioManagerProgramBuilder.build(reversedGroups, 0);
+        bytes memory program = PortfolioManagerProgramBuilder.build(reversedGroups, 5_000_000);
 
         return MakerTraitsLib.build(
             MakerTraitsLib.Args({
@@ -46,7 +46,7 @@ contract PortfolioManagerSkewWorseningE2ETest is PortfolioManagerE2EBase {
     }
 
     function test_SkewWorseningTradeGetsPenalizedRate() public {
-        // Disable fees to isolate price impact.
+        // Fee floor only (PortfolioManagerArgsCodec.MIN_FEE_BPS); kept low to isolate price impact.
         ISwapVM.Order memory order = _buildOrderWithReversedUniverse();
         _fundAndShip(order, INITIAL_BALANCE);
 
