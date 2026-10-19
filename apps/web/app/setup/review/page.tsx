@@ -50,6 +50,29 @@ export default function Page() {
   const priceDeviationPct = draftParameters?.priceDeviationPct ?? 0;
   const lpFeePct = draftParameters?.lpFeePct ?? 0;
 
+  /** Maps a raw thrown error to a plain-language message a non-technical user can act on --
+   *  the raw error (a viem/Safe-SDK message, a stack trace) always goes to the console for
+   *  debugging, but never directly onto the screen. Unrecognized errors fall back to one generic
+   *  message rather than leaking library internals. */
+  function describeCreateTransactionError(err: unknown): string {
+    console.error("Failed to create the Safe transaction:", err);
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (/user rejected|user denied|denied the request/i.test(message)) {
+      return "You declined the signature request in your wallet. Nothing was created -- try again when you're ready.";
+    }
+    if (/NEXT_PUBLIC_SAFE_API_KEY/.test(message)) {
+      return "This app isn't fully configured to propose Safe transactions yet. Contact the team.";
+    }
+    if (/registered Base-mainnet token\/feed universe/.test(message)) {
+      return "One of the tokens in your baskets isn't supported yet. Go back and remove it, or pick a different token.";
+    }
+    if (/Target allocations must sum/.test(message)) {
+      return "Your target allocations need to add up to more than 0%. Go back to Targets and set them.";
+    }
+    return "Something went wrong creating this transaction. Try again, or contact the team if this keeps happening.";
+  }
+
   async function handleCreateTransaction() {
     if (!connector) return;
     setCreateError(undefined);
@@ -70,7 +93,7 @@ export default function Page() {
       });
       router.push(`/setup/waiting-for-signatures?tx=${safeTxHash}`);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create the Safe transaction.");
+      setCreateError(describeCreateTransactionError(err));
     } finally {
       setIsCreating(false);
     }
