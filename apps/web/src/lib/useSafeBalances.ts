@@ -24,7 +24,13 @@ const AGGREGATOR_ABI = [
 
 /** Real, live balances and Chainlink-priced USD values for every token in TOKEN_FEEDS, for the
  *  connected Safe -- one batched multicall (balance + decimals + price per token) instead of 120
- *  separate RPC calls. */
+ *  separate RPC calls.
+ *  @returns `tokens` -- display-friendly float balances/USD values for the UI.
+ *  @returns `rawBalances` -- the same balanceOf() results as raw integer units (wei, or whatever
+ *           the token's own decimals are), keyed by token address. For anything that feeds a
+ *           real transaction (e.g. safeProposal.ts's ship() amounts), use this, not `tokens`'
+ *           float `balance` -- a float round-trip through `balance * 10 ** decimals` can lose
+ *           precision that a real on-chain amount can't afford. */
 export function useSafeBalances(safeAddress: `0x${string}` | undefined) {
   const { data, isLoading, isError } = useReadContracts({
     contracts: TOKEN_FEEDS.flatMap((feed) => [
@@ -73,5 +79,14 @@ export function useSafeBalances(safeAddress: `0x${string}` | undefined) {
         };
       });
 
-  return { tokens, isLoading, isError };
+  const rawBalances: Record<string, bigint> = !data
+    ? {}
+    : Object.fromEntries(
+        TOKEN_FEEDS.map((feed, i) => {
+          const balanceResult = data[i * 3];
+          return [feed.tokenAddress, balanceResult?.status === "success" ? (balanceResult.result as bigint) : 0n];
+        }),
+      );
+
+  return { tokens, rawBalances, isLoading, isError };
 }

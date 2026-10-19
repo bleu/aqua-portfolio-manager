@@ -14,7 +14,8 @@ import { WizardStepper } from "@/components/WizardStepper";
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
 const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
 const PRICE_DEVIATION_OPTIONS = [0.1, 0.5, 1, 2, 5];
-const LP_FEE_OPTIONS = [0.05, 0.3, 1, 2];
+/** Floor matches PortfolioManagerArgsCodec.MIN_FEE_BPS (0.5%) -- a lower preset would revert on-chain. */
+const LP_FEE_OPTIONS = [0.5, 1, 2, 5];
 const DEFAULT_LP_FEE = 2;
 
 export type SetStrategyParametersPageProps = {

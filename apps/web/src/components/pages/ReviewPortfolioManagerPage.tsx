@@ -32,6 +32,8 @@ export type ReviewPortfolioManagerPageProps = {
   signaturesRequired: number;
   onBack?: () => void;
   onCreateTransaction?: () => void;
+  isCreatingTransaction?: boolean;
+  createTransactionError?: string;
 };
 
 /** BLEUDEV-416 — step 4 of the 4-step setup wizard ("Review"). */
@@ -44,6 +46,8 @@ export function ReviewPortfolioManagerPage({
   signaturesRequired,
   onBack,
   onCreateTransaction,
+  isCreatingTransaction,
+  createTransactionError,
 }: ReviewPortfolioManagerPageProps) {
   const needsRebalance = baskets.some((b) => Math.abs(b.currentPct - b.targetPct) > REBALANCE_EPSILON_PCT);
 
@@ -99,12 +103,23 @@ export function ReviewPortfolioManagerPage({
             </div>
           </div>
 
+          {createTransactionError && (
+            <p className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">
+              {createTransactionError}
+            </p>
+          )}
+
           <div className="mt-6 flex items-center justify-between gap-3">
-            <Button variant="secondary" onClick={onBack}>
+            <Button variant="secondary" onClick={onBack} disabled={isCreatingTransaction}>
               Back
             </Button>
-            <Button variant="accent" onClick={onCreateTransaction} className="flex-1">
-              Create transaction
+            <Button
+              variant="accent"
+              onClick={onCreateTransaction}
+              disabled={isCreatingTransaction}
+              className="flex-1"
+            >
+              {isCreatingTransaction ? "Creating transaction…" : "Create transaction"}
             </Button>
           </div>
         </div>

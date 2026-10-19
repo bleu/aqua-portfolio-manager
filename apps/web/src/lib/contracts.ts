@@ -34,3 +34,7 @@ export const PM_STRATEGY_VALIDATOR_ADDRESS = requiredAddress(
   "NEXT_PUBLIC_PM_STRATEGY_VALIDATOR_ADDRESS",
   process.env.NEXT_PUBLIC_PM_STRATEGY_VALIDATOR_ADDRESS,
 );
+/** The shared, external Aqua registry this deployment's Router/Validator were built against
+ *  (packages/addresses/base-mainnet.json's "aqua" field) -- not something this repo deploys or
+ *  redeploys, but still env-driven rather than hardcoded in case Aqua itself is ever upgraded. */
+export const AQUA_ADDRESS = requiredAddress("NEXT_PUBLIC_AQUA_ADDRESS", process.env.NEXT_PUBLIC_AQUA_ADDRESS);

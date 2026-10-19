@@ -1,20 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { ReviewPortfolioManagerPage } from "@/components/pages/ReviewPortfolioManagerPage";
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
+import { proposeShipStrategyTransaction } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
 
 export default function Page() {
   const router = useRouter();
-  const { address } = useAccount();
-  const { tokens } = useSafeBalances(address);
+  const { address, connector } = useAccount();
+  const { tokens, rawBalances } = useSafeBalances(address);
   const { threshold } = useSafeThreshold(address);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string>();
 
   if (!address) {
     return <div className="min-h-screen" />;
@@ -43,16 +47,47 @@ export default function Page() {
     };
   });
 
+  const priceDeviationPct = draftParameters?.priceDeviationPct ?? 0;
+  const lpFeePct = draftParameters?.lpFeePct ?? 0;
+
+  async function handleCreateTransaction() {
+    if (!connector) return;
+    setCreateError(undefined);
+    setIsCreating(true);
+    try {
+      const provider = await connector.getProvider();
+      const { safeTxHash } = await proposeShipStrategyTransaction({
+        safeAddress: address as `0x${string}`,
+        provider: provider as { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> },
+        groups: draftBaskets.map((basket) => ({
+          name: basket.name,
+          targetPct: draftTargets[basket.id] ?? 0,
+          tokenAddresses: basket.tokenAddresses as `0x${string}`[],
+        })),
+        feeBpsPm: BigInt(Math.round(lpFeePct * 1e7)),
+        maxDeviationBpsPm: BigInt(Math.round(priceDeviationPct * 1e7)),
+        balances: rawBalances as Record<`0x${string}`, bigint>,
+      });
+      router.push(`/setup/waiting-for-signatures?tx=${safeTxHash}`);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Failed to create the Safe transaction.");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   return (
     <ReviewPortfolioManagerPage
       network="Base"
       safeAddress={address}
       baskets={baskets}
-      priceDeviationPct={draftParameters?.priceDeviationPct ?? 0}
-      lpFeePct={draftParameters?.lpFeePct ?? 0}
+      priceDeviationPct={priceDeviationPct}
+      lpFeePct={lpFeePct}
       signaturesRequired={threshold ?? 1}
       onBack={() => router.push("/setup/parameters")}
-      onCreateTransaction={() => router.push("/setup/waiting-for-signatures")}
+      onCreateTransaction={handleCreateTransaction}
+      isCreatingTransaction={isCreating}
+      createTransactionError={createError}
     />
   );
 }

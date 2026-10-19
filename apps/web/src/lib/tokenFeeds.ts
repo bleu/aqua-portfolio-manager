@@ -64,3 +64,20 @@ export const TOKEN_FEEDS: TokenFeed[] = [
   { symbol: "YFI", tokenAddress: "0x9EaF8C1E34F05a589EDa6BAfdF391Cf6Ad3CB239", feedProxy: "0xD40e758b5eC80820B68DFC302fc5Ce1239083548", feedDecimals: 8 },
   { symbol: "ZRO", tokenAddress: "0x6985884C4392D348587B19cb9eAAf157F13271cd", feedProxy: "0xdc31a4CCfCA039BeC6222e20BE7770E12581bfEB", feedDecimals: 8 },
 ];
+
+/** Both PortfolioManagerTokenRegistry and PortfolioManagerFeedRegistry were bulk-populated by
+ *  packages/contracts/script/Deploy.s.sol from this same list (base-mainnet-feeds.json) in one
+ *  loop, registering each entry's token and feed in lockstep -- so a token's registry index and
+ *  its feed's registry index are both exactly its 1-based position in TOKEN_FEEDS. Verified
+ *  against the real deployment: tokenAt(1)/feedAt(1) and tokenAt(40)/feedAt(40) on Base mainnet
+ *  both matched this array's first and last entries. Index 0 is reserved (resolves to the zero
+ *  address) in both registries, hence the +1. Throws for a token outside this 40-token universe --
+ *  the wizard's basket picker only ever offers tokens from this list, so that should never happen
+ *  for a strategy actually built through it. */
+export function getRegistryIndex(tokenAddress: string): number {
+  const index = TOKEN_FEEDS.findIndex((t) => t.tokenAddress.toLowerCase() === tokenAddress.toLowerCase());
+  if (index === -1) {
+    throw new Error(`${tokenAddress} is not in the registered Base-mainnet token/feed universe.`);
+  }
+  return index + 1;
+}
