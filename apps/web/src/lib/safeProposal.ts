@@ -1,6 +1,6 @@
 import Safe from "@safe-global/protocol-kit";
 import SafeApiKit from "@safe-global/api-kit";
-import type { MetaTransactionData } from "@safe-global/types-kit";
+import { SigningMethod, type MetaTransactionData } from "@safe-global/types-kit";
 import { encodeFunctionData, erc20Abi, maxUint256, type Address, type Hex } from "viem";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
@@ -165,7 +165,19 @@ export async function proposeShipStrategyTransaction({
   const protocolKit = await Safe.init({ provider, signer: safeAddress, safeAddress });
   const safeTransaction = await protocolKit.createTransaction({ transactions, onlyCalls: true });
   const safeTxHash = (await protocolKit.getTransactionHash(safeTransaction)) as Hex;
-  const signature = await protocolKit.signHash(safeTxHash);
+  // signHash() signs the bare hash bytes (eth_sign-style) -- Safe{Wallet} can't tell that's meant
+  // to confirm a specific pending transaction, and instead records it as a standalone "SafeMessage"
+  // signature, which the Transaction Service then rejects as not matching this safeTxHash.
+  // signTransaction() with an explicit EIP-712 method signs the real typed SafeTx structure, which
+  // Safe{Wallet} recognizes and displays as a transaction confirmation.
+  const signedSafeTransaction = await protocolKit.signTransaction(
+    safeTransaction,
+    SigningMethod.ETH_SIGN_TYPED_DATA_V4,
+  );
+  const signature = signedSafeTransaction.getSignature(safeAddress);
+  if (!signature) {
+    throw new Error("The wallet did not return a signature for this transaction.");
+  }
 
   const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
   await apiKit.proposeTransaction({
