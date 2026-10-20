@@ -1,6 +1,6 @@
 import Safe from "@safe-global/protocol-kit";
 import SafeApiKit from "@safe-global/api-kit";
-import type { MetaTransactionData } from "@safe-global/types-kit";
+import { SigningMethod, type MetaTransactionData } from "@safe-global/types-kit";
 import { encodeFunctionData, erc20Abi, maxUint256, type Address, type Hex } from "viem";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
@@ -162,8 +162,26 @@ export async function proposeShipStrategyTransaction({
     },
   ];
 
-  const protocolKit = await Safe.init({ provider, signer: safeAddress, safeAddress });
   const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
+
+  // Every earlier attempt configured the SDK with `signer: safeAddress` -- treating the Safe's own
+  // address as if it could sign. A Safe has no private key; only its owners do. Asking a wallet
+  // bridge to sign "as the Safe" is ambiguous, and in practice produced a different, invalid
+  // signature every single time (confirmed three ways: two different local recovery attempts each
+  // recovered a different wrong address, and Safe's own server-side signature verification also
+  // rejected it with a different wrong recovered address each time -- not a recovery-logic bug,
+  // the underlying signature itself was never valid). The fix is to sign explicitly as the real
+  // owner address instead, which a wallet can unambiguously route to the right key.
+  const readOnlyKit = await Safe.init({ provider, signer: safeAddress, safeAddress });
+  const owners = await readOnlyKit.getOwners();
+  if (owners.length !== 1) {
+    throw new Error(
+      `This Safe has ${owners.length} owners -- proposing from a multi-owner Safe isn't supported by this app yet.`,
+    );
+  }
+  const ownerAddress = owners[0] as Address;
+  const protocolKit = await readOnlyKit.connect({ signer: ownerAddress });
+
   const safeTransaction = await protocolKit.createTransaction({ transactions, onlyCalls: true });
   const safeTxHash = (await protocolKit.getTransactionHash(safeTransaction)) as Hex;
 
@@ -181,43 +199,23 @@ export async function proposeShipStrategyTransaction({
     // Not found (or some other lookup failure) -- fall through and propose it fresh, as normal.
   }
 
-  // signHash() signs the bare hash bytes (eth_sign-style) -- Safe{Wallet} can't tell that's meant
-  // to confirm a specific pending transaction, and instead records it as a standalone "SafeMessage"
-  // signature, which the Transaction Service then rejects as not matching this safeTxHash.
-  //
-  // signTransaction() looked like the right replacement, but it hard-validates that `signer` is
-  // one of the Safe's own owners ("Transactions can only be signed by Safe owners") -- a check
-  // meant for "I configured this SDK with a specific owner's key directly." It doesn't fit here:
-  // `signer` above is the connected Safe's own address, not an owner, because this app is always
-  // connected AS the Safe itself (via the Safe App bridge or WalletConnect-to-Safe{Wallet}), which
-  // transparently substitutes the real owner's signature on the other end. signTypedData() is the
-  // lower-level primitive that does the same EIP-712 signing without that extra membership check.
-  const signature = await protocolKit.signTypedData(safeTransaction, "v4");
-
-  // The Transaction Service's `senderAddress` must be the real owner who produced the signature,
-  // not the Safe's own address -- same class of mix-up as signTransaction()'s owner check above,
-  // now enforced server-side instead.
-  //
-  // Two earlier attempts tried recovering it cryptographically from the signature bytes (first
-  // against an independently-rebuilt EIP-712 digest, then against safeTxHash itself) -- both
-  // recovered a different, wrong address each time. Root cause: the Safe itself is a smart
-  // contract, not a private key, so what Safe{Wallet} returns here isn't a plain ECDSA signature
-  // meant for ecrecover at all; treating it as one just produces a garbage address. Asking the Safe
-  // who its owner actually is sidesteps the whole problem instead of trying to decode it.
-  const owners = await protocolKit.getOwners();
-  if (owners.length !== 1) {
-    throw new Error(
-      `This Safe has ${owners.length} owners -- proposing from a multi-owner Safe isn't supported by this app yet.`,
-    );
+  // Now that `signer` is a real owner, signTransaction()'s own owner-membership check passes
+  // normally -- no need for the signHash()/signTypedData() workarounds earlier attempts needed.
+  const signedSafeTransaction = await protocolKit.signTransaction(
+    safeTransaction,
+    SigningMethod.ETH_SIGN_TYPED_DATA_V4,
+  );
+  const signature = signedSafeTransaction.getSignature(ownerAddress);
+  if (!signature) {
+    throw new Error("The wallet did not return a signature for this transaction.");
   }
-  const senderAddress = owners[0] as Address;
 
-  console.log("[safeProposal] signed, recovered sender:", senderAddress, "-- posting to Safe's Transaction Service now");
+  console.log("[safeProposal] signed as owner:", ownerAddress, "-- posting to Safe's Transaction Service now");
   await apiKit.proposeTransaction({
     safeAddress,
     safeTransactionData: safeTransaction.data,
     safeTxHash,
-    senderAddress,
+    senderAddress: ownerAddress,
     senderSignature: signature.data,
   });
   console.log("[safeProposal] proposeTransaction succeeded:", safeTxHash);
