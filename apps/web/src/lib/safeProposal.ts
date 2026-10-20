@@ -1,6 +1,6 @@
 import Safe from "@safe-global/protocol-kit";
 import SafeApiKit from "@safe-global/api-kit";
-import { SigningMethod, type MetaTransactionData } from "@safe-global/types-kit";
+import type { MetaTransactionData } from "@safe-global/types-kit";
 import { encodeFunctionData, erc20Abi, maxUint256, type Address, type Hex } from "viem";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
@@ -168,16 +168,15 @@ export async function proposeShipStrategyTransaction({
   // signHash() signs the bare hash bytes (eth_sign-style) -- Safe{Wallet} can't tell that's meant
   // to confirm a specific pending transaction, and instead records it as a standalone "SafeMessage"
   // signature, which the Transaction Service then rejects as not matching this safeTxHash.
-  // signTransaction() with an explicit EIP-712 method signs the real typed SafeTx structure, which
-  // Safe{Wallet} recognizes and displays as a transaction confirmation.
-  const signedSafeTransaction = await protocolKit.signTransaction(
-    safeTransaction,
-    SigningMethod.ETH_SIGN_TYPED_DATA_V4,
-  );
-  const signature = signedSafeTransaction.getSignature(safeAddress);
-  if (!signature) {
-    throw new Error("The wallet did not return a signature for this transaction.");
-  }
+  //
+  // signTransaction() looked like the right replacement, but it hard-validates that `signer` is
+  // one of the Safe's own owners ("Transactions can only be signed by Safe owners") -- a check
+  // meant for "I configured this SDK with a specific owner's key directly." It doesn't fit here:
+  // `signer` above is the connected Safe's own address, not an owner, because this app is always
+  // connected AS the Safe itself (via the Safe App bridge or WalletConnect-to-Safe{Wallet}), which
+  // transparently substitutes the real owner's signature on the other end. signTypedData() is the
+  // lower-level primitive that does the same EIP-712 signing without that extra membership check.
+  const signature = await protocolKit.signTypedData(safeTransaction, "v4");
 
   const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
   await apiKit.proposeTransaction({
