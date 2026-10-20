@@ -1,7 +1,7 @@
 import Safe from "@safe-global/protocol-kit";
 import SafeApiKit from "@safe-global/api-kit";
 import type { MetaTransactionData } from "@safe-global/types-kit";
-import { encodeFunctionData, erc20Abi, maxUint256, recoverAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, erc20Abi, maxUint256, type Address, type Hex } from "viem";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
@@ -196,16 +196,21 @@ export async function proposeShipStrategyTransaction({
 
   // The Transaction Service's `senderAddress` must be the real owner who produced the signature,
   // not the Safe's own address -- same class of mix-up as signTransaction()'s owner check above,
-  // now enforced server-side instead. The EIP-1193 provider never tells this app which owner
-  // Safe{Wallet} actually signed with (it only returns raw signature bytes).
+  // now enforced server-side instead.
   //
-  // First attempt here independently rebuilt the EIP-712 typed data and recovered against that --
-  // it recovered a *third*, unrelated address, meaning that reconstruction didn't exactly match
-  // what signTypedData() actually had the wallet sign (a version-string or field mismatch
-  // somewhere). safeTxHash (above) is already the exact EIP-712 digest protocol-kit itself used to
-  // request the signature, so recovering directly against that hash -- no independent
-  // reconstruction -- can't drift out of sync with it.
-  const senderAddress = await recoverAddress({ hash: safeTxHash, signature: signature.data as Hex });
+  // Two earlier attempts tried recovering it cryptographically from the signature bytes (first
+  // against an independently-rebuilt EIP-712 digest, then against safeTxHash itself) -- both
+  // recovered a different, wrong address each time. Root cause: the Safe itself is a smart
+  // contract, not a private key, so what Safe{Wallet} returns here isn't a plain ECDSA signature
+  // meant for ecrecover at all; treating it as one just produces a garbage address. Asking the Safe
+  // who its owner actually is sidesteps the whole problem instead of trying to decode it.
+  const owners = await protocolKit.getOwners();
+  if (owners.length !== 1) {
+    throw new Error(
+      `This Safe has ${owners.length} owners -- proposing from a multi-owner Safe isn't supported by this app yet.`,
+    );
+  }
+  const senderAddress = owners[0] as Address;
 
   console.log("[safeProposal] signed, recovered sender:", senderAddress, "-- posting to Safe's Transaction Service now");
   await apiKit.proposeTransaction({

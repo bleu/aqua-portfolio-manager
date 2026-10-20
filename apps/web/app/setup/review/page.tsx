@@ -93,6 +93,9 @@ export default function Page() {
     if (/Target allocations must sum/.test(message)) {
       return "Your target allocations need to add up to more than 0%. Go back to Targets and set them.";
     }
+    if (/multi-owner Safe isn't supported/.test(message)) {
+      return "This Safe has more than one owner, which isn't supported by this flow yet. Contact the team.";
+    }
     if (message === CREATE_TRANSACTION_TIMEOUT_MESSAGE) {
       return "This is taking too long -- check your wallet for a pending signature request. If there isn't one, try again.";
     }
