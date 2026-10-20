@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount, useConnect } from "wagmi";
 import { ConnectSafePage } from "@/components/pages/ConnectSafePage";
 import { wagmiConfig } from "@/lib/wagmi";
@@ -15,6 +15,11 @@ export default function Page() {
   const { isConnected } = useAccount();
   const { connect, isPending, error } = useConnect();
   const manualConnector = walletConnectConnector ?? safeConnector;
+  // Suppresses the silent auto-connect attempt's own failure from showing as a user-facing
+  // error -- outside of actually being embedded in Safe{Wallet}, that attempt always fails, and
+  // it isn't something the user did. Only a failure from onConnectSafe's own click below should
+  // ever surface here.
+  const [showConnectError, setShowConnectError] = useState(false);
 
   // Auto-attempts the Safe connector once on mount, for when this page is actually embedded
   // inside Safe{Wallet} as a Safe App. A real attempt (not a separate silent one) because
@@ -36,9 +41,16 @@ export default function Page() {
 
   return (
     <ConnectSafePage
-      onConnectSafe={manualConnector ? () => connect({ connector: manualConnector }) : undefined}
+      onConnectSafe={
+        manualConnector
+          ? () => {
+              setShowConnectError(true);
+              connect({ connector: manualConnector });
+            }
+          : undefined
+      }
       isConnecting={isPending}
-      connectError={error?.message}
+      connectError={showConnectError ? error?.message : undefined}
     />
   );
 }
