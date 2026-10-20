@@ -2,10 +2,10 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { useAccount } from "wagmi";
 import { WaitingForSafeSignaturesPage } from "@/components/pages/WaitingForSafeSignaturesPage";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
+import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 /** Safe{Wallet}'s own URL scheme: a chain-prefixed Safe identifier (`base:0x...`) and, for a
  *  specific transaction, an id of the form `multisig_<safeAddress>_<safeTxHash>`. */
@@ -27,7 +27,7 @@ export default function Page() {
 /** useSearchParams() (for the proposed tx's safeTxHash) forces this subtree into a Suspense
  *  boundary during static prerendering -- split out so Page itself can provide the fallback. */
 function WaitingForSignaturesPageContent() {
-  const { address } = useAccount();
+  const address = useVerifiedSafeAddress();
   const { threshold } = useSafeThreshold(address);
   const searchParams = useSearchParams();
   const safeTxHash = searchParams.get("tx") ?? "";

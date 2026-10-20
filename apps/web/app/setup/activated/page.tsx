@@ -2,7 +2,6 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAccount } from "wagmi";
 import { PortfolioManagerActivatedPage } from "@/components/pages/PortfolioManagerActivatedPage";
 import { saveActiveStrategy } from "@/lib/activeStrategyStorage";
 import { clearDraftBaskets, loadDraftBaskets } from "@/lib/basketDraftsStorage";
@@ -10,6 +9,7 @@ import { initialBaskets } from "@/lib/mockBaskets";
 import { clearDraftParameters, loadDraftParameters } from "@/lib/parametersDraftStorage";
 import { clearDraftTargets, loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
+import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 export default function Page() {
   return (
@@ -23,7 +23,7 @@ export default function Page() {
  *  boundary during static prerendering -- split out so Page itself can provide the fallback. */
 function ActivatedPageContent() {
   const router = useRouter();
-  const { address } = useAccount();
+  const address = useVerifiedSafeAddress();
   const { tokens } = useSafeBalances(address);
   const searchParams = useSearchParams();
   const activationTxHash = searchParams.get("tx") ?? "";

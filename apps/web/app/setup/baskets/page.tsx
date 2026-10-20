@@ -1,14 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
 import { CreateBasketsPage } from "@/components/pages/CreateBasketsPage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { useSafeBalances } from "@/lib/useSafeBalances";
+import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 export default function Page() {
   const router = useRouter();
-  const { address } = useAccount();
+  const address = useVerifiedSafeAddress();
   const { tokens, isLoading } = useSafeBalances(address);
 
   if (!address) {

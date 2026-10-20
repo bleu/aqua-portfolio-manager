@@ -12,10 +12,12 @@ import { buildShipSteps, isStepAlreadyDone, sendShipStep, STEP_TIMEOUT_MESSAGE }
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
+import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 export default function Page() {
   const router = useRouter();
-  const { address, connector } = useAccount();
+  const address = useVerifiedSafeAddress();
+  const { connector } = useAccount();
   const { tokens, rawBalances } = useSafeBalances(address);
   const { threshold } = useSafeThreshold(address);
   const [isCreating, setIsCreating] = useState(false);

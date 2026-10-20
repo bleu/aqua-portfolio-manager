@@ -1,13 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
 import { SetStrategyParametersPage } from "@/components/pages/SetStrategyParametersPage";
 import { saveDraftParameters } from "@/lib/parametersDraftStorage";
+import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 export default function Page() {
   const router = useRouter();
-  const { address } = useAccount();
+  const address = useVerifiedSafeAddress();
 
   if (!address) {
     return <div className="min-h-screen" />;

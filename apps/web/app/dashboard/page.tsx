@@ -7,14 +7,17 @@ import { ActivePortfolioManagerDashboardPage } from "@/components/pages/ActivePo
 import { EmptyDashboardPage } from "@/components/pages/EmptyDashboardPage";
 import { loadActiveStrategy } from "@/lib/activeStrategyStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
+import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 export default function Page() {
   const router = useRouter();
-  const { address, chain, isConnected } = useAccount();
+  const { chain, isConnected } = useAccount();
+  const address = useVerifiedSafeAddress();
   const { tokens } = useSafeBalances(address);
 
-  // No Safe connected yet (e.g. this URL was opened directly) -- send back to the connect flow
-  // instead of rendering a header for a wallet that isn't actually there.
+  // No Safe connected at all yet (e.g. this URL was opened directly) -- send back to the connect
+  // flow instead of rendering a header for a wallet that isn't actually there. A *stale* connection
+  // (looked connected but wasn't) is caught separately by useVerifiedSafeAddress itself.
   useEffect(() => {
     if (!isConnected) router.push("/");
   }, [isConnected, router]);
