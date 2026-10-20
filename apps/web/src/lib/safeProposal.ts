@@ -201,10 +201,11 @@ export async function proposeShipStrategyTransaction({
 
   // Now that `signer` is a real owner, signTransaction()'s own owner-membership check passes
   // normally -- no need for the signHash()/signTypedData() workarounds earlier attempts needed.
-  const signedSafeTransaction = await protocolKit.signTransaction(
-    safeTransaction,
-    SigningMethod.ETH_SIGN_TYPED_DATA_V4,
-  );
+  //
+  // ETH_SIGN_TYPED_DATA_V4 itself ("InvalidParamsRpcError") is the likely culprit for every
+  // signature-shaped failure so far: WalletConnect v2 sessions are documented to not reliably
+  // support the v4 RPC method, only the older eth_signTypedData -- using that instead.
+  const signedSafeTransaction = await protocolKit.signTransaction(safeTransaction, SigningMethod.ETH_SIGN_TYPED_DATA);
   const signature = signedSafeTransaction.getSignature(ownerAddress);
   if (!signature) {
     throw new Error("The wallet did not return a signature for this transaction.");
