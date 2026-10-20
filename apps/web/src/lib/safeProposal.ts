@@ -187,7 +187,9 @@ export async function proposeShipStrategyTransaction({
   const typedData = generateTypedData({
     safeAddress,
     safeVersion: protocolKit.getContractVersion(),
-    chainId: await protocolKit.getChainId(),
+    // Base's chain ID is already a known constant here (used for SafeApiKit below) -- no need for
+    // an extra provider round-trip (protocolKit.getChainId()) just to re-derive the same value.
+    chainId: BigInt(base.id),
     data: safeTransaction.data,
   });
   const senderAddress = await recoverTypedDataAddress({
@@ -198,6 +200,7 @@ export async function proposeShipStrategyTransaction({
     signature: signature.data as Hex,
   });
 
+  console.log("[safeProposal] signed, recovered sender:", senderAddress, "-- posting to Safe's Transaction Service now");
   const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
   await apiKit.proposeTransaction({
     safeAddress,
@@ -206,6 +209,7 @@ export async function proposeShipStrategyTransaction({
     senderAddress,
     senderSignature: signature.data,
   });
+  console.log("[safeProposal] proposeTransaction succeeded:", safeTxHash);
 
   return { safeTxHash };
 }
