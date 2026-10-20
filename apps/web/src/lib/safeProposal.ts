@@ -1,11 +1,30 @@
-import Safe from "@safe-global/protocol-kit";
-import SafeApiKit from "@safe-global/api-kit";
-import { SigningMethod, type MetaTransactionData } from "@safe-global/types-kit";
 import { encodeFunctionData, erc20Abi, maxUint256, type Address, type Hex } from "viem";
-import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
+
+/** A single step's own round trip through the wallet (mobile push notification, user action,
+ *  response) can take a while -- generous, but still bounded per step, so a stalled step can't
+ *  freeze the whole multi-step flow forever. Applied per eth_sendTransaction call, not once for
+ *  the whole sequence, since that sequence can now be several steps long. */
+const STEP_TIMEOUT_MS = 90_000;
+export const STEP_TIMEOUT_MESSAGE = "__aqua_pm_create_transaction_step_timeout__";
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 const VALIDATOR_ABI = [
   {
@@ -47,7 +66,7 @@ const AQUA_ABI = [
 export type StrategyGroup = {
   name: string;
   /** Target weight as a percentage, e.g. 60 for 60%. Every group's targetPct across the whole
-   *  strategy must sum to (approximately) 100 -- see buildShipTransactions' own rounding note. */
+   *  strategy must sum to (approximately) 100 -- see toEncodingGroups' own rounding note. */
   targetPct: number;
   tokenAddresses: Address[];
 };
@@ -85,7 +104,7 @@ function toEncodingGroups(groups: StrategyGroup[]): Group[] {
 export type ProposeShipStrategyParams = {
   safeAddress: Address;
   /** The connected wallet's own EIP-1193 provider (e.g. from wagmi's `connector.getProvider()`) --
-   *  routes every signing request through Safe{Wallet}'s own UI, never a private key this app
+   *  routes every signing request through the wallet's own UI, never a private key this app
    *  handles directly. */
   provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> };
   groups: StrategyGroup[];
@@ -97,17 +116,31 @@ export type ProposeShipStrategyParams = {
    *  checksummed address -- read fresh at propose-time, not reused from a UI display value, so
    *  this never round-trips through a float. */
   balances: Record<Address, bigint>;
+  /** Fires after each step's eth_sendTransaction call resolves, for progress UI. */
+  onStepComplete?: (step: { index: number; total: number; label: string; txHash: Hex }) => void;
 };
 
 export type ProposeShipStrategyResult = {
-  safeTxHash: Hex;
+  /** The final step's transaction hash -- Aqua.ship(), the call that actually activates the
+   *  strategy. */
+  txHash: Hex;
 };
 
-/** Builds the real "ship a strategy" batch (per-token approve + attestBuildParameters + ship,
- *  matching packages/contracts/script/ShipTestStrategy.s.sol's own sequence) and proposes it
- *  through Safe's Transaction Service -- signed by the connected wallet via the Safe App bridge,
- *  never by a private key this code holds. The Safe's other owners then see it as a pending
- *  signature in Safe{Wallet}, same as any other proposed transaction. */
+/** Ships a strategy (per-token approve + attestBuildParameters + ship, matching
+ *  packages/contracts/script/ShipTestStrategy.s.sol's own sequence) as a series of ordinary
+ *  eth_sendTransaction calls through the connected wallet -- the same request shape any dApp
+ *  sends to any wallet. A connected Safe{Wallet} session turns each one into a normal multisig
+ *  approval on its own, the same way it would for any other dApp's transaction request.
+ *
+ *  This app previously tried building a single batched transaction and submitting a hand-crafted
+ *  Safe signature directly to Safe's own backend (via @safe-global/protocol-kit + api-kit). That
+ *  approach failed repeatedly and unpredictably over a WalletConnect-connected session -- the
+ *  signature Safe{Wallet} returned was never valid by Safe's own server-side check, regardless of
+ *  which address or EIP-712 signing method was used to request it. Plain eth_sendTransaction
+ *  avoids all of that: it's the standard, universally-supported request shape, and Safe{Wallet}
+ *  (not this app) owns every Safe-specific detail of turning it into a real multisig transaction.
+ *  The cost: each step is now its own separate transaction instead of one atomic batch, so a
+ *  single-owner Safe sees 2-4 sequential approval prompts instead of one. */
 export async function proposeShipStrategyTransaction({
   safeAddress,
   provider,
@@ -115,15 +148,8 @@ export async function proposeShipStrategyTransaction({
   feeBpsPm,
   maxDeviationBpsPm,
   balances,
+  onStepComplete,
 }: ProposeShipStrategyParams): Promise<ProposeShipStrategyResult> {
-  const apiKey = process.env.NEXT_PUBLIC_SAFE_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_SAFE_API_KEY -- get a free key at https://developer.safe.global and set it in " +
-        "apps/web/.env.local (and in Vercel's project settings for production).",
-    );
-  }
-
   const encodingGroups = toEncodingGroups(groups);
   const program = buildProgram(encodingGroups, feeBpsPm, maxDeviationBpsPm);
   const order = buildOrder(safeAddress, program);
@@ -134,17 +160,17 @@ export async function proposeShipStrategyTransaction({
   const amounts = tokens.map((t) => balances[t] ?? 0n);
   const groupNames = groups.map((g) => g.name);
 
-  const transactions: MetaTransactionData[] = [
+  const steps: { label: string; to: Address; data: Hex }[] = [
     ...uniqueTokens.map(
-      (token): MetaTransactionData => ({
+      (token): { label: string; to: Address; data: Hex } => ({
+        label: `Approve ${token}`,
         to: token,
-        value: "0",
         data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [AQUA_ADDRESS, maxUint256] }),
       }),
     ),
     {
+      label: "Attest strategy parameters",
       to: PM_STRATEGY_VALIDATOR_ADDRESS,
-      value: "0",
       data: encodeFunctionData({
         abi: VALIDATOR_ABI,
         functionName: "attestBuildParameters",
@@ -152,8 +178,8 @@ export async function proposeShipStrategyTransaction({
       }),
     },
     {
+      label: "Ship strategy",
       to: AQUA_ADDRESS,
-      value: "0",
       data: encodeFunctionData({
         abi: AQUA_ABI,
         functionName: "ship",
@@ -162,69 +188,22 @@ export async function proposeShipStrategyTransaction({
     },
   ];
 
-  const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
-
-  // Every earlier attempt configured the SDK with `signer: safeAddress` -- treating the Safe's own
-  // address as if it could sign. A Safe has no private key; only its owners do. Asking a wallet
-  // bridge to sign "as the Safe" is ambiguous, and in practice produced a different, invalid
-  // signature every single time (confirmed three ways: two different local recovery attempts each
-  // recovered a different wrong address, and Safe's own server-side signature verification also
-  // rejected it with a different wrong recovered address each time -- not a recovery-logic bug,
-  // the underlying signature itself was never valid). The fix is to sign explicitly as the real
-  // owner address instead, which a wallet can unambiguously route to the right key.
-  const readOnlyKit = await Safe.init({ provider, signer: safeAddress, safeAddress });
-  const owners = await readOnlyKit.getOwners();
-  if (owners.length !== 1) {
-    throw new Error(
-      `This Safe has ${owners.length} owners -- proposing from a multi-owner Safe isn't supported by this app yet.`,
-    );
-  }
-  const ownerAddress = owners[0] as Address;
-  const protocolKit = await readOnlyKit.connect({ signer: ownerAddress });
-
-  const safeTransaction = await protocolKit.createTransaction({ transactions, onlyCalls: true });
-  const safeTxHash = (await protocolKit.getTransactionHash(safeTransaction)) as Hex;
-
-  // The same baskets/targets/parameters always hash to the same safeTxHash -- so retrying after an
-  // earlier attempt that appeared to fail client-side (e.g. the network call actually succeeded
-  // server-side after this app had already given up and shown a timeout) asks the wallet to sign a
-  // hash it's already signed, which it refuses ("message already signed") instead of just
-  // re-returning the old signature. Checking first means a retry recovers straight into the
-  // existing pending transaction instead of dead-ending on that wallet-side refusal.
-  try {
-    await apiKit.getTransaction(safeTxHash);
-    console.log("[safeProposal] this exact transaction was already proposed earlier -- reusing it:", safeTxHash);
-    return { safeTxHash };
-  } catch {
-    // Not found (or some other lookup failure) -- fall through and propose it fresh, as normal.
+  let txHash: Hex | undefined;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    txHash = (await withTimeout(
+      provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: safeAddress, to: step.to, data: step.data, value: "0x0" }],
+      }),
+      STEP_TIMEOUT_MS,
+      STEP_TIMEOUT_MESSAGE,
+    )) as Hex;
+    onStepComplete?.({ index: i, total: steps.length, label: step.label, txHash });
   }
 
-  // Now that `signer` is a real owner, signTransaction()'s own owner-membership check passes
-  // normally -- no need for the signHash()/signTypedData() workarounds earlier attempts needed.
-  //
-  // Tried the older eth_signTypedData (no v4) here as a WalletConnect-relay workaround -- it never
-  // even reached the wallet (no prompt shown at all, confirmed by testing), so the WC relay itself
-  // is dropping/not supporting typed-data signing requests from this connection, not just the v4
-  // variant specifically. Back to the standard v4 method: it's the one a Safe App's own dedicated
-  // bridge (postMessage to Safe{Wallet}, not a WalletConnect relay) is actually built around.
-  const signedSafeTransaction = await protocolKit.signTransaction(
-    safeTransaction,
-    SigningMethod.ETH_SIGN_TYPED_DATA_V4,
-  );
-  const signature = signedSafeTransaction.getSignature(ownerAddress);
-  if (!signature) {
-    throw new Error("The wallet did not return a signature for this transaction.");
+  if (!txHash) {
+    throw new Error("No transactions were sent.");
   }
-
-  console.log("[safeProposal] signed as owner:", ownerAddress, "-- posting to Safe's Transaction Service now");
-  await apiKit.proposeTransaction({
-    safeAddress,
-    safeTransactionData: safeTransaction.data,
-    safeTxHash,
-    senderAddress: ownerAddress,
-    senderSignature: signature.data,
-  });
-  console.log("[safeProposal] proposeTransaction succeeded:", safeTxHash);
-
-  return { safeTxHash };
+  return { txHash };
 }

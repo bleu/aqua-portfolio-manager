@@ -34,6 +34,10 @@ export type ReviewPortfolioManagerPageProps = {
   onCreateTransaction?: () => void;
   isCreatingTransaction?: boolean;
   createTransactionError?: string;
+  /** e.g. "Step 2 of 4: Approve USDC confirmed" -- this now ships as a sequence of ordinary
+   *  transactions (see src/lib/safeProposal.ts's own doc comment for why), so there isn't one
+   *  single moment of completion to report. */
+  createTransactionProgress?: string;
 };
 
 /** BLEUDEV-416 — step 4 of the 4-step setup wizard ("Review"). */
@@ -48,6 +52,7 @@ export function ReviewPortfolioManagerPage({
   onCreateTransaction,
   isCreatingTransaction,
   createTransactionError,
+  createTransactionProgress,
 }: ReviewPortfolioManagerPageProps) {
   const needsRebalance = baskets.some((b) => Math.abs(b.currentPct - b.targetPct) > REBALANCE_EPSILON_PCT);
 
@@ -102,6 +107,12 @@ export function ReviewPortfolioManagerPage({
               </Disclosure>
             </div>
           </div>
+
+          {isCreatingTransaction && (
+            <p className="mt-4 text-sm text-gray-400">
+              {createTransactionProgress ?? "Waiting for your wallet…"}
+            </p>
+          )}
 
           {createTransactionError && (
             <p className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">

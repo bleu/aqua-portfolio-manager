@@ -84,18 +84,9 @@ importers:
 
   apps/web:
     dependencies:
-      '@safe-global/api-kit':
-        specifier: ^5.0.4
-        version: 5.0.4(typescript@5.9.3)(zod@3.25.76)
-      '@safe-global/protocol-kit':
-        specifier: ^8.0.8
-        version: 8.0.8(typescript@5.9.3)(zod@3.25.76)
       '@safe-global/safe-apps-provider':
         specifier: ^0.18.6
         version: 0.18.6(typescript@5.9.3)(zod@3.25.76)
-      '@safe-global/types-kit':
-        specifier: ^4.0.1
-        version: 4.0.1(typescript@5.9.3)(zod@3.25.76)
       '@tanstack/react-query':
         specifier: ^5.104.2
         version: 5.104.2(react@19.2.5)
@@ -1698,13 +1689,6 @@ packages:
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
 
-  '@peculiar/asn1-schema@2.11.0':
-    resolution: {integrity: sha512-8xh4avo53/vXO6UEv9yaoJ83hY581geaLTygf61NPIXP5AeIZCPjJhpTaYU23IZkG+NpLN/C9FYzWp7hphIT9A==}
-    engines: {node: '>=14'}
-
-  '@peculiar/utils@2.0.3':
-    resolution: {integrity: sha512-+oL3HPFRIZ1St2K50lWCXiioIgSoxzz7R1J3uF6neO2yl1sgmpgY6XXJH4BdpoDkMWznQTeYF6oWNDZLCdQ4eQ==}
-
   '@phosphor-icons/webcomponents@2.1.5':
     resolution: {integrity: sha512-JcvQkZxvcX2jK+QCclm8+e8HXqtdFW9xV4/kk2aL9Y3dJA2oQVt+pzbv1orkumz3rfx4K9mn9fDoMr1He1yr7Q==}
 
@@ -1917,32 +1901,16 @@ packages:
   '@rushstack/eslint-patch@1.16.1':
     resolution: {integrity: sha512-TvZbIpeKqGQQ7X0zSCvPH9riMSFQFSggnfBjFZ1mEoILW+UuXCKwOoPcgjMwiUtRqFZ8jWhPJc4um14vC6I4ag==}
 
-  '@safe-global/api-kit@5.0.4':
-    resolution: {integrity: sha512-CRr+GASXhLy6VpOu2HloTq34Yi0K8o+qsgiw9/PUK7QLGTNwmIpoH5I9Zj6WU41AcB0LaUJHzLUBGgkmb+FaDg==}
-
-  '@safe-global/protocol-kit@8.0.8':
-    resolution: {integrity: sha512-eBXFEhlxHucBQaWTldWaoQ3GVyOI/5/+Owv+/NciJG0NIZUtDfYjPpV6ESCwyrq4Y1v14YhFn5B+yQ/WEOa47A==}
-
   '@safe-global/safe-apps-provider@0.18.6':
     resolution: {integrity: sha512-4LhMmjPWlIO8TTDC2AwLk44XKXaK6hfBTWyljDm0HQ6TWlOEijVWNrt2s3OCVMSxlXAcEzYfqyu1daHZooTC2Q==}
 
   '@safe-global/safe-apps-sdk@9.1.0':
     resolution: {integrity: sha512-N5p/ulfnnA2Pi2M3YeWjULeWbjo7ei22JwU/IXnhoHzKq3pYCN6ynL9mJBOlvDVv892EgLPCWCOwQk/uBT2v0Q==}
 
-  '@safe-global/safe-deployments@1.37.64':
-    resolution: {integrity: sha512-CbJd3O1h6vrK62eaxQPkQfgzYMEvj458m/gJgWyO3mc5D+MoXcXniS/pzJ62ouvHoCckvqI5BzSoaJHb7wRHTw==}
-    engines: {node: '>=22.0.0', pnpm: '>=10.16.0'}
-
   '@safe-global/safe-gateway-typescript-sdk@3.23.1':
     resolution: {integrity: sha512-6ORQfwtEJYpalCeVO21L4XXGSdbEMfyp2hEv6cP82afKXSwvse6d3sdelgaPWUxHIsFRkWvHDdzh8IyyKHZKxw==}
     engines: {node: '>=16'}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
-
-  '@safe-global/safe-modules-deployments@3.0.11':
-    resolution: {integrity: sha512-H6ceE3n4jCyc6i2rMYMqpKPnXpUCG5Bw8bC44q3EzicdDTq6WZOxSzuaUwx/EO12Nwr9HPDxzya4Nb/wsW0A+Q==}
-
-  '@safe-global/types-kit@4.0.1':
-    resolution: {integrity: sha512-zmIYyAH9mcBcqHszPgcfNjOJYuPSvWCcc/f8zeznh7N1HSA7jEoFErO06O4QDfwAAS4aEyoyjhPyfHbVYRheZg==}
 
   '@scure/base@1.2.6':
     resolution: {integrity: sha512-g/nm5FgUa//MCj1gV09zTJTaM6KBAHqLN907YVQqf7zC49+DcO4B1so4ZX07Ef10Twr6nuqYEH9GEggFXA4Fmg==}
@@ -3165,10 +3133,6 @@ packages:
 
   asn1.js@4.10.1:
     resolution: {integrity: sha512-p32cOF5q0Zqs9uBiONKYLm6BClCoBCM5O9JfeUSlnQLBTxYdTK+pW+nXflm8UkKd2UYlEbYz5qEi0JuZR9ckSw==}
-
-  asn1js@3.1.0:
-    resolution: {integrity: sha512-HWYi1THkOqguCiO+vwj09ZkQFD2kKEsejYHAYCtX0D80WVdoDnvRc9IukXX/jeb0T9NRWJnRtqwdbHltnFjwXA==}
-    engines: {node: '>=12.0.0'}
 
   assert@2.1.0:
     resolution: {integrity: sha512-eLHpSK/Y4nhMJ07gDaAzoX/XAKS8PSaojml3M0DM4JpV1LAi5JOJ/p6H/XWrl8L+DzVEvVCW1z3vWAaB9oTsQw==}
@@ -5696,13 +5660,6 @@ packages:
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
-
-  pvtsutils@1.3.6:
-    resolution: {integrity: sha512-PLgQXQ6H2FWCaeRak8vvk1GW462lMxB5s3Jm673N82zI4vqtVUPuZdffdZbPDFRoU8kAhItWFtPCWiPpp4/EDg==}
-
-  pvutils@1.2.0:
-    resolution: {integrity: sha512-BbubeCEyTuQjVMakvJQ/Sxbc93F2pwmbsxONT/ZRrwU7Ua38d8unYTwXpTVLAKJ4BDuH9IGztCjQcd/N/39Dvg==}
-    engines: {node: '>=16.0.0'}
 
   qrcode@1.5.3:
     resolution: {integrity: sha512-puyri6ApkEHYiVl4CFzo1tDkAZ+ATcnbJrJ6RiBM1Fhctdn/ix9MTE3hRph33omisEbC/2fcfemsseiKgBPKZg==}
@@ -8418,18 +8375,6 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
-  '@peculiar/asn1-schema@2.11.0':
-    dependencies:
-      '@peculiar/utils': 2.0.3
-      asn1js: 3.1.0
-      tslib: 2.8.1
-    optional: true
-
-  '@peculiar/utils@2.0.3':
-    dependencies:
-      tslib: 2.8.1
-    optional: true
-
   '@phosphor-icons/webcomponents@2.1.5':
     dependencies:
       lit: 3.3.0
@@ -8854,36 +8799,6 @@ snapshots:
 
   '@rushstack/eslint-patch@1.16.1': {}
 
-  '@safe-global/api-kit@5.0.4(typescript@5.9.3)(zod@3.25.76)':
-    dependencies:
-      '@safe-global/protocol-kit': 8.0.8(typescript@5.9.3)(zod@3.25.76)
-      '@safe-global/types-kit': 4.0.1(typescript@5.9.3)(zod@3.25.76)
-      node-fetch: 2.7.0
-      viem: 2.57.7(typescript@5.9.3)(zod@3.25.76)
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - typescript
-      - utf-8-validate
-      - zod
-
-  '@safe-global/protocol-kit@8.0.8(typescript@5.9.3)(zod@3.25.76)':
-    dependencies:
-      '@safe-global/safe-deployments': 1.37.64
-      '@safe-global/safe-modules-deployments': 3.0.11
-      '@safe-global/types-kit': 4.0.1(typescript@5.9.3)(zod@3.25.76)
-      abitype: 1.3.0(typescript@5.9.3)(zod@3.25.76)
-      semver: 7.8.5
-      viem: 2.57.7(typescript@5.9.3)(zod@3.25.76)
-    optionalDependencies:
-      '@noble/curves': 1.9.7
-      '@peculiar/asn1-schema': 2.11.0
-    transitivePeerDependencies:
-      - bufferutil
-      - typescript
-      - utf-8-validate
-      - zod
-
   '@safe-global/safe-apps-provider@0.18.6(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@safe-global/safe-apps-sdk': 9.1.0(typescript@5.9.3)(zod@3.25.76)
@@ -8904,20 +8819,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@safe-global/safe-deployments@1.37.64':
-    dependencies:
-      semver: 7.8.5
-
   '@safe-global/safe-gateway-typescript-sdk@3.23.1': {}
-
-  '@safe-global/safe-modules-deployments@3.0.11': {}
-
-  '@safe-global/types-kit@4.0.1(typescript@5.9.3)(zod@3.25.76)':
-    dependencies:
-      abitype: 1.3.0(typescript@5.9.3)(zod@3.25.76)
-    transitivePeerDependencies:
-      - typescript
-      - zod
 
   '@scure/base@1.2.6': {}
 
@@ -10880,13 +10782,6 @@ snapshots:
       bn.js: 4.12.5
       inherits: 2.0.4
       minimalistic-assert: 1.0.1
-
-  asn1js@3.1.0:
-    dependencies:
-      pvtsutils: 1.3.6
-      pvutils: 1.2.0
-      tslib: 2.8.1
-    optional: true
 
   assert@2.1.0:
     dependencies:
@@ -13652,14 +13547,6 @@ snapshots:
   punycode@1.4.1: {}
 
   punycode@2.3.1: {}
-
-  pvtsutils@1.3.6:
-    dependencies:
-      tslib: 2.8.1
-    optional: true
-
-  pvutils@1.2.0:
-    optional: true
 
   qrcode@1.5.3:
     dependencies:

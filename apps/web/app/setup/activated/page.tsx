@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { PortfolioManagerActivatedPage } from "@/components/pages/PortfolioManagerActivatedPage";
 import { saveActiveStrategy } from "@/lib/activeStrategyStorage";
@@ -11,9 +12,21 @@ import { clearDraftTargets, loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 
 export default function Page() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <ActivatedPageContent />
+    </Suspense>
+  );
+}
+
+/** useSearchParams() (for the real activation tx hash) forces this subtree into a Suspense
+ *  boundary during static prerendering -- split out so Page itself can provide the fallback. */
+function ActivatedPageContent() {
   const router = useRouter();
   const { address } = useAccount();
   const { tokens } = useSafeBalances(address);
+  const searchParams = useSearchParams();
+  const activationTxHash = searchParams.get("tx") ?? "";
 
   if (!address) {
     return <div className="min-h-screen" />;
@@ -47,7 +60,7 @@ export default function Page() {
       baskets={baskets}
       tokenCount={tokenCount}
       lpFeePct={draftParameters?.lpFeePct ?? 0}
-      activationTxHash="0x0000000000000000000000000000000000000000000000000000000000000000"
+      activationTxHash={activationTxHash}
       onGoToDashboard={() => {
         // Snapshots the final config before clearing the in-progress draft -- the dashboard
         // (BLEUDEV-419) reads this, not the draft, since the draft's whole point is to not
