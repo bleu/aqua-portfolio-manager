@@ -163,8 +163,24 @@ export async function proposeShipStrategyTransaction({
   ];
 
   const protocolKit = await Safe.init({ provider, signer: safeAddress, safeAddress });
+  const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
   const safeTransaction = await protocolKit.createTransaction({ transactions, onlyCalls: true });
   const safeTxHash = (await protocolKit.getTransactionHash(safeTransaction)) as Hex;
+
+  // The same baskets/targets/parameters always hash to the same safeTxHash -- so retrying after an
+  // earlier attempt that appeared to fail client-side (e.g. the network call actually succeeded
+  // server-side after this app had already given up and shown a timeout) asks the wallet to sign a
+  // hash it's already signed, which it refuses ("message already signed") instead of just
+  // re-returning the old signature. Checking first means a retry recovers straight into the
+  // existing pending transaction instead of dead-ending on that wallet-side refusal.
+  try {
+    await apiKit.getTransaction(safeTxHash);
+    console.log("[safeProposal] this exact transaction was already proposed earlier -- reusing it:", safeTxHash);
+    return { safeTxHash };
+  } catch {
+    // Not found (or some other lookup failure) -- fall through and propose it fresh, as normal.
+  }
+
   // signHash() signs the bare hash bytes (eth_sign-style) -- Safe{Wallet} can't tell that's meant
   // to confirm a specific pending transaction, and instead records it as a standalone "SafeMessage"
   // signature, which the Transaction Service then rejects as not matching this safeTxHash.
@@ -192,7 +208,6 @@ export async function proposeShipStrategyTransaction({
   const senderAddress = await recoverAddress({ hash: safeTxHash, signature: signature.data as Hex });
 
   console.log("[safeProposal] signed, recovered sender:", senderAddress, "-- posting to Safe's Transaction Service now");
-  const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
   await apiKit.proposeTransaction({
     safeAddress,
     safeTransactionData: safeTransaction.data,
