@@ -1,7 +1,19 @@
-import { encodeFunctionData, erc20Abi, maxUint256, type Address, type Hex } from "viem";
+import {
+  createPublicClient,
+  encodeFunctionData,
+  erc20Abi,
+  http,
+  keccak256,
+  maxUint256,
+  type Address,
+  type Hex,
+} from "viem";
+import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
+
+const publicClient = createPublicClient({ chain: base, transport: http() });
 
 /** A single step's own round trip through the wallet (mobile push notification, user action,
  *  response) can take a while -- generous, but still bounded per step, so a stalled step can't
@@ -45,6 +57,13 @@ const VALIDATOR_ABI = [
       { name: "groupNames", type: "string[]" },
     ],
     outputs: [],
+  },
+  {
+    type: "function",
+    name: "buildParamsAttested",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }],
   },
 ] as const;
 
@@ -101,7 +120,10 @@ function toEncodingGroups(groups: StrategyGroup[]): Group[] {
   });
 }
 
-export type ShipStep = { label: string; to: Address; data: Hex };
+export type ShipStep =
+  | { kind: "approve"; label: string; to: Address; data: Hex; token: Address }
+  | { kind: "attest"; label: string; to: Address; data: Hex; strategyHash: Hex }
+  | { kind: "ship"; label: string; to: Address; data: Hex };
 
 /** Builds the ordered list of plain transactions that ship a strategy (per-token approve, then
  *  attestBuildParameters, then ship -- matching
@@ -128,6 +150,9 @@ export function buildShipSteps({
   const program = buildProgram(encodingGroups, feeBpsPm, maxDeviationBpsPm);
   const order = buildOrder(safeAddress, program);
   const encodedOrder = encodeOrder(order);
+  // Matches PortfolioManagerStrategyValidator.attestBuildParameters' own
+  // `keccak256(abi.encode(order))` exactly -- encodeOrder already produces that same ABI encoding.
+  const strategyHash = keccak256(encodedOrder);
 
   const tokens = groups.flatMap((g) => g.tokenAddresses);
   const uniqueTokens = [...new Set(tokens)];
@@ -137,12 +162,15 @@ export function buildShipSteps({
   return [
     ...uniqueTokens.map(
       (token): ShipStep => ({
+        kind: "approve",
         label: `Approve ${tokenSymbols[token] ?? token}`,
         to: token,
         data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [AQUA_ADDRESS, maxUint256] }),
+        token,
       }),
     ),
     {
+      kind: "attest",
       label: "Confirm strategy parameters",
       to: PM_STRATEGY_VALIDATOR_ADDRESS,
       data: encodeFunctionData({
@@ -150,8 +178,10 @@ export function buildShipSteps({
         functionName: "attestBuildParameters",
         args: [order, tokens, groupNames],
       }),
+      strategyHash,
     },
     {
+      kind: "ship",
       label: "Activate the strategy",
       to: AQUA_ADDRESS,
       data: encodeFunctionData({
@@ -161,6 +191,32 @@ export function buildShipSteps({
       }),
     },
   ];
+}
+
+/** Checks on-chain whether a step has already gone through -- so retrying after a partial failure
+ *  (e.g. one approval succeeded, a later step failed) doesn't ask the wallet to redundantly
+ *  reconfirm something already done. No check exists yet for the final "ship" step (Aqua.ship()
+ *  only does internal bookkeeping additions, with no simple boolean to read back), so that one
+ *  always sends -- acceptable since it's always the very last step. */
+export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): Promise<boolean> {
+  if (step.kind === "approve") {
+    const allowance = await publicClient.readContract({
+      address: step.token,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [safeAddress, AQUA_ADDRESS],
+    });
+    return allowance > 0n;
+  }
+  if (step.kind === "attest") {
+    return publicClient.readContract({
+      address: PM_STRATEGY_VALIDATOR_ADDRESS,
+      abi: VALIDATOR_ABI,
+      functionName: "buildParamsAttested",
+      args: [step.strategyHash],
+    });
+  }
+  return false;
 }
 
 /** Sends one already-built step as an ordinary eth_sendTransaction call through the connected

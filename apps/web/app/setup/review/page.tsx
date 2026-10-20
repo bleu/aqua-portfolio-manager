@@ -8,7 +8,7 @@ import { ReviewPortfolioManagerPage, type TransactionStep } from "@/components/p
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
-import { buildShipSteps, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
+import { buildShipSteps, isStepAlreadyDone, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
@@ -106,9 +106,18 @@ export default function Page() {
 
       let txHash: Address | undefined;
       for (let i = 0; i < builtSteps.length; i++) {
+        const step = builtSteps[i]!;
+
+        // A retry after an earlier partial failure shouldn't ask the wallet to reconfirm a step
+        // that already went through on a prior attempt -- check on-chain first and skip it if so.
+        if (await isStepAlreadyDone(step, address as Address)) {
+          setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "done" } : s)));
+          continue;
+        }
+
         setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "active" } : s)));
         try {
-          txHash = await sendShipStep(builtSteps[i]!, address as Address, provider);
+          txHash = await sendShipStep(step, address as Address, provider);
         } catch (stepErr) {
           setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "error" } : s)));
           throw stepErr;
