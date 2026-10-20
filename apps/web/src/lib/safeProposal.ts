@@ -1,7 +1,7 @@
-import Safe, { generateTypedData } from "@safe-global/protocol-kit";
+import Safe from "@safe-global/protocol-kit";
 import SafeApiKit from "@safe-global/api-kit";
 import type { MetaTransactionData } from "@safe-global/types-kit";
-import { encodeFunctionData, erc20Abi, maxUint256, recoverTypedDataAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, erc20Abi, maxUint256, recoverAddress, type Address, type Hex } from "viem";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
@@ -181,24 +181,15 @@ export async function proposeShipStrategyTransaction({
   // The Transaction Service's `senderAddress` must be the real owner who produced the signature,
   // not the Safe's own address -- same class of mix-up as signTransaction()'s owner check above,
   // now enforced server-side instead. The EIP-1193 provider never tells this app which owner
-  // Safe{Wallet} actually signed with (it only returns raw signature bytes), so the real signer is
-  // recovered directly from the signature against the exact typed data that was signed, rather
-  // than assumed from the Safe's (possibly multi-owner) owners list.
-  const typedData = generateTypedData({
-    safeAddress,
-    safeVersion: protocolKit.getContractVersion(),
-    // Base's chain ID is already a known constant here (used for SafeApiKit below) -- no need for
-    // an extra provider round-trip (protocolKit.getChainId()) just to re-derive the same value.
-    chainId: BigInt(base.id),
-    data: safeTransaction.data,
-  });
-  const senderAddress = await recoverTypedDataAddress({
-    domain: typedData.domain as { chainId?: bigint; verifyingContract: Hex },
-    types: typedData.types as unknown as Record<string, { name: string; type: string }[]>,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-    signature: signature.data as Hex,
-  });
+  // Safe{Wallet} actually signed with (it only returns raw signature bytes).
+  //
+  // First attempt here independently rebuilt the EIP-712 typed data and recovered against that --
+  // it recovered a *third*, unrelated address, meaning that reconstruction didn't exactly match
+  // what signTypedData() actually had the wallet sign (a version-string or field mismatch
+  // somewhere). safeTxHash (above) is already the exact EIP-712 digest protocol-kit itself used to
+  // request the signature, so recovering directly against that hash -- no independent
+  // reconstruction -- can't drift out of sync with it.
+  const senderAddress = await recoverAddress({ hash: safeTxHash, signature: signature.data as Hex });
 
   console.log("[safeProposal] signed, recovered sender:", senderAddress, "-- posting to Safe's Transaction Service now");
   const apiKit = new SafeApiKit({ chainId: BigInt(base.id), apiKey });
