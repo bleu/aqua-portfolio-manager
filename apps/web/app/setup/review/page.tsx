@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Address } from "viem";
 import { useAccount } from "wagmi";
-import { ReviewPortfolioManagerPage } from "@/components/pages/ReviewPortfolioManagerPage";
+import { ReviewPortfolioManagerPage, type TransactionStep } from "@/components/pages/ReviewPortfolioManagerPage";
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
-import { proposeShipStrategyTransaction, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
+import { buildShipSteps, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
@@ -19,7 +20,7 @@ export default function Page() {
   const { threshold } = useSafeThreshold(address);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string>();
-  const [stepProgress, setStepProgress] = useState<string>();
+  const [steps, setSteps] = useState<TransactionStep[]>();
 
   if (!address) {
     return <div className="min-h-screen" />;
@@ -81,26 +82,40 @@ export default function Page() {
       return;
     }
     setCreateError(undefined);
-    setStepProgress(undefined);
     setIsCreating(true);
+
+    const tokenSymbols = Object.fromEntries(tokens.map((t) => [t.address, t.symbol])) as Record<Address, string>;
+    const builtSteps = buildShipSteps({
+      safeAddress: address as Address,
+      groups: draftBaskets.map((basket) => ({
+        name: basket.name,
+        targetPct: draftTargets[basket.id] ?? 0,
+        tokenAddresses: basket.tokenAddresses as Address[],
+      })),
+      feeBpsPm: BigInt(Math.round(lpFeePct * 1e7)),
+      maxDeviationBpsPm: BigInt(Math.round(priceDeviationPct * 1e7)),
+      balances: rawBalances as Record<Address, bigint>,
+      tokenSymbols,
+    });
+    setSteps(builtSteps.map((step) => ({ label: step.label, status: "pending" })));
+
     try {
-      const provider = await connector.getProvider();
-      const { txHash } = await proposeShipStrategyTransaction({
-        safeAddress: address as `0x${string}`,
-        provider: provider as {
-          request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
-        },
-        groups: draftBaskets.map((basket) => ({
-          name: basket.name,
-          targetPct: draftTargets[basket.id] ?? 0,
-          tokenAddresses: basket.tokenAddresses as `0x${string}`[],
-        })),
-        feeBpsPm: BigInt(Math.round(lpFeePct * 1e7)),
-        maxDeviationBpsPm: BigInt(Math.round(priceDeviationPct * 1e7)),
-        balances: rawBalances as Record<`0x${string}`, bigint>,
-        onStepComplete: ({ index, total: totalSteps, label }) =>
-          setStepProgress(`Step ${index + 1} of ${totalSteps}: ${label} confirmed`),
-      });
+      const provider = (await connector.getProvider()) as {
+        request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+      };
+
+      let txHash: Address | undefined;
+      for (let i = 0; i < builtSteps.length; i++) {
+        setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "active" } : s)));
+        try {
+          txHash = await sendShipStep(builtSteps[i]!, address as Address, provider);
+        } catch (stepErr) {
+          setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "error" } : s)));
+          throw stepErr;
+        }
+        setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "done" } : s)));
+      }
+
       router.push(`/setup/activated?tx=${txHash}`);
     } catch (err) {
       setCreateError(describeCreateTransactionError(err));
@@ -121,7 +136,7 @@ export default function Page() {
       onCreateTransaction={handleCreateTransaction}
       isCreatingTransaction={isCreating}
       createTransactionError={createError}
-      createTransactionProgress={stepProgress}
+      transactionSteps={steps}
     />
   );
 }

@@ -23,6 +23,15 @@ export type ReviewBasket = {
   targetPct: number;
 };
 
+/** One row of the transaction checklist below -- shipping a strategy is now a sequence of
+ *  ordinary transactions (see src/lib/safeProposal.ts's own doc comment for why), not one bundled
+ *  confirmation, so the page needs to show every step and which one is current, not just a single
+ *  rotating status line. */
+export type TransactionStep = {
+  label: string;
+  status: "pending" | "active" | "done" | "error";
+};
+
 export type ReviewPortfolioManagerPageProps = {
   network: string;
   safeAddress: string;
@@ -34,10 +43,9 @@ export type ReviewPortfolioManagerPageProps = {
   onCreateTransaction?: () => void;
   isCreatingTransaction?: boolean;
   createTransactionError?: string;
-  /** e.g. "Step 2 of 4: Approve USDC confirmed" -- this now ships as a sequence of ordinary
-   *  transactions (see src/lib/safeProposal.ts's own doc comment for why), so there isn't one
-   *  single moment of completion to report. */
-  createTransactionProgress?: string;
+  /** The full step list, shown once "Create transaction" is clicked (before that, this page shows
+   *  no steps at all -- nothing has started yet). */
+  transactionSteps?: TransactionStep[];
 };
 
 /** BLEUDEV-416 — step 4 of the 4-step setup wizard ("Review"). */
@@ -52,7 +60,7 @@ export function ReviewPortfolioManagerPage({
   onCreateTransaction,
   isCreatingTransaction,
   createTransactionError,
-  createTransactionProgress,
+  transactionSteps,
 }: ReviewPortfolioManagerPageProps) {
   const needsRebalance = baskets.some((b) => Math.abs(b.currentPct - b.targetPct) > REBALANCE_EPSILON_PCT);
 
@@ -108,10 +116,31 @@ export function ReviewPortfolioManagerPage({
             </div>
           </div>
 
-          {isCreatingTransaction && (
-            <p className="mt-4 text-sm text-gray-400">
-              {createTransactionProgress ?? "Waiting for your wallet…"}
-            </p>
+          {transactionSteps && transactionSteps.length > 0 && (
+            <div className="mt-6 border-t border-border pt-4">
+              <p className="text-[11px] font-medium tracking-wide text-gray-500 uppercase">Transaction steps</p>
+              <ul className="mt-2 space-y-2">
+                {transactionSteps.map((step, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm">
+                    <StepStatusDot status={step.status} />
+                    <span
+                      className={
+                        step.status === "pending"
+                          ? "text-gray-500"
+                          : step.status === "error"
+                            ? "text-red-300"
+                            : "text-gray-200"
+                      }
+                    >
+                      {step.label}
+                    </span>
+                    {step.status === "active" && (
+                      <span className="text-xs text-gray-500">— check your wallet for a signature request</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {createTransactionError && (
@@ -137,4 +166,25 @@ export function ReviewPortfolioManagerPage({
       </div>
     </div>
   );
+}
+
+function StepStatusDot({ status }: { status: TransactionStep["status"] }) {
+  if (status === "done") {
+    return (
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-positive/50 bg-positive/10 text-[10px] text-positive">
+        ✓
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-red-400/50 bg-red-400/10 text-[10px] text-red-400">
+        ✕
+      </span>
+    );
+  }
+  if (status === "active") {
+    return <span className="size-2 shrink-0 animate-pulse rounded-full bg-accent" />;
+  }
+  return <span className="size-2 shrink-0 rounded-full border border-border" />;
 }

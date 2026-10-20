@@ -101,55 +101,29 @@ function toEncodingGroups(groups: StrategyGroup[]): Group[] {
   });
 }
 
-export type ProposeShipStrategyParams = {
-  safeAddress: Address;
-  /** The connected wallet's own EIP-1193 provider (e.g. from wagmi's `connector.getProvider()`) --
-   *  routes every signing request through the wallet's own UI, never a private key this app
-   *  handles directly. */
-  provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> };
-  groups: StrategyGroup[];
-  /** PM_BPS-scaled (1e9 = 100%): e.g. 5_000_000n for the 0.5% floor. */
-  feeBpsPm: bigint;
-  /** PM_BPS-scaled price-deviation circuit breaker; 0n disables it. */
-  maxDeviationBpsPm: bigint;
-  /** Real on-chain balances (raw integer units) for every token across every group, keyed by
-   *  checksummed address -- read fresh at propose-time, not reused from a UI display value, so
-   *  this never round-trips through a float. */
-  balances: Record<Address, bigint>;
-  /** Fires after each step's eth_sendTransaction call resolves, for progress UI. */
-  onStepComplete?: (step: { index: number; total: number; label: string; txHash: Hex }) => void;
-};
+export type ShipStep = { label: string; to: Address; data: Hex };
 
-export type ProposeShipStrategyResult = {
-  /** The final step's transaction hash -- Aqua.ship(), the call that actually activates the
-   *  strategy. */
-  txHash: Hex;
-};
-
-/** Ships a strategy (per-token approve + attestBuildParameters + ship, matching
- *  packages/contracts/script/ShipTestStrategy.s.sol's own sequence) as a series of ordinary
- *  eth_sendTransaction calls through the connected wallet -- the same request shape any dApp
- *  sends to any wallet. A connected Safe{Wallet} session turns each one into a normal multisig
- *  approval on its own, the same way it would for any other dApp's transaction request.
- *
- *  This app previously tried building a single batched transaction and submitting a hand-crafted
- *  Safe signature directly to Safe's own backend (via @safe-global/protocol-kit + api-kit). That
- *  approach failed repeatedly and unpredictably over a WalletConnect-connected session -- the
- *  signature Safe{Wallet} returned was never valid by Safe's own server-side check, regardless of
- *  which address or EIP-712 signing method was used to request it. Plain eth_sendTransaction
- *  avoids all of that: it's the standard, universally-supported request shape, and Safe{Wallet}
- *  (not this app) owns every Safe-specific detail of turning it into a real multisig transaction.
- *  The cost: each step is now its own separate transaction instead of one atomic batch, so a
- *  single-owner Safe sees 2-4 sequential approval prompts instead of one. */
-export async function proposeShipStrategyTransaction({
+/** Builds the ordered list of plain transactions that ship a strategy (per-token approve, then
+ *  attestBuildParameters, then ship -- matching
+ *  packages/contracts/script/ShipTestStrategy.s.sol's own sequence), without sending any of
+ *  them. Split out from execution so the UI can render the full step list (what's about to
+ *  happen, in what order) before the first signature request, not just one step at a time. */
+export function buildShipSteps({
   safeAddress,
-  provider,
   groups,
   feeBpsPm,
   maxDeviationBpsPm,
   balances,
-  onStepComplete,
-}: ProposeShipStrategyParams): Promise<ProposeShipStrategyResult> {
+  tokenSymbols,
+}: {
+  safeAddress: Address;
+  groups: StrategyGroup[];
+  feeBpsPm: bigint;
+  maxDeviationBpsPm: bigint;
+  balances: Record<Address, bigint>;
+  /** Address -> symbol, for readable step labels only -- never fed into the on-chain encoding. */
+  tokenSymbols: Record<Address, string>;
+}): ShipStep[] {
   const encodingGroups = toEncodingGroups(groups);
   const program = buildProgram(encodingGroups, feeBpsPm, maxDeviationBpsPm);
   const order = buildOrder(safeAddress, program);
@@ -160,16 +134,16 @@ export async function proposeShipStrategyTransaction({
   const amounts = tokens.map((t) => balances[t] ?? 0n);
   const groupNames = groups.map((g) => g.name);
 
-  const steps: { label: string; to: Address; data: Hex }[] = [
+  return [
     ...uniqueTokens.map(
-      (token): { label: string; to: Address; data: Hex } => ({
-        label: `Approve ${token}`,
+      (token): ShipStep => ({
+        label: `Approve ${tokenSymbols[token] ?? token}`,
         to: token,
         data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [AQUA_ADDRESS, maxUint256] }),
       }),
     ),
     {
-      label: "Attest strategy parameters",
+      label: "Confirm strategy parameters",
       to: PM_STRATEGY_VALIDATOR_ADDRESS,
       data: encodeFunctionData({
         abi: VALIDATOR_ABI,
@@ -178,7 +152,7 @@ export async function proposeShipStrategyTransaction({
       }),
     },
     {
-      label: "Ship strategy",
+      label: "Activate the strategy",
       to: AQUA_ADDRESS,
       data: encodeFunctionData({
         abi: AQUA_ABI,
@@ -187,23 +161,33 @@ export async function proposeShipStrategyTransaction({
       }),
     },
   ];
+}
 
-  let txHash: Hex | undefined;
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]!;
-    txHash = (await withTimeout(
-      provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from: safeAddress, to: step.to, data: step.data, value: "0x0" }],
-      }),
-      STEP_TIMEOUT_MS,
-      STEP_TIMEOUT_MESSAGE,
-    )) as Hex;
-    onStepComplete?.({ index: i, total: steps.length, label: step.label, txHash });
-  }
-
-  if (!txHash) {
-    throw new Error("No transactions were sent.");
-  }
-  return { txHash };
+/** Sends one already-built step as an ordinary eth_sendTransaction call through the connected
+ *  wallet -- the same request shape any dApp sends to any wallet. A connected Safe{Wallet}
+ *  session turns it into a normal multisig confirmation on its own, the same way it would for any
+ *  other dApp's transaction request.
+ *
+ *  This app previously tried building a single batched transaction and submitting a hand-crafted
+ *  Safe signature directly to Safe's own backend (via @safe-global/protocol-kit + api-kit). That
+ *  approach failed repeatedly and unpredictably over a WalletConnect-connected session -- the
+ *  signature Safe{Wallet} returned was never valid by Safe's own server-side check, regardless of
+ *  which address or EIP-712 signing method was used to request it. Plain eth_sendTransaction
+ *  avoids all of that: it's the standard, universally-supported request shape, and Safe{Wallet}
+ *  (not this app) owns every Safe-specific detail of turning it into a real multisig transaction.
+ *  The cost: each step is now its own separate transaction instead of one atomic batch, so a
+ *  single-owner Safe sees 2-4 sequential approval prompts instead of one. */
+export async function sendShipStep(
+  step: ShipStep,
+  safeAddress: Address,
+  provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> },
+): Promise<Hex> {
+  return (await withTimeout(
+    provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: safeAddress, to: step.to, data: step.data, value: "0x0" }],
+    }),
+    STEP_TIMEOUT_MS,
+    STEP_TIMEOUT_MESSAGE,
+  )) as Hex;
 }
