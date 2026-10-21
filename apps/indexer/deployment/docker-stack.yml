@@ -1,0 +1,67 @@
+services:
+  graphql-engine:
+    image: hasura/graphql-engine:v2.43.0
+    ports:
+      - "${HASURA_EXTERNAL_PORT:-8080}:8080"
+    user: 1001:1001
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://${POSTGRES_USER:?error}:${POSTGRES_PASSWORD:?error}@pgbouncer:5432/${POSTGRES_DB:?error}
+      HASURA_GRAPHQL_ENABLE_CONSOLE: ${HASURA_GRAPHQL_ENABLE_CONSOLE:-false}
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES:
+        startup, http-log, webhook-log, websocket-log,
+        query-log
+      HASURA_GRAPHQL_NO_OF_RETRIES: 10
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_GRAPHQL_ADMIN_SECRET:?error}
+      HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: "true"
+      PORT: 8080
+      # The frontend queries this anonymously (no admin secret) -- `public`'s own GraphQL
+      # permissions on each table (set via Hasura's metadata, applied through the console/API
+      # once) are what actually keep this read-only and scoped to non-sensitive data, not this
+      # role setting by itself.
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: public
+    healthcheck:
+      test: timeout 1s bash -c ':> /dev/tcp/127.0.0.1/8080' || exit 1
+      interval: 5s
+      timeout: 2s
+      retries: 50
+      start_period: 5s
+
+  envio-indexer:
+    image: aqua-pm-indexer:${APP_REVISION}
+    build:
+      # The monorepo root, not this directory -- see ../Dockerfile's own comment for why.
+      context: ../../..
+      dockerfile: apps/indexer/Dockerfile
+    ports:
+      - "${ENVIO_INDEXER_PORT:?error}:${ENVIO_INDEXER_PORT:-9898}"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+          memory: 800M
+    restart: always
+    environment:
+      ENVIO_API_TOKEN: ${ENVIO_API_TOKEN:?error}
+      ENVIO_PG_PASSWORD: ${POSTGRES_PASSWORD:?error}
+      ENVIO_PG_HOST: pgbouncer
+      ENVIO_PG_PORT: 5432
+      ENVIO_PG_USER: ${POSTGRES_USER:?error}
+      ENVIO_PG_DATABASE: ${POSTGRES_DB:?error}
+      ENVIO_PG_PUBLIC_SCHEMA: ${ENVIO_PG_PUBLIC_SCHEMA:-envio}
+      ENVIO_INDEXER_HOST: 0.0.0.0
+      ENVIO_INDEXER_PORT: ${ENVIO_INDEXER_PORT:-9898}
+      CONFIG_FILE: ${CONFIG_FILE:-config.yaml}
+      LOG_LEVEL: ${LOG_LEVEL:-trace}
+      LOG_STRATEGY: ${LOG_STRATEGY:-console-pretty}
+      # EventHandlers.ts's getErc20Balance effect -- falls back to the public Base RPC when unset.
+      BASE_RPC_URL: ${BASE_RPC_URL:-}
+      HASURA_GRAPHQL_ENDPOINT: http://graphql-engine:8080/v1/metadata
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_GRAPHQL_ADMIN_SECRET:?error}
+      HASURA_SERVICE_HOST: graphql-engine
+      HASURA_SERVICE_PORT: 8080
+      TUI_OFF: ${TUI_OFF:-true}
+
+networks:
+  default:
+    name: ${PROJECT_PREFIX:?error}-default
+    external: ${EXTERNAL_RESOURCES:-false}

@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    command: ["bash", "/startdb.sh"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?error}
+      POSTGRES_USER: ${POSTGRES_USER:?error}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?error}
+      POSTGRES_MEMORY_LIMIT: ${POSTGRES_MEMORY_LIMIT:?error}
+    shm_size: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: ${POSTGRES_MEMORY_LIMIT:?error}
+    ports:
+      - "${POSTGRES_PORT:?error}:5432"
+    volumes:
+      - ./static/startdb.sh:/startdb.sh:ro
+      - postgres-data:/var/lib/postgresql
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p0
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DB_USER: ${POSTGRES_USER:?error}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?error}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 250
+      MAX_DB_CONNECTIONS: 100
+      DEFAULT_POOL_SIZE: 100
+    ports:
+      - "${PGBOUNCER_PORT:?error}:5432"
+
+  postgres_exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATA_SOURCE_URI: "postgres:5432/${POSTGRES_DB:?error}?sslmode=disable"
+      DATA_SOURCE_USER: ${POSTGRES_USER:?error}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:?error}
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:?error}:9187"
+
+networks:
+  default:
+    name: ${PROJECT_PREFIX:?error}-default
+    external: ${EXTERNAL_RESOURCES:-false}
+    driver: overlay
+    attachable: true
+
+volumes:
+  postgres-data:
+    name: ${PROJECT_PREFIX:?error}-postgres-data
+    driver: local

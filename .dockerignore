@@ -1,0 +1,14 @@
+# Applies to any Docker build using the repo root as context (e.g. apps/indexer/Dockerfile,
+# built via apps/indexer/deployment/docker-stack.yml). Keeps the build context to what a pnpm
+# workspace install + the specific app's own codegen/build actually needs.
+.git
+**/node_modules
+.next
+.vercel
+simulation
+packages/contracts/cache
+packages/contracts/out
+packages/contracts/broadcast
+thoughts
+**/.env
+**/.env.local

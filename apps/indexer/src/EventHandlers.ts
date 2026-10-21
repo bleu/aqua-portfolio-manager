@@ -14,7 +14,10 @@ function strategyId(maker: string, app: string, strategyHash: string): string {
 const PM_ROUTER = "0x672b64e36152162c1fec42225d33bbb15520231a";
 
 const publicClient = createPublicClient({
-  transport: http(process.env.BASE_RPC_URL ?? "https://mainnet.base.org"),
+  // `||`, not `??` -- docker-stack.yml's BASE_RPC_URL defaults to an empty string when unset
+  // (`${BASE_RPC_URL:-}`), not to a genuinely missing env var, and `??` only falls back on
+  // null/undefined. http("") throws UrlRequiredError instead of ever reaching this fallback.
+  transport: http(process.env.BASE_RPC_URL || "https://mainnet.base.org"),
 });
 
 /// A wallet's balance for a PM strategy's declared token, at the moment it was shipped.
