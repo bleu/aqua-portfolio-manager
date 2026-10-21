@@ -1,0 +1,18 @@
+# Temporary AWS deployment (single box, plain docker compose, no Swarm) -- bleu-generic-1 is the
+# real target; this exists only to unblock testing while that host's shared Caddy gets fixed.
+# Postgres itself runs on RDS (not a container here) -- DATABASE_URL in .env points at it.
+services:
+  ponder:
+    image: aqua-pm-indexer:temp
+    build:
+      context: ../../../..
+      dockerfile: apps/indexer/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "42069:42069"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?error}
+      DATABASE_SCHEMA: public
+      BASE_RPC_URL: ${BASE_RPC_URL:?error}
+      TUI_OFF: "true"
+      NODE_OPTIONS: --max-old-space-size=1280

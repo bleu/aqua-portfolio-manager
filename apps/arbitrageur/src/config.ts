@@ -10,7 +10,6 @@ export interface Config {
   redisUrl: string;
 
   indexerGraphqlUrl: string;
-  indexerAdminSecret: string | undefined;
 
   allowedTokens: Address[];
   allowedFeeds: Address[];
@@ -103,7 +102,6 @@ export function loadConfig(): Config {
     redisUrl: required("REDIS_URL"),
 
     indexerGraphqlUrl: required("INDEXER_GRAPHQL_URL"),
-    indexerAdminSecret: process.env.INDEXER_ADMIN_SECRET,
 
     // ADR-0014's Decision section: "The token allow list contains USDC, USDT, WETH, and WBTC"
     // (cbBTC replaces WBTC here -- more liquid on Base). Any strategy declaring a token outside

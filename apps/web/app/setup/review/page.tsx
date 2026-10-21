@@ -10,6 +10,7 @@ import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
 import { buildShipSteps, isStepAlreadyDone, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
+import { useBasketScopeConflict } from "@/lib/useBasketScopeConflict";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
 import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
@@ -24,11 +25,17 @@ export default function Page() {
   const [createError, setCreateError] = useState<string>();
   const [steps, setSteps] = useState<TransactionStep[]>();
 
+  const draftBaskets = address ? loadDraftBaskets(address) ?? initialBaskets : initialBaskets;
+  const { conflicts: scopeConflicts, error: scopeConflictError } = useBasketScopeConflict(
+    address as Address | undefined,
+    draftBaskets.map((b) => ({ name: b.name, tokenAddresses: b.tokenAddresses as Address[] })),
+  );
+  const hasScopeConflict = !!scopeConflicts && scopeConflicts.length > 0;
+
   if (!address) {
     return <div className="min-h-screen" />;
   }
 
-  const draftBaskets = loadDraftBaskets(address) ?? initialBaskets;
   const draftTargets = loadDraftTargets(address) ?? {};
   const draftParameters = loadDraftParameters(address);
 
@@ -79,6 +86,7 @@ export default function Page() {
 
   async function handleCreateTransaction() {
     if (!connector) return;
+    if (hasScopeConflict) return;
     if ((threshold ?? 1) > 1) {
       setCreateError("This Safe needs more than one signature, which isn't supported by this flow yet.");
       return;
@@ -148,6 +156,8 @@ export default function Page() {
       isCreatingTransaction={isCreating}
       createTransactionError={createError}
       transactionSteps={steps}
+      scopeConflicts={scopeConflicts}
+      scopeConflictCheckError={scopeConflictError}
     />
   );
 }

@@ -18,7 +18,7 @@ async function main() {
   const redis = makeRedisConnection(config.redisUrl);
   const queues = makeQueues(redis);
   const clients = makeClients(config);
-  const indexerClient = makeIndexerClient({ graphqlUrl: config.indexerGraphqlUrl, adminSecret: config.indexerAdminSecret });
+  const indexerClient = makeIndexerClient({ graphqlUrl: config.indexerGraphqlUrl });
   // No `chain` here: FyndClient's per-chain routing is URL-rewriting middleware for
   // PropellerHeads' hosted multi-chain gateway (e.g. https://gateway/<chain>/v1/quote). This
   // README's own "Running a local Fynd server" section runs a self-hosted, single-chain instance

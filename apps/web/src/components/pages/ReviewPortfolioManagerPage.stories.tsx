@@ -55,3 +55,32 @@ export const RebalanceExpected: Story = {
     signaturesRequired: 2,
   },
 };
+
+/** docs/adr/0011's basket-scope-guard check, both conflict reasons at once -- see
+ *  BasketScopeGuard.sol's CrossBasketStrategyForbidden and TokenNotInAnyBasket. */
+export const BasketScopeConflicts: Story = {
+  args: {
+    network: "Ethereum",
+    safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
+    baskets,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    signaturesRequired: 1,
+    scopeConflicts: [
+      {
+        strategyHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        app: "0x1111111111111111111111111111111111111111",
+        types: ["cross-basket"],
+        basketNames: ["Stablecoins", "Crypto majors"],
+        foreignTokens: [],
+      },
+      {
+        strategyHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        app: "0x2222222222222222222222222222222222222222",
+        types: ["basket-foreign"],
+        basketNames: [],
+        foreignTokens: ["0x3333333333333333333333333333333333333333"],
+      },
+    ],
+  },
+};

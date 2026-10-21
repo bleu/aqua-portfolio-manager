@@ -32,6 +32,21 @@ export type TransactionStep = {
   status: "pending" | "active" | "done" | "error";
 };
 
+/** A prior active strategy that would fail BasketScopeGuard.sol's own checks once the new baskets
+ *  are declared -- see docs/adr/0011, this is the off-chain check the Guard itself can't perform
+ *  retroactively against a Safe's event history. Mirrors the Guard's two revert reasons exactly:
+ *  "cross-basket" (tokens split across more than one new basket) and "basket-foreign" (a token
+ *  outside every new basket). A strategy can carry either reason, or both. */
+export type ScopeConflictType = "cross-basket" | "basket-foreign";
+
+export type ScopeConflict = {
+  strategyHash: string;
+  app: string;
+  types: ScopeConflictType[];
+  basketNames: string[];
+  foreignTokens: string[];
+};
+
 export type ReviewPortfolioManagerPageProps = {
   network: string;
   safeAddress: string;
@@ -46,6 +61,9 @@ export type ReviewPortfolioManagerPageProps = {
   /** The full step list, shown once "Create transaction" is clicked (before that, this page shows
    *  no steps at all -- nothing has started yet). */
   transactionSteps?: TransactionStep[];
+  /** Non-empty blocks "Create transaction" entirely -- see ScopeConflict's doc comment. */
+  scopeConflicts?: ScopeConflict[];
+  scopeConflictCheckError?: string;
 };
 
 /** BLEUDEV-416 — step 4 of the 4-step setup wizard ("Review"). */
@@ -61,8 +79,11 @@ export function ReviewPortfolioManagerPage({
   isCreatingTransaction,
   createTransactionError,
   transactionSteps,
+  scopeConflicts,
+  scopeConflictCheckError,
 }: ReviewPortfolioManagerPageProps) {
   const needsRebalance = baskets.some((b) => Math.abs(b.currentPct - b.targetPct) > REBALANCE_EPSILON_PCT);
+  const hasScopeConflict = !!scopeConflicts && scopeConflicts.length > 0;
 
   return (
     <div className="min-h-screen">
@@ -143,6 +164,53 @@ export function ReviewPortfolioManagerPage({
             </div>
           )}
 
+          {hasScopeConflict && (
+            <div className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">
+              <p className="font-medium">
+                This Safe already has {scopeConflicts!.length === 1 ? "an incompatible strategy" : "incompatible strategies"}
+              </p>
+              <p className="mt-1 text-red-300/90">
+                Creating this Portfolio Manager won&apos;t stop the strategy below, so it can&apos;t actually keep
+                your baskets separate. Dock it first, or redraw your baskets so it fits inside one.
+              </p>
+              <ul className="mt-2 space-y-2">
+                {scopeConflicts!.map((conflict) => (
+                  <li key={conflict.strategyHash} className="rounded-md border border-red-400/30 bg-red-400/5 p-2">
+                    <p className="font-mono text-xs text-red-300/80">
+                      Strategy {truncateAddress(conflict.strategyHash)} (app {truncateAddress(conflict.app)})
+                    </p>
+                    {conflict.types.includes("cross-basket") && (
+                      <p className="mt-1">
+                        <span className="rounded bg-red-400/20 px-1.5 py-0.5 text-[11px] font-medium uppercase">
+                          cross-basket
+                        </span>{" "}
+                        Trades across {conflict.basketNames.length} separate baskets ({conflict.basketNames.join(", ")})
+                        -- the Guard only allows this for its own Portfolio Manager strategy.
+                      </p>
+                    )}
+                    {conflict.types.includes("basket-foreign") && (
+                      <p className="mt-1">
+                        <span className="rounded bg-red-400/20 px-1.5 py-0.5 text-[11px] font-medium uppercase">
+                          basket-foreign
+                        </span>{" "}
+                        Holds {conflict.foreignTokens.length === 1 ? "a token" : "tokens"} (
+                        {conflict.foreignTokens.map((t) => truncateAddress(t)).join(", ")}) that{" "}
+                        {conflict.foreignTokens.length === 1 ? "isn't" : "aren't"} declared in any of your baskets.
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {scopeConflictCheckError && (
+            <p className="mt-4 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-300">
+              {scopeConflictCheckError} You can still proceed, but this Safe hasn&apos;t been checked for conflicting
+              prior strategies.
+            </p>
+          )}
+
           {createTransactionError && (
             <p className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">
               {createTransactionError}
@@ -156,7 +224,7 @@ export function ReviewPortfolioManagerPage({
             <Button
               variant="accent"
               onClick={onCreateTransaction}
-              disabled={isCreatingTransaction}
+              disabled={isCreatingTransaction || hasScopeConflict}
               className="flex-1"
             >
               {isCreatingTransaction ? "Creating transaction…" : "Create transaction"}

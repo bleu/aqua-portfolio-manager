@@ -2,13 +2,10 @@ import { GraphQLClient, gql } from "graphql-request";
 
 export interface IndexerConfig {
   graphqlUrl: string;
-  adminSecret?: string;
 }
 
-export function makeIndexerClient({ graphqlUrl, adminSecret }: IndexerConfig): GraphQLClient {
-  return new GraphQLClient(graphqlUrl, {
-    headers: adminSecret ? { "x-hasura-admin-secret": adminSecret } : {},
-  });
+export function makeIndexerClient({ graphqlUrl }: IndexerConfig): GraphQLClient {
+  return new GraphQLClient(graphqlUrl);
 }
 
 export interface IndexedStrategy {
@@ -25,21 +22,23 @@ export interface IndexedStrategy {
 
 const STRATEGIES_QUERY = gql`
   query Strategies($limit: Int!, $offset: Int!) {
-    Strategy(limit: $limit, offset: $offset, order_by: { id: asc }) {
-      id
-      maker
-      app
-      strategyHash
-      encodedOrder
-      tokens
-      isActive
-      shippedAt
-      dockedAt
+    strategys(limit: $limit, offset: $offset, orderBy: "id", orderDirection: "asc") {
+      items {
+        id
+        maker
+        app
+        strategyHash
+        encodedOrder
+        tokens
+        isActive
+        shippedAt
+        dockedAt
+      }
     }
   }
 `;
 
-/// Full paginated scan, not an incremental cursor: `Strategy` rows are mutated in place (`Docked`
+/// Full paginated scan, not an incremental cursor: `strategy` rows are mutated in place (`Docked`
 /// flips `isActive` on an existing row), so "everything since X" by insertion order would miss
 /// updates to older rows. Cheap at the strategy counts this indexes today; a growth-driven fix
 /// (e.g. indexing an `updatedAtBlock` field and filtering on it) is a real, separate follow-up if
@@ -48,7 +47,9 @@ export async function fetchAllStrategies(client: GraphQLClient, pageSize = 500):
   const all: IndexedStrategy[] = [];
   let offset = 0;
   for (;;) {
-    const { Strategy: page } = await client.request<{ Strategy: IndexedStrategy[] }>(STRATEGIES_QUERY, {
+    const {
+      strategys: { items: page },
+    } = await client.request<{ strategys: { items: IndexedStrategy[] } }>(STRATEGIES_QUERY, {
       limit: pageSize,
       offset,
     });
@@ -69,42 +70,53 @@ export interface IndexedWalletBalanceChange {
 }
 
 const WALLET_BALANCE_CHANGES_QUERY = gql`
-  query WalletBalanceChanges($afterBlock: numeric!, $afterLogIndex: Int!, $limit: Int!) {
-    WalletBalanceChange(
+  query WalletBalanceChanges($afterBlock: BigInt!, $afterLogIndex: Int!, $limit: Int!) {
+    walletBalanceChanges(
       where: {
-        _or: [
-          { blockNumber: { _gt: $afterBlock } }
-          { _and: [{ blockNumber: { _eq: $afterBlock } }, { logIndex: { _gt: $afterLogIndex } }] }
+        OR: [
+          { blockNumber_gt: $afterBlock }
+          { AND: [{ blockNumber: $afterBlock }, { logIndex_gt: $afterLogIndex }] }
         ]
       }
-      order_by: [{ blockNumber: asc }, { logIndex: asc }]
+      orderBy: "blockNumber"
+      orderDirection: "asc"
       limit: $limit
     ) {
-      id
-      wallet
-      token
-      change
-      blockNumber
-      logIndex
+      items {
+        id
+        wallet
+        token
+        change
+        blockNumber
+        logIndex
+      }
     }
   }
 `;
 
-/// One page of `WalletBalanceChange` rows strictly after the given `(blockNumber, logIndex)`
+/// One page of `walletBalanceChange` rows strictly after the given `(blockNumber, logIndex)`
 /// position -- the composite cursor `syncWalletBalanceChanges` (src/sync/indexer.ts) advances
 /// after each transactionally-applied batch. Never re-fetches a row already applied, so applying
 /// a returned batch is safe to do without a separate idempotency check.
+///
+/// Ponder's GraphQL only orders by one field (`orderBy`), unlike Hasura's multi-column
+/// `order_by` list -- rows sharing a `blockNumber` come back in whatever order Postgres returns
+/// them, so a single page can still mix logIndex order within one block. Harmless here: the
+/// caller applies a whole page inside one transaction before advancing the cursor, and the next
+/// page's `OR` condition is still anchored on the true max `(blockNumber, logIndex)` seen.
 export async function fetchWalletBalanceChangesAfter(
   client: GraphQLClient,
   afterBlock: bigint,
   afterLogIndex: number,
   limit = 500,
 ): Promise<IndexedWalletBalanceChange[]> {
-  const { WalletBalanceChange } = await client.request<{ WalletBalanceChange: IndexedWalletBalanceChange[] }>(
+  const {
+    walletBalanceChanges: { items },
+  } = await client.request<{ walletBalanceChanges: { items: IndexedWalletBalanceChange[] } }>(
     WALLET_BALANCE_CHANGES_QUERY,
     { afterBlock: afterBlock.toString(), afterLogIndex, limit },
   );
-  return WalletBalanceChange;
+  return items;
 }
 
 export interface IndexedPriceSnapshot {
@@ -118,39 +130,45 @@ export interface IndexedPriceSnapshot {
 }
 
 const PRICE_SNAPSHOTS_QUERY = gql`
-  query PriceSnapshots($afterBlock: numeric!, $afterLogIndex: Int!, $limit: Int!) {
-    PriceSnapshot(
+  query PriceSnapshots($afterBlock: BigInt!, $afterLogIndex: Int!, $limit: Int!) {
+    priceSnapshots(
       where: {
-        _or: [
-          { blockNumber: { _gt: $afterBlock } }
-          { _and: [{ blockNumber: { _eq: $afterBlock } }, { logIndex: { _gt: $afterLogIndex } }] }
+        OR: [
+          { blockNumber_gt: $afterBlock }
+          { AND: [{ blockNumber: $afterBlock }, { logIndex_gt: $afterLogIndex }] }
         ]
       }
-      order_by: [{ blockNumber: asc }, { logIndex: asc }]
+      orderBy: "blockNumber"
+      orderDirection: "asc"
       limit: $limit
     ) {
-      id
-      feedProxy
-      answer
-      updatedAt
-      blockNumber
-      blockTimestamp
-      logIndex
+      items {
+        id
+        feedProxy
+        answer
+        updatedAt
+        blockNumber
+        blockTimestamp
+        logIndex
+      }
     }
   }
 `;
 
-/// Same composite-cursor shape as `fetchWalletBalanceChangesAfter`, for `PriceSnapshot`.
+/// Same composite-cursor shape and same single-column-orderBy caveat as
+/// `fetchWalletBalanceChangesAfter`, for `priceSnapshot`.
 export async function fetchPriceSnapshotsAfter(
   client: GraphQLClient,
   afterBlock: bigint,
   afterLogIndex: number,
   limit = 500,
 ): Promise<IndexedPriceSnapshot[]> {
-  const { PriceSnapshot } = await client.request<{ PriceSnapshot: IndexedPriceSnapshot[] }>(PRICE_SNAPSHOTS_QUERY, {
+  const {
+    priceSnapshots: { items },
+  } = await client.request<{ priceSnapshots: { items: IndexedPriceSnapshot[] } }>(PRICE_SNAPSHOTS_QUERY, {
     afterBlock: afterBlock.toString(),
     afterLogIndex,
     limit,
   });
-  return PriceSnapshot;
+  return items;
 }
