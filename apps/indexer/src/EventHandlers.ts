@@ -6,10 +6,12 @@ function strategyId(maker: string, app: string, strategyHash: string): string {
   return `${maker}-${app}-${strategyHash}`.toLowerCase();
 }
 
-/// This deployment's own Portfolio Manager Router (packages/contracts/script/Deploy.s.sol's
-/// broadcast receipt on Base) -- the balance seed below only ever runs for strategies shipped
-/// through this specific app, never for another app's strategy sharing the same Aqua registry.
-const PM_ROUTER = "0x02a11927b0a1c701feb589ca86886f4ae1f85f02";
+/// This deployment's own Portfolio Manager Router (packages/contracts/broadcast/Deploy.s.sol/
+/// 8453/run-latest.json -- the real, current deployment, not ShipStrategy.s.sol's old ROUTER
+/// constant from an earlier test deployment) -- the balance seed below only ever runs for
+/// strategies shipped through this specific app, never for another app's strategy sharing the
+/// same Aqua registry.
+const PM_ROUTER = "0x672b64e36152162c1fec42225d33bbb15520231a";
 
 const publicClient = createPublicClient({
   transport: http(process.env.BASE_RPC_URL ?? "https://mainnet.base.org"),

@@ -68,22 +68,26 @@ contracts:
             - hash
 chains:
   - id: 8453 # Base -- matches Deploy.s.sol's AQUA_MAINNET default already in use for local dev.
-    # This Portfolio Manager Router's own deployment block on Base (packages/contracts/script/
-    # Deploy.s.sol's broadcast receipt), not Aqua's -- nothing could have shipped through this
-    # Router before it existed, so indexing Aqua's full history from its own 38281777 deployment
-    # block wastes sync time on strategies from other apps we'll never touch. The handler doesn't
-    # filter Shipped by `app` (see src/EventHandlers.ts), so other apps' strategies shipped after
-    # this block still get indexed -- only the ones before it are skipped.
-    start_block: 51925518
+    # Aqua's own deployment block on Base (verified directly: eth_getCode is empty at 38281776,
+    # non-empty at 38281777). Indexed from here, not from our own Router's later deployment block,
+    # so that `Strategy` rows cover every maker that has ever shipped through Aqua on this chain --
+    # ADR-0011's off-chain "check prior active strategies" requirement needs a maker's full
+    # history, not just activity since our own Router existed. The handler doesn't filter Shipped
+    # by `app` (see src/EventHandlers.ts), so this was always true for strategies shipped after
+    # the old start_block; the change is only about the range before it.
+    start_block: 38281777
     contracts:
       - name: Aqua
         address:
           - "0x499943e74fb0ce105688beee8ef2abec5d936d31"
       - name: PortfolioManagerValidator
-        # ShipStrategy.s.sol's own VALIDATOR constant -- deployed in the same Deploy.s.sol run as
-        # the Router above, so it shares that same start_block.
+        # The real, current deployment (packages/contracts/broadcast/Deploy.s.sol/8453/
+        # run-latest.json) -- not ShipStrategy.s.sol's old VALIDATOR constant, an earlier test
+        # deployment this config previously (and incorrectly) pointed at. Only affects
+        # Strategy.groupNames enrichment for our own app; Strategy detection itself comes from
+        # Aqua's own Shipped/Docked events regardless of which validator attested it.
         address:
-          - "0x88f52fe4a35ad046f37bcf3eb01e99551aa7da92"
+          - "0xf554918152B8a4543E41e6eA381eD425A03A93cE"
       - name: ERC20
         # Base mainnet addresses, matching the constants PortfolioManagerMultiTokenBasketE2E.t.sol
         # already verifies against a real fork, except cbBTC replaces WBTC as the real basket's
