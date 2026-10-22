@@ -60,8 +60,20 @@ contract Deploy is Script {
             address token = vm.parseJsonAddress(feedsJson, string.concat(entry, ".tokenAddress"));
             address feed = vm.parseJsonAddress(feedsJson, string.concat(entry, ".feedProxy"));
             uint32 maxStaleness = uint32(vm.parseJsonUint(feedsJson, string.concat(entry, ".heartbeatSeconds")));
+            // deviationThresholdBps feeds BLEUDEV-425's dynamic fee. WETH's entry is JSON null
+            // (Chainlink's own directory didn't publish one for it) -- not confirmed whether
+            // Foundry's parseJsonUint reads a JSON null as 0 or reverts, so this falls back to 0
+            // (PortfolioManagerFeedRegistry's own "dynamic fee disabled for this feed" sentinel)
+            // on either outcome rather than assume. Worth replacing with a direct parseJsonUint
+            // call once that's actually verified against this specific feeds file.
+            uint16 deviationThresholdBps;
+            try vm.parseJsonUint(feedsJson, string.concat(entry, ".deviationThresholdBps")) returns (uint256 parsed) {
+                deviationThresholdBps = uint16(parsed);
+            } catch {
+                deviationThresholdBps = 0;
+            }
             tokenRegistry.register(token);
-            feedRegistry.register(feed, maxStaleness);
+            feedRegistry.register(feed, maxStaleness, deviationThresholdBps);
         }
 
         validator =

@@ -20,10 +20,16 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 ///      because different feed categories update on different cadences on-chain (a stablecoin
 ///      feed may legitimately go several hours without a new round under calm market conditions,
 ///      while a volatile-asset feed should be held to a tighter bound).
+///      `deviationThresholdBps` (BLEUDEV-425's dynamic-fee complement) is the feed's own
+///      published Chainlink deviation threshold, in standard basis points (1e4 scale, matching
+///      base-mainnet-feeds.json -- not PortfolioManagerArgsCodec's PM_BPS scale). Zero means the
+///      dynamic fee stays disabled for that feed, same spirit as maxStaleness=0 being rejected
+///      for the staleness check: an explicit, deliberate off state rather than a silent default.
 contract PortfolioManagerFeedRegistry is Ownable2Step {
     struct FeedEntry {
         address feed;
         uint32 maxStaleness;
+        uint16 deviationThresholdBps;
     }
 
     /// @dev feedsByIndex[0] stays the zero entry forever -- see this contract's doc comment.
@@ -33,32 +39,49 @@ contract PortfolioManagerFeedRegistry is Ownable2Step {
     error PortfolioManagerFeedRegistryZeroMaxStaleness();
     error PortfolioManagerFeedRegistryFull();
 
-    event FeedRegistered(address indexed feed, uint16 index, uint32 maxStaleness);
+    event FeedRegistered(address indexed feed, uint16 index, uint32 maxStaleness, uint16 deviationThresholdBps);
 
     constructor(address owner_) Ownable(owner_) {
-        feedsByIndex.push(FeedEntry({feed: address(0), maxStaleness: 0}));
+        feedsByIndex.push(FeedEntry({feed: address(0), maxStaleness: 0, deviationThresholdBps: 0}));
     }
 
     /// @notice Registers `feed` with its staleness bound, returning its new index. Owner-gated --
     ///         see this contract's doc comment for why a feed index needs vetting that a token
-    ///         index doesn't.
+    ///         index doesn't. Leaves the dynamic fee disabled for this feed (deviationThresholdBps
+    ///         0) -- existing callers that only know about staleness keep compiling unchanged.
     function register(address feed, uint32 maxStaleness) external onlyOwner returns (uint16 index) {
+        return register(feed, maxStaleness, 0);
+    }
+
+    /// @notice Same as the two-argument `register`, but also sets the feed's deviation threshold
+    ///         for BLEUDEV-425's dynamic fee.
+    function register(address feed, uint32 maxStaleness, uint16 deviationThresholdBps)
+        public
+        onlyOwner
+        returns (uint16 index)
+    {
         require(feed != address(0), PortfolioManagerFeedRegistryZeroAddress());
         require(maxStaleness != 0, PortfolioManagerFeedRegistryZeroMaxStaleness());
         require(feedsByIndex.length <= type(uint16).max, PortfolioManagerFeedRegistryFull());
         index = uint16(feedsByIndex.length);
-        feedsByIndex.push(FeedEntry({feed: feed, maxStaleness: maxStaleness}));
-        emit FeedRegistered(feed, index, maxStaleness);
+        feedsByIndex.push(
+            FeedEntry({feed: feed, maxStaleness: maxStaleness, deviationThresholdBps: deviationThresholdBps})
+        );
+        emit FeedRegistered(feed, index, maxStaleness, deviationThresholdBps);
     }
 
-    /// @notice Returns the feed and its staleness bound at `index` -- both zero for index 0
-    ///         (numeraire) or an out-of-range index.
-    function feedAt(uint16 index) external view returns (address feed, uint32 maxStaleness) {
+    /// @notice Returns the feed, staleness bound, and deviation threshold at `index` -- all zero
+    ///         for index 0 (numeraire) or an out-of-range index.
+    function feedAt(uint16 index)
+        external
+        view
+        returns (address feed, uint32 maxStaleness, uint16 deviationThresholdBps)
+    {
         if (index < feedsByIndex.length) {
             FeedEntry storage entry = feedsByIndex[index];
-            return (entry.feed, entry.maxStaleness);
+            return (entry.feed, entry.maxStaleness, entry.deviationThresholdBps);
         }
-        return (address(0), 0);
+        return (address(0), 0, 0);
     }
 
     function feedCount() external view returns (uint256) {
