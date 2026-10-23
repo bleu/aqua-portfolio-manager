@@ -120,6 +120,19 @@ function toEncodingGroups(groups: StrategyGroup[]): Group[] {
   });
 }
 
+/** The exact `keccak256` Aqua.ship() will key this strategy's ledger entries under -- pure
+ *  function of (maker, groups, fee, deviation), no nonce or timestamp anywhere in the encoding.
+ *  Aqua.sol's own ship() permanently refuses to ever reuse a strategyHash once shipped
+ *  (`StrategiesMustBeImmutable`), even after the strategy was later docked -- docking flips the
+ *  ledger entry to a closed marker, it never resets it to shippable. Letting the UI compute this
+ *  ahead of signing anything is what makes it possible to check for that collision before
+ *  wasting a real signature on a strategy that can never activate. */
+export function computeStrategyHash(safeAddress: Address, groups: StrategyGroup[], feeBpsPm: bigint, maxDeviationBpsPm: bigint): Hex {
+  const program = buildProgram(toEncodingGroups(groups), feeBpsPm, maxDeviationBpsPm);
+  const order = buildOrder(safeAddress, program);
+  return keccak256(encodeOrder(order));
+}
+
 export type ShipStep =
   | { kind: "approve"; label: string; to: Address; data: Hex; token: Address }
   | { kind: "attest"; label: string; to: Address; data: Hex; strategyHash: Hex }
@@ -150,9 +163,7 @@ export function buildShipSteps({
   const program = buildProgram(encodingGroups, feeBpsPm, maxDeviationBpsPm);
   const order = buildOrder(safeAddress, program);
   const encodedOrder = encodeOrder(order);
-  // Matches PortfolioManagerStrategyValidator.attestBuildParameters' own
-  // `keccak256(abi.encode(order))` exactly -- encodeOrder already produces that same ABI encoding.
-  const strategyHash = keccak256(encodedOrder);
+  const strategyHash = computeStrategyHash(safeAddress, groups, feeBpsPm, maxDeviationBpsPm);
 
   const tokens = groups.flatMap((g) => g.tokenAddresses);
   const uniqueTokens = [...new Set(tokens)];

@@ -64,6 +64,11 @@ export type ReviewPortfolioManagerPageProps = {
   /** Non-empty blocks "Create transaction" entirely -- see ScopeConflict's doc comment. */
   scopeConflicts?: ScopeConflict[];
   scopeConflictCheckError?: string;
+  /** True blocks "Create transaction" entirely -- Aqua.ship() permanently refuses to reuse a
+   *  strategyHash once shipped, even after docking (Aqua.sol's StrategiesMustBeImmutable), and
+   *  the hash has no nonce, so these exact parameters can never ship again. */
+  alreadyShipped?: boolean;
+  alreadyShippedCheckError?: string;
 };
 
 /** BLEUDEV-416 — step 4 of the 4-step setup wizard ("Review"). */
@@ -81,6 +86,8 @@ export function ReviewPortfolioManagerPage({
   transactionSteps,
   scopeConflicts,
   scopeConflictCheckError,
+  alreadyShipped,
+  alreadyShippedCheckError,
 }: ReviewPortfolioManagerPageProps) {
   const needsRebalance = baskets.some((b) => Math.abs(b.currentPct - b.targetPct) > REBALANCE_EPSILON_PCT);
   const hasScopeConflict = !!scopeConflicts && scopeConflicts.length > 0;
@@ -211,6 +218,24 @@ export function ReviewPortfolioManagerPage({
             </p>
           )}
 
+          {alreadyShipped && (
+            <div className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">
+              <p className="font-medium">This exact strategy has already been shipped before</p>
+              <p className="mt-1 text-red-300/90">
+                Once a strategy with these exact baskets, fee, and price deviation ships, it can never ship
+                again -- even after being deleted. Change the LP fee, price deviation, or baskets slightly to
+                create a new one.
+              </p>
+            </div>
+          )}
+
+          {alreadyShippedCheckError && (
+            <p className="mt-4 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-300">
+              {alreadyShippedCheckError} You can still proceed, but this strategy hasn&apos;t been checked against
+              ones already shipped.
+            </p>
+          )}
+
           {createTransactionError && (
             <p className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">
               {createTransactionError}
@@ -224,7 +249,7 @@ export function ReviewPortfolioManagerPage({
             <Button
               variant="accent"
               onClick={onCreateTransaction}
-              disabled={isCreatingTransaction || hasScopeConflict}
+              disabled={isCreatingTransaction || hasScopeConflict || alreadyShipped}
               className="flex-1"
             >
               {isCreatingTransaction ? "Creating transaction…" : "Create transaction"}

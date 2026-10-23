@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { ReviewPortfolioManagerPage, type TransactionStep } from "@/components/pages/ReviewPortfolioManagerPage";
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
-import { buildShipSteps, isStepAlreadyDone, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
+import { buildShipSteps, computeStrategyHash, isStepAlreadyDone, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useBasketScopeConflict } from "@/lib/useBasketScopeConflict";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useSafeThreshold } from "@/lib/useSafeThreshold";
+import { useStrategyAlreadyShipped } from "@/lib/useStrategyAlreadyShipped";
 import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
 
 export default function Page() {
@@ -26,18 +27,43 @@ export default function Page() {
   const [steps, setSteps] = useState<TransactionStep[]>();
 
   const draftBaskets = address ? loadDraftBaskets(address) ?? initialBaskets : initialBaskets;
+  const draftTargets = address ? loadDraftTargets(address) ?? {} : {};
+  const draftParameters = address ? loadDraftParameters(address) : undefined;
+  const priceDeviationPct = draftParameters?.priceDeviationPct ?? 0;
+  const lpFeePct = draftParameters?.lpFeePct ?? 0;
+
   const { conflicts: scopeConflicts, error: scopeConflictError } = useBasketScopeConflict(
     address as Address | undefined,
     draftBaskets.map((b) => ({ name: b.name, tokenAddresses: b.tokenAddresses as Address[] })),
   );
   const hasScopeConflict = !!scopeConflicts && scopeConflicts.length > 0;
 
+  // Only meaningful once a real Safe address is connected -- computeStrategyHash doesn't need
+  // tokens/balances, so it's safe to derive this before the early return below. Swallowed on
+  // purpose: an incomplete draft (e.g. targets not set yet, same guard buildShipSteps itself
+  // hits) just means the check can't run yet, not a page-breaking render error.
+  let strategyHash: Hex | undefined;
+  if (address) {
+    try {
+      strategyHash = computeStrategyHash(
+        address as Address,
+        draftBaskets.map((basket) => ({
+          name: basket.name,
+          targetPct: draftTargets[basket.id] ?? 0,
+          tokenAddresses: basket.tokenAddresses as Address[],
+        })),
+        BigInt(Math.round(lpFeePct * 1e7)),
+        BigInt(Math.round(priceDeviationPct * 1e7)),
+      );
+    } catch {
+      strategyHash = undefined;
+    }
+  }
+  const { alreadyShipped, error: alreadyShippedCheckError } = useStrategyAlreadyShipped(strategyHash);
+
   if (!address) {
     return <div className="min-h-screen" />;
   }
-
-  const draftTargets = loadDraftTargets(address) ?? {};
-  const draftParameters = loadDraftParameters(address);
 
   const total = draftBaskets.reduce((sum, basket) => {
     const basketTokens = tokens.filter((t) => basket.tokenAddresses.includes(t.address));
@@ -57,9 +83,6 @@ export default function Page() {
       targetPct: draftTargets[basket.id] ?? (total > 0 ? (currentValue / total) * 100 : 0),
     };
   });
-
-  const priceDeviationPct = draftParameters?.priceDeviationPct ?? 0;
-  const lpFeePct = draftParameters?.lpFeePct ?? 0;
 
   /** Maps a raw thrown error to a plain-language message a non-technical user can act on --
    *  the raw error (a viem/wallet-provider message, a stack trace) always goes to the console for
@@ -87,6 +110,7 @@ export default function Page() {
   async function handleCreateTransaction() {
     if (!connector) return;
     if (hasScopeConflict) return;
+    if (alreadyShipped) return;
     if ((threshold ?? 1) > 1) {
       setCreateError("This Safe needs more than one signature, which isn't supported by this flow yet.");
       return;
@@ -158,6 +182,8 @@ export default function Page() {
       transactionSteps={steps}
       scopeConflicts={scopeConflicts}
       scopeConflictCheckError={scopeConflictError}
+      alreadyShipped={alreadyShipped}
+      alreadyShippedCheckError={alreadyShippedCheckError}
     />
   );
 }

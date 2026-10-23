@@ -84,3 +84,17 @@ export const BasketScopeConflicts: Story = {
     ],
   },
 };
+
+/** Aqua.ship() permanently refuses to reuse a strategyHash once shipped, even after docking
+ *  (Aqua.sol's StrategiesMustBeImmutable) -- recreating identical parameters hits this. */
+export const AlreadyShipped: Story = {
+  args: {
+    network: "Ethereum",
+    safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
+    baskets,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    signaturesRequired: 1,
+    alreadyShipped: true,
+  },
+};
