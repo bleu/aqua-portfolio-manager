@@ -70,8 +70,16 @@ export function CreateBasketsPage({
   const selectedBasket = draftBaskets.find((basket) => basket.id === selectedBasketId) ?? draftBaskets[0];
   const assignedAddresses = new Set(draftBaskets.flatMap((basket) => basket.tokenAddresses));
 
+  // A token the Safe holds none of can never satisfy attestBuildParameters' balance-within-
+  // tolerance check (PortfolioManagerStrategyValidator.sol) -- it's always maximally unbalanced
+  // against any nonzero target, so shipping with one in a basket is guaranteed to revert. Hiding
+  // it from the picker entirely (not just discouraging it) stops that dead end before it starts.
+  // Scoped to these two derivations only: tokens already added to a basket still need to render
+  // via plain `safeTokens` lookups elsewhere in this file even if their balance later drops to 0.
+  const fundedTokens = useMemo(() => safeTokens.filter((token) => token.balance > 0), [safeTokens]);
+
   const visibleTokens = useMemo(() => {
-    return safeTokens
+    return fundedTokens
       .filter((token) => {
         const matchesFilter = activeFilters.size === 0 || activeFilters.has(token.symbol);
         const matchesQuery =
@@ -81,14 +89,14 @@ export function CreateBasketsPage({
         return matchesFilter && matchesQuery;
       })
       .sort((a, b) => b.value - a.value);
-  }, [safeTokens, activeFilters, query]);
+  }, [fundedTokens, activeFilters, query]);
 
   const popularTokens = useMemo(
     () =>
-      POPULAR_TOKEN_SYMBOLS.map((symbol) => safeTokens.find((t) => t.symbol === symbol)).filter(
+      POPULAR_TOKEN_SYMBOLS.map((symbol) => fundedTokens.find((t) => t.symbol === symbol)).filter(
         (t): t is SafeToken => t !== undefined,
       ),
-    [safeTokens],
+    [fundedTokens],
   );
 
   function toggleFilter(symbol: string) {
