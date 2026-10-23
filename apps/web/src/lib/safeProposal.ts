@@ -233,17 +233,26 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
  *  (not this app) owns every Safe-specific detail of turning it into a real multisig transaction.
  *  The cost: each step is now its own separate transaction instead of one atomic batch, so a
  *  single-owner Safe sees 2-4 sequential approval prompts instead of one. */
-export async function sendShipStep(
-  step: ShipStep,
+export async function sendTransaction(
+  to: Address,
+  data: Hex,
   safeAddress: Address,
   provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> },
 ): Promise<Hex> {
   return (await withTimeout(
     provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: safeAddress, to: step.to, data: step.data, value: "0x0" }],
+      params: [{ from: safeAddress, to, data, value: "0x0" }],
     }),
     STEP_TIMEOUT_MS,
     STEP_TIMEOUT_MESSAGE,
   )) as Hex;
+}
+
+export async function sendShipStep(
+  step: ShipStep,
+  safeAddress: Address,
+  provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> },
+): Promise<Hex> {
+  return sendTransaction(step.to, step.data, safeAddress, provider);
 }

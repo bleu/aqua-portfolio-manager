@@ -25,6 +25,14 @@ export function saveActiveStrategy(safeAddress: string, snapshot: ActiveStrategy
   }
 }
 
+export function clearActiveStrategy(safeAddress: string): void {
+  try {
+    window.localStorage.removeItem(storageKey(safeAddress));
+  } catch {
+    // Private window, storage disabled, or quota exceeded.
+  }
+}
+
 export function loadActiveStrategy(safeAddress: string): ActiveStrategySnapshot | undefined {
   try {
     const raw = window.localStorage.getItem(storageKey(safeAddress));

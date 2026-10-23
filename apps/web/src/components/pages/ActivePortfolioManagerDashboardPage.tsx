@@ -49,6 +49,12 @@ export type ActivePortfolioManagerDashboardPageProps = {
   baskets: DashboardBasket[];
   chartSeries: AllocationHistorySeries[];
   onUpdateStrategy?: () => void;
+  onDeleteStrategy?: () => void;
+  isDeletingStrategy?: boolean;
+  deleteStrategyError?: string;
+  /** False while the indexer lookup for this Safe's active strategy hash/tokens (needed to build
+   *  the dock() call) is still in flight -- without it, "Delete" would silently no-op. */
+  canDeleteStrategy?: boolean;
 };
 
 /** BLEUDEV-419 — the real-data counterpart to EmptyDashboardPage (BLEUDEV-410), shown at the same
@@ -64,8 +70,14 @@ export function ActivePortfolioManagerDashboardPage({
   baskets,
   chartSeries,
   onUpdateStrategy,
+  onDeleteStrategy,
+  isDeletingStrategy,
+  deleteStrategyError,
+  canDeleteStrategy = true,
 }: ActivePortfolioManagerDashboardPageProps) {
   const [range, setRange] = useState<TimeRange>("30d");
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   return (
     <div className="min-h-screen">
@@ -84,15 +96,53 @@ export function ActivePortfolioManagerDashboardPage({
               {truncateAddress(safeAddress)} · {network} · Updated {formatRelativeTime(updatedAt)}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <Button variant="accent" onClick={onUpdateStrategy}>
               Update strategy
             </Button>
-            <IconButton aria-label="More options">
+            <IconButton aria-label="More options" onClick={() => setShowMoreMenu((v) => !v)}>
               <MoreIcon className="size-4" />
             </IconButton>
+            {showMoreMenu && (
+              <div className="absolute top-12 right-0 z-10 w-52 rounded-[10px] border border-border bg-surface-raised py-1 shadow-lg">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-400/10"
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    setShowDeleteConfirm(true);
+                  }}
+                >
+                  Delete Portfolio Manager
+                </button>
+              </div>
+            )}
           </div>
         </div>
+
+        {showDeleteConfirm && (
+          <div className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-4 text-sm text-red-300">
+            <p className="font-medium">Delete this Portfolio Manager?</p>
+            <p className="mt-1 text-red-300/90">
+              This deactivates the Portfolio Manager and stops it from managing your baskets. Your tokens stay in
+              your Safe exactly where they are -- deleting doesn&apos;t move or withdraw anything.
+            </p>
+            {deleteStrategyError && <p className="mt-2 text-red-300">{deleteStrategyError}</p>}
+            <div className="mt-3 flex items-center gap-3">
+              <Button
+                variant="secondary"
+                className="border-red-400/40 text-red-300 hover:bg-red-400/10"
+                onClick={onDeleteStrategy}
+                disabled={isDeletingStrategy || !canDeleteStrategy}
+              >
+                {isDeletingStrategy ? "Deleting…" : canDeleteStrategy ? "Delete Portfolio Manager" : "Loading…"}
+              </Button>
+              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)} disabled={isDeletingStrategy}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-border bg-surface-card p-6">
