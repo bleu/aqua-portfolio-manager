@@ -1,58 +1,9 @@
-import {
-  concatHex,
-  createPublicClient,
-  encodeFunctionData,
-  encodePacked,
-  erc20Abi,
-  http,
-  keccak256,
-  maxUint256,
-  type Address,
-  type Hex,
-} from "viem";
+import SafeAppsSDK from "@safe-global/safe-apps-sdk";
+import { createPublicClient, encodeFunctionData, erc20Abi, http, keccak256, maxUint256, type Address, type Hex } from "viem";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
-
-/** Safe's own canonical MultiSendCallOnly deployment (v1.3.0, same address on every chain Safe
- *  deploys to) -- verified directly against Base mainnet, not assumed: real bytecode present,
- *  exposes exactly multiSend(bytes)'s selector (0x8d80ff0a), and its runtime bytecode's call loop
- *  has no reachable delegatecall path, matching
- *  packages/contracts/lib/safe-smart-account/contracts/libraries/MultiSendCallOnly.sol exactly.
- *  Deliberately CallOnly, not the plain MultiSend contract -- this app never needs delegatecall,
- *  and CallOnly's narrower guarantee is one less thing to get wrong signing a batch blind. */
-const MULTISEND_CALL_ONLY_ADDRESS: Address = "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D";
-
-const MULTISEND_ABI = [
-  { type: "function", name: "multiSend", stateMutability: "payable", inputs: [{ name: "transactions", type: "bytes" }], outputs: [] },
-] as const;
-
-/** Packs one call the exact way MultiSendCallOnly's own assembly loop unpacks it: 1 byte
- *  operation (always 0, Call -- this contract reverts on 1/DelegateCall) + 20 bytes `to` + 32
- *  bytes `value` + 32 bytes data length + the data itself, back to back with no padding between
- *  calls. Matches packages/contracts/lib/safe-smart-account/src/utils/multisend.ts's own
- *  encodeMetaTransaction exactly. */
-function encodeMultiSendCall(to: Address, data: Hex): Hex {
-  return encodePacked(["uint8", "address", "uint256", "uint256", "bytes"], [0, to, 0n, BigInt((data.length - 2) / 2), data]);
-}
-
-/** Bundles multiple {to, data} calls into the single eth_sendTransaction that sends them all as
- *  one Safe transaction (via MultiSendCallOnly), instead of one eth_sendTransaction per call.
- *  See STEP_TIMEOUT_MESSAGE's sibling doc comment on sendTransaction below for why this replaced
- *  the previous one-request-per-step approach: a real stuck run showed the first request on a
- *  session succeed and every one after it on the same provider silently never reach the wallet,
- *  with no error on either side, even after re-fetching the provider per request. One request
- *  total removes the "every request after the first" failure mode entirely, rather than working
- *  around it. */
-export function buildBatchedTransaction(calls: { to: Address; data: Hex }[]): { to: Address; data: Hex } {
-  if (calls.length === 1) return calls[0]!;
-  const packed = concatHex(calls.map((c) => encodeMultiSendCall(c.to, c.data)));
-  return {
-    to: MULTISEND_CALL_ONLY_ADDRESS,
-    data: encodeFunctionData({ abi: MULTISEND_ABI, functionName: "multiSend", args: [packed] }),
-  };
-}
 
 const publicClient = createPublicClient({ chain: base, transport: http() });
 
@@ -276,14 +227,14 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
  *  Safe{Wallet} session turns it into a normal multisig confirmation on its own, the same way it
  *  would for any other dApp's transaction request.
  *
- *  This app previously tried building a batch by hand-crafting a Safe signature and submitting it
- *  directly to Safe's own backend (via @safe-global/protocol-kit + api-kit). That failed
- *  repeatedly and unpredictably over a WalletConnect-connected session -- the signature
- *  Safe{Wallet} returned was never valid by Safe's own server-side check. buildBatchedTransaction
- *  avoids that entirely: it still produces one plain {to, data} pair (a MultiSendCallOnly call),
- *  sent through this exact same, already-proven eth_sendTransaction path -- Safe{Wallet} signs
- *  and executes it exactly like any other transaction, nothing hand-crafted or submitted
- *  out-of-band. */
+ *  Used for every step when connected over WalletConnect: plain eth_sendTransaction has no way to
+ *  mark a call as a Safe "batch" (there is no operation field in the standard request), so each
+ *  step the Safe executes this way runs as its own top-level Call, with the Safe itself as
+ *  msg.sender -- correct, just one signature per step. See sendTransactionsViaSafeAppsSdk's own
+ *  doc comment for why a batch of these can't just be wrapped in MultiSendCallOnly and sent as one
+ *  such call instead (that was tried and shipped a real, confirmed-on-chain bug: BLEUDEV
+ *  investigation found the resulting Shipped event's maker was MultiSendCallOnly's own address,
+ *  not the Safe's, because the Safe only *called* it instead of delegating into it). */
 export async function sendTransaction(
   to: Address,
   data: Hex,
@@ -298,4 +249,28 @@ export async function sendTransaction(
     STEP_TIMEOUT_MS,
     STEP_TIMEOUT_MESSAGE,
   )) as Hex;
+}
+
+/** Sends multiple calls as one real Safe batch transaction, via the Safe Apps SDK's own
+ *  `txs.send` -- only reachable when this page is embedded inside Safe{Wallet} as a Safe App (the
+ *  wagmi `safe` connector), since the SDK talks to the parent Safe{Wallet} window directly over
+ *  postMessage, not through any wallet-generic RPC method.
+ *
+ *  This replaced a hand-rolled approach that packed every call into one MultiSendCallOnly
+ *  `multiSend(bytes)` payload and sent it as a single plain eth_sendTransaction. That looked
+ *  correct (real round-trip-decoded against the real contract) but had a bug standard
+ *  eth_sendTransaction can never avoid: it has no field to request Safe's DelegateCall operation,
+ *  so Safe{Wallet} proposed it as a plain Call -- which makes MultiSendCallOnly itself the caller
+ *  of every inner call, not the Safe. Confirmed directly on a real shipped strategy: the resulting
+ *  `Aqua.Shipped` event's `maker` was MultiSendCallOnly's own address, not the Safe's, silently
+ *  orphaning the strategy (no funds lost -- ship() only authorizes, never moves tokens -- but the
+ *  strategy was unreachable by `dock()` or any swap, since both key off the Safe's own address).
+ *  `txs.send` doesn't have this gap: Safe{Wallet} itself constructs the batch, the same trusted
+ *  path its own UI uses for its own batching feature, so it sets the right operation internally. */
+export async function sendTransactionsViaSafeAppsSdk(calls: { to: Address; data: Hex }[]): Promise<Hex> {
+  const sdk = new SafeAppsSDK();
+  const { safeTxHash } = await sdk.txs.send({
+    txs: calls.map(({ to, data }) => ({ to, value: "0", data })),
+  });
+  return safeTxHash as Hex;
 }

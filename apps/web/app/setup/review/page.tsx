@@ -9,11 +9,11 @@ import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
 import {
-  buildBatchedTransaction,
   buildShipSteps,
   computeStrategyHash,
   isStepAlreadyDone,
   sendTransaction,
+  sendTransactionsViaSafeAppsSdk,
   STEP_TIMEOUT_MESSAGE,
 } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
@@ -155,25 +155,35 @@ export default function Page() {
       }
 
       let txHash: Address | undefined;
-      if (remaining.length > 0) {
+      if (remaining.length > 0 && connector.id === "safe") {
+        // Embedded as a Safe App: one real Safe batch via the Safe Apps SDK, which Safe{Wallet}
+        // itself constructs (and correctly delegates into) -- see sendTransactionsViaSafeAppsSdk's
+        // own doc comment for why this replaced packing calls into MultiSendCallOnly by hand.
         setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "active" } : s)));
-
-        // One combined transaction (via MultiSendCallOnly once there's more than one call left),
-        // not one eth_sendTransaction per step -- see buildBatchedTransaction's own doc comment
-        // for why: a real stuck run showed every request after the first on a session silently
-        // never reach the wallet, even with a freshly-fetched provider per request. One request
-        // removes that failure mode outright instead of working around it.
-        const { to, data } = buildBatchedTransaction(remaining.map(({ step }) => ({ to: step.to, data: step.data })));
-        const provider = (await connector.getProvider()) as {
-          request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
-        };
         try {
-          txHash = await sendTransaction(to, data, address as Address, provider);
+          txHash = await sendTransactionsViaSafeAppsSdk(remaining.map(({ step }) => ({ to: step.to, data: step.data })));
         } catch (stepErr) {
           setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "error" } : s)));
           throw stepErr;
         }
         setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "done" } : s)));
+      } else if (remaining.length > 0) {
+        // Any other connector (WalletConnect): plain eth_sendTransaction has no way to ask Safe to
+        // batch, so each remaining step goes as its own top-level call, one signature each -- see
+        // sendTransaction's own doc comment for why this is correct where batching wasn't.
+        for (const { index, step } of remaining) {
+          setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "active" } : s)));
+          const provider = (await connector.getProvider()) as {
+            request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+          };
+          try {
+            txHash = await sendTransaction(step.to, step.data, address as Address, provider);
+          } catch (stepErr) {
+            setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "error" } : s)));
+            throw stepErr;
+          }
+          setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "done" } : s)));
+        }
       }
 
       router.push(`/setup/activated?tx=${txHash}`);
