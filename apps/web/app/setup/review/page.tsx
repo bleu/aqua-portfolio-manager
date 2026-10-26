@@ -11,10 +11,14 @@ import { loadDraftParameters } from "@/lib/parametersDraftStorage";
 import {
   buildShipSteps,
   computeStrategyHash,
+  confirmAtomicBatch,
   isStepAlreadyDone,
+  requestAtomicBatch,
   sendTransaction,
   sendTransactionsViaSafeAppsSdk,
   STEP_TIMEOUT_MESSAGE,
+  supportsAtomicBatch,
+  type EIP1193Provider,
 } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useBasketScopeConflict } from "@/lib/useBasketScopeConflict";
@@ -169,20 +173,44 @@ export default function Page() {
         setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "done" } : s)));
       } else if (remaining.length > 0) {
         // Any other connector (WalletConnect): plain eth_sendTransaction has no way to ask Safe to
-        // batch, so each remaining step goes as its own top-level call, one signature each -- see
-        // sendTransaction's own doc comment for why this is correct where batching wasn't.
-        for (const { index, step } of remaining) {
-          setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "active" } : s)));
-          const provider = (await connector.getProvider()) as {
-            request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
-          };
+        // batch, but a wallet that declares EIP-5792 support (confirmed so far: only Safe{Wallet},
+        // see supportsAtomicBatch's own doc comment) can still batch atomically via wallet_sendCalls
+        // -- the wallet itself decides how to execute it, so this doesn't have MultiSendCallOnly's
+        // msg.sender bug. Falls back to one eth_sendTransaction per step, one signature each, for
+        // any wallet that doesn't report support, or whose wallet_sendCalls request itself fails
+        // (not a later confirmation failure -- see requestAtomicBatch's own doc comment for why).
+        const provider = (await connector.getProvider()) as EIP1193Provider;
+        const calls = remaining.map(({ step }) => ({ to: step.to, data: step.data }));
+
+        let batchId: string | undefined;
+        if (remaining.length > 1 && (await supportsAtomicBatch(address as Address, provider))) {
           try {
-            txHash = await sendTransaction(step.to, step.data, address as Address, provider);
+            ({ id: batchId } = await requestAtomicBatch(calls, address as Address, provider));
+          } catch {
+            batchId = undefined; // Falls through to the per-step loop below.
+          }
+        }
+
+        if (batchId) {
+          setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "active" } : s)));
+          try {
+            txHash = await confirmAtomicBatch(batchId, provider);
           } catch (stepErr) {
-            setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "error" } : s)));
+            setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "error" } : s)));
             throw stepErr;
           }
-          setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "done" } : s)));
+          setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "done" } : s)));
+        } else {
+          for (const { index, step } of remaining) {
+            setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "active" } : s)));
+            try {
+              txHash = await sendTransaction(step.to, step.data, address as Address, provider);
+            } catch (stepErr) {
+              setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "error" } : s)));
+              throw stepErr;
+            }
+            setSteps((prev) => prev?.map((s, j) => (j === index ? { ...s, status: "done" } : s)));
+          }
         }
       }
 

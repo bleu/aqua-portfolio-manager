@@ -1,9 +1,12 @@
 import SafeAppsSDK from "@safe-global/safe-apps-sdk";
-import { createPublicClient, encodeFunctionData, erc20Abi, http, keccak256, maxUint256, type Address, type Hex } from "viem";
+import { createPublicClient, createWalletClient, custom, encodeFunctionData, erc20Abi, http, keccak256, maxUint256, type Address, type Hex } from "viem";
+import { getCapabilities, sendCalls, waitForCallsStatus } from "viem/actions";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
+
+export type EIP1193Provider = { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> };
 
 const publicClient = createPublicClient({ chain: base, transport: http() });
 
@@ -235,12 +238,7 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
  *  such call instead (that was tried and shipped a real, confirmed-on-chain bug: BLEUDEV
  *  investigation found the resulting Shipped event's maker was MultiSendCallOnly's own address,
  *  not the Safe's, because the Safe only *called* it instead of delegating into it). */
-export async function sendTransaction(
-  to: Address,
-  data: Hex,
-  safeAddress: Address,
-  provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> },
-): Promise<Hex> {
+export async function sendTransaction(to: Address, data: Hex, safeAddress: Address, provider: EIP1193Provider): Promise<Hex> {
   return (await withTimeout(
     provider.request({
       method: "eth_sendTransaction",
@@ -273,4 +271,57 @@ export async function sendTransactionsViaSafeAppsSdk(calls: { to: Address; data:
     txs: calls.map(({ to, data }) => ({ to, value: "0", data })),
   });
   return safeTxHash as Hex;
+}
+
+/** True when the connected wallet declares atomic-batch support for Base via EIP-5792's
+ *  wallet_getCapabilities. As of 2026-10, Safe{Wallet} is the only wallet confirmed to support
+ *  wallet_sendCalls over WalletConnect -- this checks live rather than assuming, so every other
+ *  wallet (and a Safe{Wallet} version that hasn't shipped it yet) falls straight through to
+ *  sendCallsViaEip5792's caller using the one-call-per-step path instead. */
+export async function supportsAtomicBatch(safeAddress: Address, provider: EIP1193Provider): Promise<boolean> {
+  try {
+    const client = createWalletClient({ chain: base, transport: custom(provider) });
+    const capabilities = await getCapabilities(client, { account: safeAddress, chainId: base.id });
+    const status = (capabilities as { atomic?: { status?: string } } | undefined)?.atomic?.status;
+    return status === "supported" || status === "ready";
+  } catch {
+    return false;
+  }
+}
+
+/** Requests an atomic batch via EIP-5792's wallet_sendCalls -- the WalletConnect-reachable
+ *  equivalent of sendTransactionsViaSafeAppsSdk above, for a wallet that supportsAtomicBatch
+ *  already confirmed supports it. Crucially, this doesn't have that function's replaced
+ *  MultiSendCallOnly bug: the *wallet* decides how to execute the batch atomically (Safe can
+ *  choose DelegateCall internally, the same way its own UI's own batching feature does), so
+ *  msg.sender for every inner call is still the Safe, not an intermediary.
+ *
+ *  Split from confirmAtomicBatch below so the caller can fall back to per-step sending if *this*
+ *  call fails (a wallet mishandling the method entirely -- Safe's own GitHub has open issues
+ *  about spec-version drift here -- fails before anything executes, which atomicRequired
+ *  guarantees), while treating a confirmAtomicBatch failure as real: once a bundle id comes back
+ *  the batch is already in flight, and retrying per-step at that point could double-send. */
+export async function requestAtomicBatch(
+  calls: { to: Address; data: Hex }[],
+  safeAddress: Address,
+  provider: EIP1193Provider,
+): Promise<{ id: string }> {
+  const client = createWalletClient({ chain: base, transport: custom(provider) });
+  return withTimeout(
+    sendCalls(client, { account: safeAddress, calls: calls.map(({ to, data }) => ({ to, data })), forceAtomic: true }),
+    STEP_TIMEOUT_MS,
+    STEP_TIMEOUT_MESSAGE,
+  );
+}
+
+/** Waits for the batch requestAtomicBatch started and returns its real transaction hash. See
+ *  requestAtomicBatch's own doc comment for why a failure here must not be retried per-step. */
+export async function confirmAtomicBatch(id: string, provider: EIP1193Provider): Promise<Hex> {
+  const client = createWalletClient({ chain: base, transport: custom(provider) });
+  const { receipts, status } = await waitForCallsStatus(client, { id, timeout: STEP_TIMEOUT_MS });
+  const transactionHash = receipts?.[0]?.transactionHash;
+  if (status !== "success" || !transactionHash) {
+    throw new Error(`EIP-5792 batch did not succeed (status: ${status ?? "unknown"})`);
+  }
+  return transactionHash;
 }
