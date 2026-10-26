@@ -290,6 +290,9 @@ contract PortfolioManagerPricingTest is Test {
             amountOut = out;
         } catch (bytes memory reason) {
             assertEq(
+                // casting to 'bytes4' is safe -- a revert reason's first 4 bytes are always
+                // the custom error's selector by ABI encoding; truncation is intentional here
+                // forge-lint: disable-next-line(unsafe-typecast)
                 bytes4(reason),
                 PortfolioManagerPricing.PortfolioManagerPricingPoweredRatioBelowPrecisionFloor.selector,
                 "only the precision floor may reject a trade in this domain"
@@ -336,6 +339,9 @@ contract PortfolioManagerPricingTest is Test {
             amountOut = out;
         } catch (bytes memory reason) {
             assertEq(
+                // casting to 'bytes4' is safe -- a revert reason's first 4 bytes are always
+                // the custom error's selector by ABI encoding; truncation is intentional here
+                // forge-lint: disable-next-line(unsafe-typecast)
                 bytes4(reason),
                 PortfolioManagerPricing.PortfolioManagerPricingPoweredRatioBelowPrecisionFloor.selector,
                 "only the precision floor may reject a trade in this domain"

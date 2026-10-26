@@ -6,7 +6,6 @@ pragma solidity 0.8.30;
 import {IAqua} from "aqua/interfaces/IAqua.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
-import {PortfolioManagerStrategyValidator} from "../../src/PortfolioManagerStrategyValidator.sol";
 import {IPortfolioManagerStrategyValidator} from "../../src/interfaces/IPortfolioManagerStrategyValidator.sol";
 
 /// @notice Tests shipping and validation from the dedicated Safe against the forked Aqua registry.

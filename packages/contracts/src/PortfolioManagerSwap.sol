@@ -4,7 +4,6 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Context, ContextLib} from "swap-vm/libs/VM.sol";
 import {Fee, BPS as FEE_BPS} from "swap-vm/instructions/Fee.sol";
 import {IPortfolioManagerSwap} from "./interfaces/IPortfolioManagerSwap.sol";
@@ -56,7 +55,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
     /// @param args Group configuration, LP fee, and deviation limit encoded by PortfolioManagerArgsCodec.
     /// @dev The opcode table requires a non-view function pointer.
-    function _portfolioManagerSwapXD(Context memory ctx, bytes calldata args) internal {
+    function _portfolioManagerSwapXd(Context memory ctx, bytes calldata args) internal {
         // Checked before decoding args to skip parse cost when unattested; the flag is
         // monotonic (set once, never unset), so re-checking every swap is intentional, not a
         // missed firstness optimization.
@@ -148,7 +147,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     /// @dev Fetches each traded member's raw price once and values both groups, reusing that
     ///      single read instead of letting group valuation and native-unit conversion each read
     ///      the same feed under their own rounding (BLEUDEV-412). Split out of
-    ///      _portfolioManagerSwapXD to keep that function under the stack-depth limit.
+    ///      _portfolioManagerSwapXd to keep that function under the stack-depth limit.
     function _buildQuote(
         PortfolioManagerArgsCodec.Group memory groupIn,
         uint256 memberInIdx,
@@ -251,7 +250,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      deviation -- a trade that already passed the curve (so curveAmountOutValueWad <
     ///      quote.balanceOut, per PortfolioManagerPricing's own invariant) can't push spotPrice
     ///      more than maxDeviationBps away from where it started, in either direction. Split out
-    ///      from _portfolioManagerSwapXD, and recomputes spBefore here instead of taking it as a
+    ///      from _portfolioManagerSwapXd, and recomputes spBefore here instead of taking it as a
     ///      param, to keep that function under the stack-depth limit.
     function _requireWithinDeviationStep(
         PortfolioManagerPricing.PoolState memory quote,

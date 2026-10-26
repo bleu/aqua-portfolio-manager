@@ -16,7 +16,6 @@ import {PortfolioManagerProgramBuilder} from "../src/utils/PortfolioManagerProgr
 import {PortfolioManagerArgsCodec} from "../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerPricing} from "../src/utils/PortfolioManagerPricing.sol";
 import {PortfolioManagerFee} from "../src/utils/PortfolioManagerFee.sol";
-import {PortfolioManagerSwap} from "../src/PortfolioManagerSwap.sol";
 import {PortfolioManagerStrategyValidator} from "../src/PortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenRegistry.sol";
 import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
@@ -709,7 +708,10 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         // InsufficientMemberBalance at these balance ranges.
         priceA = bound(priceA, 0.5e18, 2e18);
         priceB = bound(priceB, 0.5e18, 2e18);
+        // casting to 'int256' is safe because priceA/priceB are bound to [0.5e18, 2e18] above
+        // forge-lint: disable-next-line(unsafe-typecast)
         feedA.setAnswer(int256(priceA), block.timestamp);
+        // forge-lint: disable-next-line(unsafe-typecast)
         feedB.setAnswer(int256(priceB), block.timestamp);
 
         ISwapVM.Order memory order = _buildOrder(5e6); // MIN_FEE_BPS floor -- a nonzero fee only adds more protection to the no-profit invariant below, never less
@@ -746,7 +748,10 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         // Vary member prices independently from $0.10 to $10.
         priceA = bound(priceA, 0.1e18, 10e18);
         priceB = bound(priceB, 0.1e18, 10e18);
+        // casting to 'int256' is safe because priceA/priceB are bound to [0.1e18, 10e18] above
+        // forge-lint: disable-next-line(unsafe-typecast)
         feedA.setAnswer(int256(priceA), block.timestamp);
+        // forge-lint: disable-next-line(unsafe-typecast)
         feedB.setAnswer(int256(priceB), block.timestamp);
 
         ISwapVM.Order memory order = _buildOrder(5e6); // MIN_FEE_BPS floor -- zero-fee isolation is no longer achievable; a nonzero fee only adds more protection to the invariant below, never less
@@ -784,6 +789,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     }
 
     function _assertAcceptableRoundTripRevert(bytes memory reason) private pure {
+        // casting to 'bytes4' is safe -- a revert reason's first 4 bytes are always the
+        // custom error's selector by ABI encoding; truncation is intentional here
+        // forge-lint: disable-next-line(unsafe-typecast)
         bytes4 selector = bytes4(reason);
         assertTrue(
             selector == IPortfolioManagerSwap.PortfolioManagerSwapInsufficientMemberBalance.selector

@@ -182,6 +182,8 @@ library PortfolioManagerArgsCodec {
                 : FixedPointMath.mulDivDown(g.weight, PM_BPS, WAD);
             compactSum += compactWeight;
 
+            // casting to 'uint32' is safe because compactWeight is always <= PM_BPS (1e9)
+            // forge-lint: disable-next-line(unsafe-typecast)
             args = abi.encodePacked(args, uint32(compactWeight), uint8(g.members.length));
             uint256 numeraireCount;
             for (uint256 j = 0; j < g.members.length; j++) {

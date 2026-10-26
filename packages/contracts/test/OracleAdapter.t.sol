@@ -81,14 +81,14 @@ contract RevertingAggregatorV3 is AggregatorV3Interface {
 
 /// @dev A 6-decimal ERC20 (e.g. USDC-like), since `ERC20Mock` is hardcoded to 18.
 contract ERC20MockWithDecimals is ERC20 {
-    uint8 private immutable _decimals;
+    uint8 private immutable _DECIMALS;
 
     constructor(uint8 decimals_) ERC20("Mock", "MCK") {
-        _decimals = decimals_;
+        _DECIMALS = decimals_;
     }
 
     function decimals() public view override returns (uint8) {
-        return _decimals;
+        return _DECIMALS;
     }
 
     function mint(address account, uint256 amount) external {
@@ -365,6 +365,8 @@ contract OracleAdapterTest is Test {
     function testFuzz_HighDecimalFeedBoundsPriceAndGroupValue(uint256 rawAnswer, uint256 balance) public {
         rawAnswer = bound(rawAnswer, 1e6, 1e24);
         balance = bound(balance, 1, 1e24);
+        // casting to 'int256' is safe because rawAnswer is bound to [1e6, 1e24] above
+        // forge-lint: disable-next-line(unsafe-typecast)
         MockAggregatorV3 mock = new MockAggregatorV3(24, int256(rawAnswer), block.timestamp);
         OracleAdapter.PriceFeed memory feed = _feed(mock, 1 hours);
         uint256 priceDown = OracleAdapter.priceWad(feed, OracleAdapter.Rounding.Down);

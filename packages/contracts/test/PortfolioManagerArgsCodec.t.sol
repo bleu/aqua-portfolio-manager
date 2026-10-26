@@ -150,6 +150,8 @@ contract PortfolioManagerArgsCodecTest is Test {
             // Last weight soaks up the remainder so the set always sums to exactly WAD.
             uint256 weight = i == n - 1 ? remaining : remaining / (n - i);
             remaining -= weight;
+            // casting to 'uint16' is safe because n is bounded by MAX_GROUPS, far under 2**16
+            // forge-lint: disable-next-line(unsafe-typecast)
             groups[i] = _singleMemberGroup(weight, uint16(1 + i), uint16(10 + i));
         }
 
@@ -207,6 +209,8 @@ contract PortfolioManagerArgsCodecTest is Test {
         for (uint256 i = 0; i < n; i++) {
             uint256 weight = i == n - 1 ? remaining : remaining / (n - i);
             remaining -= weight;
+            // casting to 'uint16' is safe because n is bounded by MAX_GROUPS, far under 2**16
+            // forge-lint: disable-next-line(unsafe-typecast)
             groups[i] = _singleMemberGroup(weight, uint16(1 + i), uint16(10 + i));
         }
 
@@ -286,6 +290,8 @@ contract PortfolioManagerArgsCodecTest is Test {
         uint256 n = PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP + 1;
         PortfolioManagerArgsCodec.Member[] memory members = new PortfolioManagerArgsCodec.Member[](n);
         for (uint256 i = 0; i < n; i++) {
+            // casting to 'uint16' is safe because n is MAX_MEMBERS_PER_GROUP + 1, far under 2**16
+            // forge-lint: disable-next-line(unsafe-typecast)
             members[i] = PortfolioManagerArgsCodec.Member({tokenIndex: uint16(1 + i), feedIndex: uint16(10 + i)});
         }
         // group[1] is never reached -- group[0]'s own too-many-members check reverts first --
@@ -308,7 +314,10 @@ contract PortfolioManagerArgsCodecTest is Test {
                 new PortfolioManagerArgsCodec.Member[](PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP);
             for (uint256 j = 0; j < PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP; j++) {
                 members[j] = PortfolioManagerArgsCodec.Member({
-                    tokenIndex: uint16(1 + i * 10 + j), feedIndex: uint16(100 + i * 10 + j)
+                    // casting to 'uint16' is safe -- i < 4 and j < MAX_MEMBERS_PER_GROUP, far under 2**16
+                    // forge-lint: disable-next-line(unsafe-typecast)
+                    tokenIndex: uint16(1 + i * 10 + j),
+                    feedIndex: uint16(100 + i * 10 + j)
                 });
             }
             groups[i] = PortfolioManagerArgsCodec.Group({weight: 0.25e18, members: members});
@@ -321,7 +330,12 @@ contract PortfolioManagerArgsCodecTest is Test {
         uint8[2][6] memory pairs = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
         for (uint256 i = 0; i < PortfolioManagerArgsCodec.MAX_BRIDGES; i++) {
             bridges[i] = PortfolioManagerArgsCodec.Bridge({
-                groupA: pairs[i][0], groupB: pairs[i][1], feed: address(uint160(0x9000 + i)), maxStaleness: 3600
+                // casting to 'uint160' is safe because i is bounded by MAX_BRIDGES, far under 2**160
+                // forge-lint: disable-next-line(unsafe-typecast)
+                groupA: pairs[i][0],
+                groupB: pairs[i][1],
+                feed: address(uint160(0x9000 + i)),
+                maxStaleness: 3600
             });
         }
 

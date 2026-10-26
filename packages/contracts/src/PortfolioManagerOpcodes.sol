@@ -37,7 +37,7 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
         returns (function(Context memory, bytes calldata) internal[] memory result)
     {
         function(Context memory, bytes calldata) internal[3] memory instructions = [
-            _notInstruction, PortfolioManagerSwap._portfolioManagerSwapXD, Controls._onlyTxOriginTokenBalanceNonZero
+            _notInstruction, PortfolioManagerSwap._portfolioManagerSwapXd, Controls._onlyTxOriginTokenBalanceNonZero
         ];
 
         // Same trick AquaOpcodes.sol uses: rewrite the leading _notInstruction with the array's

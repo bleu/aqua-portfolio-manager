@@ -281,15 +281,15 @@ contract BasketScopeGuardTest is Test {
         uint256 numMoves = bound(uint256(keccak256(abi.encode(seed, "moves"))), 3, 10);
         for (uint256 i = 0; i < numMoves; i++) {
             seed = uint256(keccak256(abi.encode(seed, i)));
-            bool isPM = seed % 3 == 0;
+            bool isPm = seed % 3 == 0;
             address[] memory tokens = _randomTokenSubset(seed, universe);
-            bytes memory strategy = isPM ? pmStrategy : abi.encodePacked("random-strategy-", seed);
+            bytes memory strategy = isPm ? pmStrategy : abi.encodePacked("random-strategy-", seed);
             bytes memory data = _shipCalldata(strategy, tokens);
 
             try guard.checkTransaction(
                 address(aqua), 0, data, Enum.Operation.Call, 0, 0, 0, address(0), payable(address(0)), "", address(0)
             ) {
-                assertTrue(_isSafe(isPM, tokens), "guard allowed an unsafe strategy through");
+                assertTrue(_isSafe(isPm, tokens), "guard allowed an unsafe strategy through");
             } catch {
                 // A revert is always an acceptable outcome here -- only an unsafe pass is a bug.
             }
@@ -316,8 +316,8 @@ contract BasketScopeGuardTest is Test {
     ///      to that comparison pattern (e.g. the wrong reference index) is less likely to be
     ///      replicated here by construction, not just by not looking at `_check` while writing
     ///      this. Only ever invoked on the non-revert path (see the fuzz test's own doc comment).
-    function _isSafe(bool isPM, address[] memory tokens) private view returns (bool) {
-        if (isPM) return true;
+    function _isSafe(bool isPm, address[] memory tokens) private view returns (bool) {
+        if (isPm) return true;
         if (tokens.length == 0) return false;
 
         uint256[] memory distinctBaskets = new uint256[](tokens.length);

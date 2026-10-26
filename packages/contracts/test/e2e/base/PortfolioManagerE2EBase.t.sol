@@ -16,7 +16,6 @@ import {AquaE2EBase} from "./AquaE2EBase.t.sol";
 import {PortfolioManagerRouter} from "../../../src/PortfolioManagerRouter.sol";
 import {PortfolioManagerArgsCodec} from "../../../src/utils/PortfolioManagerArgsCodec.sol";
 import {PortfolioManagerProgramBuilder} from "../../../src/utils/PortfolioManagerProgramBuilder.sol";
-import {PortfolioManagerFee} from "../../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerStrategyValidator} from "../../../src/PortfolioManagerStrategyValidator.sol";
 import {PortfolioManagerTokenRegistry} from "../../../src/utils/PortfolioManagerTokenRegistry.sol";
 import {PortfolioManagerFeedRegistry} from "../../../src/utils/PortfolioManagerFeedRegistry.sol";

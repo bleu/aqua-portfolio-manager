@@ -90,6 +90,8 @@ library OracleAdapter {
 
         uint8 decimals = config.feed.decimals();
         require(
+            // casting to 'uint256' is safe because `answer > 0` is required above
+            // forge-lint: disable-next-line(unsafe-typecast)
             FixedPointMath.scaleDown(uint256(answer), decimals, 18) > 0,
             OracleAdapterInvalidPrice(address(config.feed), answer)
         );
