@@ -55,6 +55,7 @@ export type ActivePortfolioManagerDashboardPageProps = {
   /** False while the indexer lookup for this Safe's active strategy hash/tokens (needed to build
    *  the dock() call) is still in flight -- without it, "Delete" would silently no-op. */
   canDeleteStrategy?: boolean;
+  onSelectTab?: (label: string) => void;
 };
 
 /** BLEUDEV-419 — the real-data counterpart to EmptyDashboardPage (BLEUDEV-410), shown at the same
@@ -74,6 +75,7 @@ export function ActivePortfolioManagerDashboardPage({
   isDeletingStrategy,
   deleteStrategyError,
   canDeleteStrategy = true,
+  onSelectTab,
 }: ActivePortfolioManagerDashboardPageProps) {
   const [range, setRange] = useState<TimeRange>("30d");
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -81,7 +83,7 @@ export function ActivePortfolioManagerDashboardPage({
 
   return (
     <div className="min-h-screen">
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
+      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} onSelectTab={onSelectTab} />
 
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="flex flex-wrap items-start justify-between gap-4">

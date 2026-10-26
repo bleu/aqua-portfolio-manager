@@ -75,7 +75,14 @@ export default function Page() {
   // dashboard -- confirmed happening on a real strategy, not a hypothetical.
   if (!activePmStrategy) {
     return (
-      <EmptyDashboardPage network={network} safeAddress={address} onStartSetup={() => router.push("/setup/baskets")} />
+      <EmptyDashboardPage
+        network={network}
+        safeAddress={address}
+        onStartSetup={() => router.push("/setup/baskets")}
+        onSelectTab={(label) => {
+          if (label === "History") router.push("/dashboard/history");
+        }}
+      />
     );
   }
 
@@ -168,6 +175,9 @@ export default function Page() {
       isDeletingStrategy={isDeleting}
       deleteStrategyError={deleteError}
       canDeleteStrategy={!!activePmStrategy}
+      onSelectTab={(label) => {
+        if (label === "History") router.push("/dashboard/history");
+      }}
     />
   );
 }

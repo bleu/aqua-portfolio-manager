@@ -17,15 +17,16 @@ export type EmptyDashboardPageProps = {
   network: string;
   safeAddress: string;
   onStartSetup?: () => void;
+  onSelectTab?: (label: string) => void;
 };
 
 const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
 
 /** BLEUDEV-410 — "03 · Empty dashboard": shown to a returning LP whose Safe has no active strategy. */
-export function EmptyDashboardPage({ network, safeAddress, onStartSetup }: EmptyDashboardPageProps) {
+export function EmptyDashboardPage({ network, safeAddress, onStartSetup, onSelectTab }: EmptyDashboardPageProps) {
   return (
     <div className="flex min-h-screen flex-col">
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
+      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} onSelectTab={onSelectTab} />
 
       <div className="flex w-full flex-1 flex-col px-6 py-10">
         <h1 className="text-2xl font-semibold text-white">Portfolio Manager</h1>

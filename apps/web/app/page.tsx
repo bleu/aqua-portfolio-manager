@@ -37,7 +37,7 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    if (isConnected) router.push("/intro");
+    if (isConnected) router.push("/dashboard");
   }, [isConnected, router]);
 
   return (

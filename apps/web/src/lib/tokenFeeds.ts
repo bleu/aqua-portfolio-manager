@@ -81,3 +81,11 @@ export function getRegistryIndex(tokenAddress: string): number {
   }
   return index + 1;
 }
+
+/** Best-effort symbol lookup for a bare token address (e.g. from indexer data, which only ever
+ *  carries addresses) -- falls back to a truncated address for a token outside this universe
+ *  rather than throwing, since this is a read-only display helper, not a validation gate. */
+export function symbolForToken(tokenAddress: string): string {
+  const match = TOKEN_FEEDS.find((t) => t.tokenAddress.toLowerCase() === tokenAddress.toLowerCase());
+  return match?.symbol ?? `${tokenAddress.slice(0, 6)}...${tokenAddress.slice(-4)}`;
+}
