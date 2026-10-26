@@ -1,6 +1,8 @@
 import {
+  concatHex,
   createPublicClient,
   encodeFunctionData,
+  encodePacked,
   erc20Abi,
   http,
   keccak256,
@@ -12,6 +14,45 @@ import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
+
+/** Safe's own canonical MultiSendCallOnly deployment (v1.3.0, same address on every chain Safe
+ *  deploys to) -- verified directly against Base mainnet, not assumed: real bytecode present,
+ *  exposes exactly multiSend(bytes)'s selector (0x8d80ff0a), and its runtime bytecode's call loop
+ *  has no reachable delegatecall path, matching
+ *  packages/contracts/lib/safe-smart-account/contracts/libraries/MultiSendCallOnly.sol exactly.
+ *  Deliberately CallOnly, not the plain MultiSend contract -- this app never needs delegatecall,
+ *  and CallOnly's narrower guarantee is one less thing to get wrong signing a batch blind. */
+const MULTISEND_CALL_ONLY_ADDRESS: Address = "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D";
+
+const MULTISEND_ABI = [
+  { type: "function", name: "multiSend", stateMutability: "payable", inputs: [{ name: "transactions", type: "bytes" }], outputs: [] },
+] as const;
+
+/** Packs one call the exact way MultiSendCallOnly's own assembly loop unpacks it: 1 byte
+ *  operation (always 0, Call -- this contract reverts on 1/DelegateCall) + 20 bytes `to` + 32
+ *  bytes `value` + 32 bytes data length + the data itself, back to back with no padding between
+ *  calls. Matches packages/contracts/lib/safe-smart-account/src/utils/multisend.ts's own
+ *  encodeMetaTransaction exactly. */
+function encodeMultiSendCall(to: Address, data: Hex): Hex {
+  return encodePacked(["uint8", "address", "uint256", "uint256", "bytes"], [0, to, 0n, BigInt((data.length - 2) / 2), data]);
+}
+
+/** Bundles multiple {to, data} calls into the single eth_sendTransaction that sends them all as
+ *  one Safe transaction (via MultiSendCallOnly), instead of one eth_sendTransaction per call.
+ *  See STEP_TIMEOUT_MESSAGE's sibling doc comment on sendTransaction below for why this replaced
+ *  the previous one-request-per-step approach: a real stuck run showed the first request on a
+ *  session succeed and every one after it on the same provider silently never reach the wallet,
+ *  with no error on either side, even after re-fetching the provider per request. One request
+ *  total removes the "every request after the first" failure mode entirely, rather than working
+ *  around it. */
+export function buildBatchedTransaction(calls: { to: Address; data: Hex }[]): { to: Address; data: Hex } {
+  if (calls.length === 1) return calls[0]!;
+  const packed = concatHex(calls.map((c) => encodeMultiSendCall(c.to, c.data)));
+  return {
+    to: MULTISEND_CALL_ONLY_ADDRESS,
+    data: encodeFunctionData({ abi: MULTISEND_ABI, functionName: "multiSend", args: [packed] }),
+  };
+}
 
 const publicClient = createPublicClient({ chain: base, transport: http() });
 
@@ -230,20 +271,19 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
   return false;
 }
 
-/** Sends one already-built step as an ordinary eth_sendTransaction call through the connected
- *  wallet -- the same request shape any dApp sends to any wallet. A connected Safe{Wallet}
- *  session turns it into a normal multisig confirmation on its own, the same way it would for any
- *  other dApp's transaction request.
+/** Sends one already-built {to, data} as an ordinary eth_sendTransaction call through the
+ *  connected wallet -- the same request shape any dApp sends to any wallet. A connected
+ *  Safe{Wallet} session turns it into a normal multisig confirmation on its own, the same way it
+ *  would for any other dApp's transaction request.
  *
- *  This app previously tried building a single batched transaction and submitting a hand-crafted
- *  Safe signature directly to Safe's own backend (via @safe-global/protocol-kit + api-kit). That
- *  approach failed repeatedly and unpredictably over a WalletConnect-connected session -- the
- *  signature Safe{Wallet} returned was never valid by Safe's own server-side check, regardless of
- *  which address or EIP-712 signing method was used to request it. Plain eth_sendTransaction
- *  avoids all of that: it's the standard, universally-supported request shape, and Safe{Wallet}
- *  (not this app) owns every Safe-specific detail of turning it into a real multisig transaction.
- *  The cost: each step is now its own separate transaction instead of one atomic batch, so a
- *  single-owner Safe sees 2-4 sequential approval prompts instead of one. */
+ *  This app previously tried building a batch by hand-crafting a Safe signature and submitting it
+ *  directly to Safe's own backend (via @safe-global/protocol-kit + api-kit). That failed
+ *  repeatedly and unpredictably over a WalletConnect-connected session -- the signature
+ *  Safe{Wallet} returned was never valid by Safe's own server-side check. buildBatchedTransaction
+ *  avoids that entirely: it still produces one plain {to, data} pair (a MultiSendCallOnly call),
+ *  sent through this exact same, already-proven eth_sendTransaction path -- Safe{Wallet} signs
+ *  and executes it exactly like any other transaction, nothing hand-crafted or submitted
+ *  out-of-band. */
 export async function sendTransaction(
   to: Address,
   data: Hex,
@@ -258,12 +298,4 @@ export async function sendTransaction(
     STEP_TIMEOUT_MS,
     STEP_TIMEOUT_MESSAGE,
   )) as Hex;
-}
-
-export async function sendShipStep(
-  step: ShipStep,
-  safeAddress: Address,
-  provider: { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> },
-): Promise<Hex> {
-  return sendTransaction(step.to, step.data, safeAddress, provider);
 }

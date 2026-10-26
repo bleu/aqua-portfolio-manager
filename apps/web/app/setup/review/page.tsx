@@ -8,7 +8,14 @@ import { ReviewPortfolioManagerPage, type TransactionStep } from "@/components/p
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
-import { buildShipSteps, computeStrategyHash, isStepAlreadyDone, sendShipStep, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
+import {
+  buildBatchedTransaction,
+  buildShipSteps,
+  computeStrategyHash,
+  isStepAlreadyDone,
+  sendTransaction,
+  STEP_TIMEOUT_MESSAGE,
+} from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useBasketScopeConflict } from "@/lib/useBasketScopeConflict";
 import { useSafeBalances } from "@/lib/useSafeBalances";
@@ -134,35 +141,39 @@ export default function Page() {
     setSteps(builtSteps.map((step) => ({ label: step.label, status: "pending" })));
 
     try {
-      let txHash: Address | undefined;
+      // A retry after an earlier partial failure shouldn't ask the wallet to reconfirm a step
+      // that already went through on a prior attempt -- check each on-chain first, mark those
+      // done immediately, and only bundle what's actually left into the one transaction below.
+      const remaining: { index: number; step: (typeof builtSteps)[number] }[] = [];
       for (let i = 0; i < builtSteps.length; i++) {
         const step = builtSteps[i]!;
-
-        // A retry after an earlier partial failure shouldn't ask the wallet to reconfirm a step
-        // that already went through on a prior attempt -- check on-chain first and skip it if so.
         if (await isStepAlreadyDone(step, address as Address)) {
           setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "done" } : s)));
-          continue;
+        } else {
+          remaining.push({ index: i, step });
         }
+      }
 
-        // Fetched fresh for every step, not once before the loop: a real multi-step run showed
-        // the first eth_sendTransaction on a session succeed (confirmed on-chain) and the next
-        // one on that same provider reference silently never reach the wallet -- no error on
-        // either side, and a direct simulation confirmed the pending call itself was valid and
-        // would have succeeded. Re-fetching the provider per step is the fix being tried for
-        // that; this comment should be revisited if it doesn't hold up under more testing.
+      let txHash: Address | undefined;
+      if (remaining.length > 0) {
+        setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "active" } : s)));
+
+        // One combined transaction (via MultiSendCallOnly once there's more than one call left),
+        // not one eth_sendTransaction per step -- see buildBatchedTransaction's own doc comment
+        // for why: a real stuck run showed every request after the first on a session silently
+        // never reach the wallet, even with a freshly-fetched provider per request. One request
+        // removes that failure mode outright instead of working around it.
+        const { to, data } = buildBatchedTransaction(remaining.map(({ step }) => ({ to: step.to, data: step.data })));
         const provider = (await connector.getProvider()) as {
           request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
         };
-
-        setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "active" } : s)));
         try {
-          txHash = await sendShipStep(step, address as Address, provider);
+          txHash = await sendTransaction(to, data, address as Address, provider);
         } catch (stepErr) {
-          setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "error" } : s)));
+          setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "error" } : s)));
           throw stepErr;
         }
-        setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "done" } : s)));
+        setSteps((prev) => prev?.map((s, j) => (remaining.some((r) => r.index === j) ? { ...s, status: "done" } : s)));
       }
 
       router.push(`/setup/activated?tx=${txHash}`);
