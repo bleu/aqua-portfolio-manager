@@ -17,6 +17,14 @@ const publicClient = createPublicClient({ chain: base, transport: http() });
 const STEP_TIMEOUT_MS = 90_000;
 export const STEP_TIMEOUT_MESSAGE = "__aqua_pm_create_transaction_step_timeout__";
 
+/** confirmAtomicBatch's own wait is a different kind from STEP_TIMEOUT_MS above: not "how long
+ *  until a human responds to a wallet prompt" (the user already responded by the time a bundle id
+ *  comes back from requestAtomicBatch), but "how long until the batch is mined on Base and
+ *  Safe{Wallet}'s own backend has indexed and reported it back" -- real-world confirmed to
+ *  regularly exceed 90 seconds even for an already-successful transaction, which previously
+ *  surfaced as a false "something went wrong" error on a strategy that had, in fact, shipped. */
+const BATCH_CONFIRMATION_TIMEOUT_MS = 5 * 60_000;
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
@@ -318,7 +326,7 @@ export async function requestAtomicBatch(
  *  requestAtomicBatch's own doc comment for why a failure here must not be retried per-step. */
 export async function confirmAtomicBatch(id: string, provider: EIP1193Provider): Promise<Hex> {
   const client = createWalletClient({ chain: base, transport: custom(provider) });
-  const { receipts, status } = await waitForCallsStatus(client, { id, timeout: STEP_TIMEOUT_MS });
+  const { receipts, status } = await waitForCallsStatus(client, { id, timeout: BATCH_CONFIRMATION_TIMEOUT_MS });
   const transactionHash = receipts?.[0]?.transactionHash;
   if (status !== "success" || !transactionHash) {
     throw new Error(`EIP-5792 batch did not succeed (status: ${status ?? "unknown"})`);
