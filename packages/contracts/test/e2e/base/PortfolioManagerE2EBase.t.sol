@@ -192,6 +192,14 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
         return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
     }
 
+    /// @dev Docks a shipped strategy. Aqua.dock() keys its ledger entry on msg.sender as the
+    ///      maker, so this must run as pmSafe directly -- no Safe execTransaction needed, since
+    ///      dock has no other access-control dependency on the Safe's own code.
+    function _dock(bytes32 strategyHash, address[] memory tokens) internal {
+        vm.prank(address(pmSafe));
+        aqua.dock(address(router), strategyHash, tokens);
+    }
+
     function _swapExactIn(ISwapVM.Order memory order, address tokenIn, address tokenOut, uint256 amount)
         internal
         returns (uint256, uint256)

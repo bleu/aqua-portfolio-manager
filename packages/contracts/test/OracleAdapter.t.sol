@@ -39,6 +39,32 @@ contract MockAggregatorV3 is AggregatorV3Interface {
     }
 }
 
+/// @dev Unlike MockAggregatorV3, models startedAt and updatedAt as genuinely distinct -- a real
+///      Chainlink sequencer-uptime feed republishes on a routine heartbeat (bumping updatedAt)
+///      long after the sequencer's status last actually changed (startedAt stays fixed). A mock
+///      that collapses both to one timestamp can't catch a bug that reads the wrong one of the
+///      two, which is exactly how requireSequencerUp's tuple-destructuring bug (reading
+///      updatedAt's position into a variable named startedAt) shipped undetected.
+contract MockSequencerFeed is AggregatorV3Interface {
+    int256 public answer;
+    uint256 public startedAt;
+    uint256 public updatedAt;
+
+    constructor(int256 initialAnswer, uint256 initialStartedAt, uint256 initialUpdatedAt) {
+        answer = initialAnswer;
+        startedAt = initialStartedAt;
+        updatedAt = initialUpdatedAt;
+    }
+
+    function decimals() external pure returns (uint8) {
+        return 0;
+    }
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (1, answer, startedAt, updatedAt, 1);
+    }
+}
+
 /// @dev Reverts on every call -- proves a feed was never actually read, e.g. because
 ///      groupValueWadWithOverride's override path replaced it instead of calling it.
 contract RevertingAggregatorV3 is AggregatorV3Interface {
@@ -228,6 +254,36 @@ contract OracleAdapterTest is Test {
         vm.warp(1_000_000);
         MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp - 1 hours);
         OracleAdapter.requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
+    }
+
+    /// @dev Reproduces the real failure this was caught from: a sequencer that last changed
+    ///      status months ago (startedAt), but whose feed republished a routine heartbeat minutes
+    ///      ago (updatedAt). Must NOT revert -- a feed reading the wrong tuple position treats
+    ///      every heartbeat as a fresh restart and blocks for a full grace period after each one.
+    function test_RequireSequencerUpIgnoresRoutineHeartbeatUpdatedAt() public {
+        vm.warp(200 days);
+        MockSequencerFeed sequencerFeed =
+            new MockSequencerFeed(0, block.timestamp - 120 days, block.timestamp - 5 minutes);
+        OracleAdapter.requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
+    }
+
+    /// @dev The mirror case: a feed whose heartbeat looks old (updatedAt) but whose sequencer
+    ///      status genuinely just changed (startedAt) must still revert -- proves the fix reads
+    ///      startedAt, not just "whichever is older".
+    function test_RequireSequencerUpStillRevertsOnRealRecentRestartDespiteOldUpdatedAt() public {
+        vm.warp(200 days);
+        MockSequencerFeed sequencerFeed =
+            new MockSequencerFeed(0, block.timestamp - 30 minutes, block.timestamp - 120 days);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OracleAdapter.OracleAdapterSequencerGracePeriodNotElapsed.selector,
+                address(sequencerFeed),
+                uint256(30 minutes),
+                OracleAdapter.SEQUENCER_GRACE_PERIOD
+            )
+        );
+        this._requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
     }
 
     function test_GroupValueSumsAcrossDifferentTokenAndFeedDecimals() public {

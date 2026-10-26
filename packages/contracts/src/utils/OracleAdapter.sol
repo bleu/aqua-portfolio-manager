@@ -117,7 +117,7 @@ library OracleAdapter {
     /// @dev Chainlink's sequencer-uptime feed reuses AggregatorV3Interface: answer == 0 means up,
     ///      answer == 1 means down, and startedAt is when that status last changed.
     function requireSequencerUp(AggregatorV3Interface sequencerUptimeFeed) internal view {
-        (, int256 answer,, uint256 startedAt,) = sequencerUptimeFeed.latestRoundData();
+        (, int256 answer, uint256 startedAt,,) = sequencerUptimeFeed.latestRoundData();
         require(answer == 0, OracleAdapterSequencerDown(address(sequencerUptimeFeed)));
 
         uint256 timeSinceUp = block.timestamp - startedAt;
