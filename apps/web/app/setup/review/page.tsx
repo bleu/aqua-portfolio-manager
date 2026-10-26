@@ -134,10 +134,6 @@ export default function Page() {
     setSteps(builtSteps.map((step) => ({ label: step.label, status: "pending" })));
 
     try {
-      const provider = (await connector.getProvider()) as {
-        request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
-      };
-
       let txHash: Address | undefined;
       for (let i = 0; i < builtSteps.length; i++) {
         const step = builtSteps[i]!;
@@ -148,6 +144,16 @@ export default function Page() {
           setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "done" } : s)));
           continue;
         }
+
+        // Fetched fresh for every step, not once before the loop: a real multi-step run showed
+        // the first eth_sendTransaction on a session succeed (confirmed on-chain) and the next
+        // one on that same provider reference silently never reach the wallet -- no error on
+        // either side, and a direct simulation confirmed the pending call itself was valid and
+        // would have succeeded. Re-fetching the provider per step is the fix being tried for
+        // that; this comment should be revisited if it doesn't hold up under more testing.
+        const provider = (await connector.getProvider()) as {
+          request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+        };
 
         setSteps((prev) => prev?.map((s, j) => (j === i ? { ...s, status: "active" } : s)));
         try {
