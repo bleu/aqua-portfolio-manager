@@ -65,34 +65,85 @@ export default function Page() {
   if (!isConnected || !address) return null;
 
   const network = chain?.name ?? "Base";
-  const activeStrategy = loadActiveStrategy(address);
 
-  if (!activeStrategy) {
+  // The indexer, not the local snapshot below, is the real source of truth for whether a
+  // strategy is active -- see useActivePmStrategy's own doc comment. The local snapshot is only
+  // ever written when the /setup/activated page's "Go to dashboard" button is clicked, which a
+  // real shipped strategy can easily never reach (a slow confirmation, a closed tab, an error
+  // screen after the transaction had actually already succeeded). Gating on it alone left a
+  // genuinely active, correctly-shipped strategy showing "set up a new PM" instead of the
+  // dashboard -- confirmed happening on a real strategy, not a hypothetical.
+  if (!activePmStrategy) {
     return (
       <EmptyDashboardPage network={network} safeAddress={address} onStartSetup={() => router.push("/setup/baskets")} />
     );
   }
 
-  const baskets = activeStrategy.baskets.map((basket) => {
-    const basketTokens = tokens.filter((t) => basket.tokenAddresses.includes(t.address));
-    const managedValue = basketTokens.reduce((sum, t) => sum + t.value, 0);
-    return {
-      id: basket.id,
-      name: basket.name,
-      color: basket.color,
-      managedValue,
-      currentPct: activeStrategy.targetsPct[basket.id] ?? 0,
-      targetPct: activeStrategy.targetsPct[basket.id] ?? 0,
-      tokens: basketTokens.map((t) => ({
-        symbol: t.symbol,
-        name: t.symbol,
-        address: t.address,
-        iconUrl: t.iconUrl,
-        balance: t.balance,
-        value: t.value,
-      })),
-    };
-  });
+  const activeStrategy = loadActiveStrategy(address);
+
+  let baskets: {
+    id: string;
+    name: string;
+    color: string;
+    managedValue: number;
+    currentPct: number;
+    targetPct: number;
+    tokens: { symbol: string; name: string; address: string; iconUrl?: string; balance: number; value: number }[];
+  }[];
+  let updatedAt: number;
+
+  if (activeStrategy) {
+    // The nice path: a local snapshot exists, so basket names, colors, and the original target
+    // split (never stored on-chain or in the indexer -- a pure wizard/UI concept) are available.
+    baskets = activeStrategy.baskets.map((basket) => {
+      const basketTokens = tokens.filter((t) => basket.tokenAddresses.includes(t.address));
+      const managedValue = basketTokens.reduce((sum, t) => sum + t.value, 0);
+      return {
+        id: basket.id,
+        name: basket.name,
+        color: basket.color,
+        managedValue,
+        currentPct: activeStrategy.targetsPct[basket.id] ?? 0,
+        targetPct: activeStrategy.targetsPct[basket.id] ?? 0,
+        tokens: basketTokens.map((t) => ({
+          symbol: t.symbol,
+          name: t.symbol,
+          address: t.address,
+          iconUrl: t.iconUrl,
+          balance: t.balance,
+          value: t.value,
+        })),
+      };
+    });
+    updatedAt = activeStrategy.activatedAt;
+  } else {
+    // The indexer confirms an active strategy but nothing was ever saved locally -- show the real
+    // managed tokens as one basket rather than fabricating a target split this app never recorded.
+    const managedTokens = tokens.filter((t) =>
+      activePmStrategy.tokens.some((managed) => managed.toLowerCase() === t.address.toLowerCase()),
+    );
+    const managedValue = managedTokens.reduce((sum, t) => sum + t.value, 0);
+    baskets = [
+      {
+        id: "managed",
+        name: "Managed tokens",
+        color: "#6366f1",
+        managedValue,
+        currentPct: 100,
+        targetPct: 100,
+        tokens: managedTokens.map((t) => ({
+          symbol: t.symbol,
+          name: t.symbol,
+          address: t.address,
+          iconUrl: t.iconUrl,
+          balance: t.balance,
+          value: t.value,
+        })),
+      },
+    ];
+    updatedAt = Number(activePmStrategy.shippedAt) * 1000;
+  }
+
   const managedValue = baskets.reduce((sum, b) => sum + b.managedValue, 0);
   const chartSeries = baskets.map((b) => ({
     id: b.id,
@@ -106,7 +157,7 @@ export default function Page() {
     <ActivePortfolioManagerDashboardPage
       network={network}
       safeAddress={address}
-      updatedAt={activeStrategy.activatedAt}
+      updatedAt={updatedAt}
       managedValue={managedValue}
       netLpFeesEarned={0}
       routedVolume={0}

@@ -7,12 +7,14 @@ import { PM_ROUTER_ADDRESS } from "./contracts";
 /** The connected Safe's own active Portfolio Manager strategy, read from the indexer -- the real
  *  source of truth for what Aqua.dock() needs (strategyHash and the exact token set it shipped
  *  with), independent of any local wizard state. */
-export type ActivePmStrategy = { strategyHash: Hex; tokens: Address[] };
+/** shippedAt is Ponder's bigint seconds-since-epoch, serialized as a string over GraphQL to avoid
+ *  precision loss -- multiply by 1000 and parse for a JS Date. */
+export type ActivePmStrategy = { strategyHash: Hex; tokens: Address[]; shippedAt: string };
 
 const QUERY = `
   query ActivePmStrategy($maker: String!, $app: String!) {
     strategys(where: { maker: $maker, app: $app, isActive: true }, limit: 1) {
-      items { strategyHash tokens }
+      items { strategyHash tokens shippedAt }
     }
   }
 `;
