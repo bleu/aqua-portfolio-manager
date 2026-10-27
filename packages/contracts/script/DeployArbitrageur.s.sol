@@ -11,7 +11,13 @@ import {Arbitrageur} from "../src/Arbitrageur.sol";
 ///         `tokenIn` -- see Arbitrageur.sol's own doc comment; the arbitrage trade itself is
 ///         against the PM Router, never against a V4 pool).
 contract DeployArbitrageur is Script {
-    address internal constant ROUTER = 0x02a11927B0a1c701FEB589Ca86886F4ae1F85f02;
+    // The current PortfolioManagerRouter (packages/contracts/script/RedeployValidatorAndRouter.s.sol's
+    // own 2026-10-26 run) -- the previous constant here pointed at a stale router address that
+    // predated even the last router redeploy, so any trade this contract attempted would have
+    // targeted a strategy registry nothing is actually shipped under. ROUTER is immutable once
+    // deployed (Arbitrageur.sol), so a router change always means a fresh deployment, never a
+    // config update to the existing contract.
+    address internal constant ROUTER = 0x42A61d818BA014Baa78E6658a69930f4BA7465dC;
     address internal constant POOL_MANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
 
     function run() external returns (Arbitrageur arbitrageur) {
