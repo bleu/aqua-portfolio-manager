@@ -29,6 +29,25 @@ services:
     volumes:
       - redis-data:/data
 
+  # Dedicated to this service alone -- not shared with the byos project's own Fynd containers
+  # running on the same host (different chain, different team's deployment). Pinned to the same
+  # image tag already proven working there. --tycho-url is deliberately not overridden: Fynd
+  # defaults it to the right endpoint for --chain base on its own (confirmed via `fynd serve
+  # --help`); the byos BSC instances override it because BSC isn't one of Fynd's defaults.
+  fynd:
+    image: ghcr.io/propeller-heads/fynd:0.114.4
+    restart: unless-stopped
+    command: ["serve", "--chain", "base"]
+    environment:
+      TYCHO_API_KEY: ${TYCHO_API_KEY:?error}
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
+    ports:
+      - "${FYND_HOST_PORT:?error}:3000"
+
 networks:
   default:
     name: ${PROJECT_PREFIX:?error}-default
