@@ -1,0 +1,62 @@
+services:
+  arbitrageur:
+    image: aqua-pm-arbitrageur:${APP_REVISION}
+    build:
+      # The monorepo root, not this directory -- see ../Dockerfile's own comment for why.
+      context: ../../..
+      dockerfile: apps/arbitrageur/Dockerfile
+    ports:
+      - "${OPERATIONS_API_HOST_PORT:?error}:${OPERATIONS_API_PORT:-3001}"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    restart: always
+    environment:
+      RPC_URL: ${RPC_URL:?error}
+      PRIVATE_KEY: ${PRIVATE_KEY:?error}
+      ARBITRAGEUR_ADDRESS: ${ARBITRAGEUR_ADDRESS:?error}
+      EXECUTOR_VERSION: ${EXECUTOR_VERSION:-v1}
+
+      # Internal service names (postgres/redis), not localhost -- this and docker-compose.yml
+      # share one network (see both files' own `networks.default.name`).
+      DATABASE_URL: postgres://${POSTGRES_USER:?error}:${POSTGRES_PASSWORD:?error}@postgres:5432/${POSTGRES_DB:?error}
+      REDIS_URL: redis://redis:6379
+
+      INDEXER_GRAPHQL_URL: ${INDEXER_GRAPHQL_URL:?error}
+
+      ALLOWED_TOKENS: ${ALLOWED_TOKENS:?error}
+      ALLOWED_FEEDS: ${ALLOWED_FEEDS:?error}
+
+      FYND_URL: ${FYND_URL:?error}
+      FYND_CHAIN: ${FYND_CHAIN:-base}
+      FYND_SLIPPAGE_BPS: ${FYND_SLIPPAGE_BPS:-50}
+      FYND_MIN_RESPONSES: ${FYND_MIN_RESPONSES:-1}
+      FYND_TIMEOUT_MS: ${FYND_TIMEOUT_MS:-5000}
+
+      MIN_TRADE_USD: ${MIN_TRADE_USD:-1}
+      MAX_TRADE_USD: ${MAX_TRADE_USD:-1000}
+      MIN_PROFIT_USD: ${MIN_PROFIT_USD:-5}
+      MAX_PRICE_STALENESS_SECONDS: ${MAX_PRICE_STALENESS_SECONDS:-3600}
+      SLIPPAGE_BUFFER_BPS: ${SLIPPAGE_BUFFER_BPS:-50}
+      DEADLINE_BUFFER_SECONDS: ${DEADLINE_BUFFER_SECONDS:-60}
+
+      CONFIRMATION_DEPTH: ${CONFIRMATION_DEPTH:-5}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-5000}
+      RECOVERY_INTERVAL_MS: ${RECOVERY_INTERVAL_MS:-60000}
+
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+
+      OPERATIONS_API_PORT: ${OPERATIONS_API_PORT:-3001}
+      OPERATIONS_API_TOKEN: ${OPERATIONS_API_TOKEN:?error}
+
+      # Defaults safe (no transaction submission) -- a deploy that forgets to set this explicitly
+      # should never accidentally start live. Set DRY_RUN=false in the env file to go live.
+      DRY_RUN: ${DRY_RUN:-true}
+
+networks:
+  default:
+    name: ${PROJECT_PREFIX:?error}-default
+    external: ${EXTERNAL_RESOURCES:-false}
