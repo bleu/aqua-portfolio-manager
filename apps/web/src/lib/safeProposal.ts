@@ -9,6 +9,7 @@ import {
   http,
   keccak256,
   maxUint256,
+  toHex,
   zeroAddress,
   type Address,
   type Hex,
@@ -16,7 +17,7 @@ import {
 import { getCapabilities, sendCalls, waitForCallsStatus } from "viem/actions";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
-import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
+import { appendNonceToProgram, buildOrder, buildProgram, decodeOrder, encodeOrder, type Group, type Order } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
 
 export type EIP1193Provider = { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> };
@@ -332,6 +333,80 @@ export async function buildShipSteps({
   return steps;
 }
 
+/** Builds the steps that reship an exact copy of a strategy this Safe already docked --
+ *  approve + attest + ship only, sourced entirely from the indexer's own StrategyHistoryEntry
+ *  (encodedOrder, tokens, groupNames), not local wizard drafts -- those are a best-effort, per-
+ *  Safe snapshot that's wiped the moment a strategy is docked (see activeStrategyStorage.ts's own
+ *  doc comment), so they can't be trusted for a strategy that might be several dockings old or
+ *  shipped from a different device entirely. Only the program's trailing bytes change (see
+ *  appendNonceToProgram's own doc comment for why that's enough to get a fresh, shippable
+ *  strategyHash) -- every real field decodes identically, so this is genuinely the same strategy.
+ *
+ *  Deliberately does not add deployGuard/setGuard steps the way buildShipSteps does: building the
+ *  Guard's tokens[]/basketIds[] correctly needs the original basket *boundaries* (which token
+ *  belonged to which group), and the indexer only stores the flat, already-shipped token list,
+ *  not that grouping. Guessing at a grouping (e.g. one basket with everything) would produce a
+ *  Guard that looks protective but doesn't actually block anything -- worse than no Guard, since
+ *  it'd look like protection that isn't there. */
+export async function buildReshipSteps({
+  encodedOrder,
+  tokens,
+  groupNames,
+  balances,
+  tokenSymbols,
+}: {
+  /** The exact bytes Aqua emitted for the strategy being reshipped (StrategyHistoryEntry.encodedOrder)
+   *  -- already carries the maker (this Safe's own address, by construction of the indexer query
+   *  that produced it), so no separate safeAddress param is needed here. */
+  encodedOrder: Hex;
+  tokens: Address[];
+  groupNames: string[] | null;
+  balances: Record<Address, bigint>;
+  tokenSymbols: Record<Address, string>;
+}): Promise<ShipStep[]> {
+  const original = decodeOrder(encodedOrder);
+  const nonce = toHex(crypto.getRandomValues(new Uint8Array(8)));
+  const newOrder: Order = { ...original, data: appendNonceToProgram(original.data, nonce) };
+  const newEncodedOrder = encodeOrder(newOrder);
+  const strategyHash = keccak256(newEncodedOrder);
+
+  const uniqueTokens = [...new Set(tokens)];
+  const amounts = tokens.map((t) => balances[t] ?? 0n);
+
+  return [
+    ...uniqueTokens.map(
+      (token): ShipStep => ({
+        kind: "approve",
+        label: `Approve ${tokenSymbols[token] ?? token}`,
+        to: token,
+        data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [AQUA_ADDRESS, maxUint256] }),
+        token,
+      }),
+    ),
+    {
+      kind: "attest",
+      label: "Confirm strategy parameters",
+      to: PM_STRATEGY_VALIDATOR_ADDRESS,
+      data: encodeFunctionData({
+        abi: VALIDATOR_ABI,
+        functionName: "attestBuildParameters",
+        args: [newOrder, tokens, groupNames ?? []],
+      }),
+      strategyHash,
+    },
+    {
+      kind: "ship",
+      label: "Reactivate the strategy",
+      to: AQUA_ADDRESS,
+      data: encodeFunctionData({
+        abi: AQUA_ABI,
+        functionName: "ship",
+        args: [PM_ROUTER_ADDRESS, newEncodedOrder, tokens, amounts],
+      }),
+    },
+  ];
+}
+
 /** Checks on-chain whether a step has already gone through -- so retrying after a partial failure
  *  (e.g. one approval succeeded, a later step failed) doesn't ask the wallet to redundantly
  *  reconfirm something already done. No check exists yet for the final "ship" step (Aqua.ship()
@@ -465,4 +540,92 @@ export async function confirmAtomicBatch(id: string, provider: EIP1193Provider):
     throw new Error(`EIP-5792 batch did not succeed (status: ${status ?? "unknown"})`);
   }
   return transactionHash;
+}
+
+export type ShipConnector = { id: string; getProvider: () => Promise<unknown> };
+
+/** Sends every step not already done, through whichever path the connected wallet supports --
+ *  Safe App batch, EIP-5792 atomic batch, or one eth_sendTransaction per step, falling back in
+ *  that order exactly the way the ship wizard's review page originally did inline. Extracted here
+ *  so a second flow (the History page's reship action) doesn't have to re-derive this branching
+ *  and risk reintroducing the real bug sendTransactionsViaSafeAppsSdk's own doc comment describes
+ *  (a hand-rolled MultiSendCallOnly batch making it the maker instead of the Safe).
+ *  `onStepStatus` is optional -- a caller that doesn't render a per-step list can omit it. */
+export async function executeShipSteps({
+  steps,
+  safeAddress,
+  connector,
+  onStepStatus,
+}: {
+  steps: ShipStep[];
+  safeAddress: Address;
+  connector: ShipConnector;
+  onStepStatus?: (index: number, status: "done" | "active" | "error") => void;
+}): Promise<Address | undefined> {
+  const remaining: { index: number; step: ShipStep }[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    if (await isStepAlreadyDone(step, safeAddress)) {
+      onStepStatus?.(i, "done");
+    } else {
+      remaining.push({ index: i, step });
+    }
+  }
+
+  let txHash: Address | undefined;
+  if (remaining.length > 0 && connector.id === "safe") {
+    // Embedded as a Safe App: one real Safe batch via the Safe Apps SDK, which Safe{Wallet}
+    // itself constructs (and correctly delegates into) -- see sendTransactionsViaSafeAppsSdk's
+    // own doc comment for why this replaced packing calls into MultiSendCallOnly by hand.
+    remaining.forEach(({ index }) => onStepStatus?.(index, "active"));
+    try {
+      txHash = await sendTransactionsViaSafeAppsSdk(remaining.map(({ step }) => ({ to: step.to, data: step.data })));
+    } catch (stepErr) {
+      remaining.forEach(({ index }) => onStepStatus?.(index, "error"));
+      throw stepErr;
+    }
+    remaining.forEach(({ index }) => onStepStatus?.(index, "done"));
+  } else if (remaining.length > 0) {
+    // Any other connector (WalletConnect): plain eth_sendTransaction has no way to ask Safe to
+    // batch, but a wallet that declares EIP-5792 support (confirmed so far: only Safe{Wallet},
+    // see supportsAtomicBatch's own doc comment) can still batch atomically via wallet_sendCalls.
+    // Falls back to one eth_sendTransaction per step for any wallet that doesn't report support,
+    // or whose wallet_sendCalls request itself fails (not a later confirmation failure -- see
+    // requestAtomicBatch's own doc comment for why).
+    const provider = (await connector.getProvider()) as EIP1193Provider;
+    const calls = remaining.map(({ step }) => ({ to: step.to, data: step.data }));
+
+    let batchId: string | undefined;
+    if (remaining.length > 1 && (await supportsAtomicBatch(safeAddress, provider))) {
+      try {
+        ({ id: batchId } = await requestAtomicBatch(calls, safeAddress, provider));
+      } catch {
+        batchId = undefined; // Falls through to the per-step loop below.
+      }
+    }
+
+    if (batchId) {
+      remaining.forEach(({ index }) => onStepStatus?.(index, "active"));
+      try {
+        txHash = await confirmAtomicBatch(batchId, provider);
+      } catch (stepErr) {
+        remaining.forEach(({ index }) => onStepStatus?.(index, "error"));
+        throw stepErr;
+      }
+      remaining.forEach(({ index }) => onStepStatus?.(index, "done"));
+    } else {
+      for (const { index, step } of remaining) {
+        onStepStatus?.(index, "active");
+        try {
+          txHash = await sendTransaction(step.to, step.data, safeAddress, provider);
+        } catch (stepErr) {
+          onStepStatus?.(index, "error");
+          throw stepErr;
+        }
+        onStepStatus?.(index, "done");
+      }
+    }
+  }
+
+  return txHash;
 }

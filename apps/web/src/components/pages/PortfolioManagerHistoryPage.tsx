@@ -1,5 +1,6 @@
 import { AppHeader } from "@/components/AppHeader";
 import { Badge } from "@/components/Badge";
+import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import type { TabNavItem } from "@/components/TabNav";
 import { formatRelativeTime, truncateAddress } from "@/lib/format";
@@ -13,6 +14,15 @@ export type PortfolioManagerHistoryPageProps = {
   error?: string;
   symbolForToken: (tokenAddress: string) => string;
   onSelectTab?: (label: string) => void;
+  /** Reships an exact copy of a docked strategy (see safeProposal.ts's buildReshipSteps) --
+   *  omitted entirely (no button renders) when there's already an active strategy on this Safe,
+   *  since Aqua has no built-in "one active strategy per Safe" limit and this app's dashboard
+   *  isn't built to show two. */
+  onReship?: (strategyHash: string) => void;
+  /** strategyHash of the entry currently being reshipped, if any -- disables every Reship button
+   *  while one is in flight, not just the one clicked. */
+  reshippingStrategyHash?: string;
+  reshipError?: string;
 };
 
 const TABS: TabNavItem[] = [{ label: "Portfolio Manager" }, { label: "History", active: true }];
@@ -28,7 +38,11 @@ export function PortfolioManagerHistoryPage({
   error,
   symbolForToken,
   onSelectTab,
+  onReship,
+  reshippingStrategyHash,
+  reshipError,
 }: PortfolioManagerHistoryPageProps) {
+  const hasActiveStrategy = !!entries?.some((e) => e.isActive);
   return (
     <div className="min-h-screen">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} onSelectTab={onSelectTab} />
@@ -82,6 +96,21 @@ export function PortfolioManagerHistoryPage({
                     </div>
                   )}
                 </div>
+
+                {!entry.isActive && !hasActiveStrategy && onReship && (
+                  <div className="mt-4">
+                    <Button
+                      variant="secondary"
+                      onClick={() => onReship(entry.strategyHash)}
+                      disabled={!!reshippingStrategyHash}
+                    >
+                      {reshippingStrategyHash === entry.strategyHash ? "Reshipping…" : "Reship this strategy"}
+                    </Button>
+                    {reshippingStrategyHash === entry.strategyHash && reshipError && (
+                      <p className="mt-2 text-sm text-red-400">{reshipError}</p>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

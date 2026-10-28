@@ -1,4 +1,4 @@
-import { concatHex, encodeAbiParameters, numberToHex, type Address, type Hex } from "viem";
+import { concatHex, decodeAbiParameters, encodeAbiParameters, numberToHex, size, slice, type Address, type Hex } from "viem";
 
 /** Byte-for-byte TypeScript port of packages/contracts/src/utils/PortfolioManagerArgsCodec.sol's
  *  build() and packages/contracts/src/utils/PortfolioManagerProgramBuilder.sol's build() --
@@ -140,20 +140,46 @@ export function buildOrder(maker: Address, program: Hex): Order {
   return { maker, traits: USE_AQUA_INSTEAD_OF_SIGNATURE_BIT_FLAG, data: program };
 }
 
+const ORDER_ABI_PARAM = {
+  type: "tuple",
+  components: [
+    { name: "maker", type: "address" },
+    { name: "traits", type: "uint256" },
+    { name: "data", type: "bytes" },
+  ],
+} as const;
+
 /** ABI-encodes the ISwapVM.Order struct for Aqua.ship(router, abi.encode(order), tokens, amounts)
  *  -- plain Solidity ABI encoding (not packed), so viem's standard encoder applies directly. */
 export function encodeOrder(order: Order): Hex {
-  return encodeAbiParameters(
-    [
-      {
-        type: "tuple",
-        components: [
-          { name: "maker", type: "address" },
-          { name: "traits", type: "uint256" },
-          { name: "data", type: "bytes" },
-        ],
-      },
-    ],
-    [order],
-  );
+  return encodeAbiParameters([ORDER_ABI_PARAM], [order]);
+}
+
+/** The exact reverse of encodeOrder -- decodes the `encodedOrder` bytes the indexer stores
+ *  straight from Aqua's own Shipped event (see apps/indexer/ponder.schema.ts's strategy.encodedOrder
+ *  doc comment) back into {maker, traits, data}, so a History-page reship can recover the
+ *  original strategy's program bytes without needing any local wizard state. */
+export function decodeOrder(encodedOrder: Hex): Order {
+  const [order] = decodeAbiParameters([ORDER_ABI_PARAM], encodedOrder);
+  return order as Order;
+}
+
+/** Appends `nonce` to the end of an already-built program's own args section, bumping the
+ *  program's own 1-byte argsLength header to match. PortfolioManagerArgsCodec.parse() and
+ *  decodeTrusted() (packages/contracts/src/utils/PortfolioManagerArgsCodec.sol) only ever read
+ *  fixed offsets through maxDeviationBps and never check those offsets consume the whole args
+ *  blob -- confirmed by reading both functions directly, not assumed -- so trailing bytes decode
+ *  as if they weren't there: every real field (baskets, tokens, fee, deviation) stays identical,
+ *  only the program's raw bytes, and therefore Aqua's strategyHash = keccak256(abi.encode(order)),
+ *  change. This is how a History-page reship gets a strategy that is economically identical to
+ *  one already docked -- Aqua's own StrategiesMustBeImmutable has no path back to shippable for
+ *  the original hash, but a nonce byte makes it a "new" strategy Aqua has never seen. */
+export function appendNonceToProgram(program: Hex, nonce: Hex): Hex {
+  const opcode = slice(program, 0, 1);
+  const argsLength = size(program) - 2;
+  const args = slice(program, 2, 2 + argsLength);
+  const newArgs = concatHex([args, nonce]);
+  const newArgsLength = size(newArgs);
+  requireArgs(newArgsLength <= 255, `PortfolioManagerArgsTooLarge(${newArgsLength})`);
+  return concatHex([opcode, numberToHex(newArgsLength, { size: 1 }), newArgs]);
 }

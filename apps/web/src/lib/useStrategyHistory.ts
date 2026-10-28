@@ -10,7 +10,14 @@ import { PM_ROUTER_ADDRESS } from "./contracts";
  *  still-active strategy. */
 export type StrategyHistoryEntry = {
   strategyHash: Hex;
+  /** Aqua's own Shipped `strategy` bytes (abi.encode(ISwapVM.Order)) -- everything needed to
+   *  reship an exact copy of this strategy (see safeProposal.ts's buildReshipSteps), independent
+   *  of any local wizard draft. */
+  encodedOrder: Hex;
   tokens: Address[];
+  /** Null when this strategy was shipped without a matching attestBuildParameters call, or one
+   *  that declined to name groups -- see ponder.schema.ts's own strategy.groupNames comment. */
+  groupNames: string[] | null;
   isActive: boolean;
   shippedAt: string;
   shippedAtTxHash: Hex;
@@ -21,7 +28,7 @@ export type StrategyHistoryEntry = {
 const QUERY = `
   query StrategyHistory($maker: String!, $app: String!) {
     strategys(where: { maker: $maker, app: $app }, orderBy: "shippedAt", orderDirection: "desc", limit: 100) {
-      items { strategyHash tokens isActive shippedAt shippedAtTxHash dockedAt dockedAtTxHash }
+      items { strategyHash encodedOrder tokens groupNames isActive shippedAt shippedAtTxHash dockedAt dockedAtTxHash }
     }
   }
 `;
