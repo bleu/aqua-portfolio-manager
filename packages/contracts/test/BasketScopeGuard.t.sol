@@ -8,6 +8,7 @@ import {Aqua} from "aqua/Aqua.sol";
 import {Safe} from "safe-smart-account/contracts/Safe.sol";
 import {SafeProxyFactory} from "safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 import {Enum} from "safe-smart-account/contracts/libraries/Enum.sol";
+import {MultiSendCallOnly} from "safe-smart-account/contracts/libraries/MultiSendCallOnly.sol";
 
 /// @dev Minimal module that just forwards one call through `execTransactionFromModule`,
 ///      so the test can exercise the Guard's `checkModuleTransaction` path for real.
@@ -455,5 +456,274 @@ contract BasketScopeGuardTest is Test {
 
         bool ok = module.forward(safe, address(aqua), _shipCalldata("legit strategy via module", tokens));
         assertTrue(ok, "single-basket ship via module should succeed once the module guard is installed");
+    }
+
+    // ---------------------------------------------------------------------
+    // One-level MultiSend unwrapping.
+
+    /// @dev Must match BasketScopeGuard.sol's own hardcoded constants exactly -- there's no public
+    ///      getter for them (minimal surface on the real contract), so the test re-declares the
+    ///      same literals on purpose, not by import.
+    address internal constant MULTISEND_CALL_ONLY_CANONICAL = 0x40A2aCCbd92BCA938b02010E17A5b8929b49130D;
+    address internal constant MULTISEND_CALL_ONLY_SAFE_WALLET = 0xA83c336B20401Af773B6219BA5027174338D1836;
+
+    /// @dev Places a real, working MultiSendCallOnly at one of the guard's two hardcoded trusted
+    ///      addresses -- vm.etch, not a fork, since a freshly-deployed instance in a local test
+    ///      would land at whatever address CREATE gives it, never the real mainnet address the
+    ///      guard actually trusts. Copies real bytecode (a fresh deployment's own .code), not a
+    ///      hand-written stand-in, so these tests exercise MultiSendCallOnly's real packing
+    ///      semantics, not an assumption about them.
+    function _etchMultiSendCallOnlyAt(address target) internal {
+        vm.etch(target, address(new MultiSendCallOnly()).code);
+    }
+
+    function _packMultiSendEntry(address to, bytes memory data) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(0), to, uint256(0), data.length, data);
+    }
+
+    function _signForDelegateCall(Safe safe, uint256 ownerPk, address to, bytes memory data)
+        internal
+        view
+        returns (bytes memory signature)
+    {
+        bytes32 txHash = safe.getTransactionHash(
+            to, 0, data, Enum.Operation.DelegateCall, 0, 0, 0, address(0), address(0), safe.nonce()
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPk, txHash);
+        signature = abi.encodePacked(r, s, v);
+    }
+
+    function _execMultiSendBatchViaOwner(Safe safe, uint256 ownerPk, address relay, bytes memory packedEntries)
+        internal
+        returns (bool)
+    {
+        bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (packedEntries));
+        bytes memory signature = _signForDelegateCall(safe, ownerPk, relay, multiSendData);
+        return safe.execTransaction(
+            relay, 0, multiSendData, Enum.Operation.DelegateCall, 0, 0, 0, address(0), payable(address(0)), signature
+        );
+    }
+
+    /// @dev Signs before returning, not inside a vm.expectRevert()-adjacent call -- see _signFor's
+    ///      own comment above: signing reads the Safe's nonce and hash via view calls that would
+    ///      otherwise consume vm.expectRevert()'s "next call" themselves instead of the real
+    ///      execTransaction this is actually testing.
+    function _prepareMultiSendBatch(Safe safe, uint256 ownerPk, address relay, bytes memory packedEntries)
+        internal
+        view
+        returns (bytes memory multiSendData, bytes memory signature)
+    {
+        multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (packedEntries));
+        signature = _signForDelegateCall(safe, ownerPk, relay, multiSendData);
+    }
+
+    function test_Integration_BlocksCrossBasketShipHiddenInsideMultiSendBatch() public {
+        _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_CANONICAL);
+        uint256 ownerPk = 0xA11CE0006;
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA; // basket 1
+        tokens[1] = tokenC; // basket 2
+        bytes memory packed = _packMultiSendEntry(address(aqua), _shipCalldata("attacker strategy via batch", tokens));
+        (bytes memory multiSendData, bytes memory signature) =
+            _prepareMultiSendBatch(safe, ownerPk, MULTISEND_CALL_ONLY_CANONICAL, packed);
+
+        vm.expectRevert();
+        safe.execTransaction(
+            MULTISEND_CALL_ONLY_CANONICAL,
+            0,
+            multiSendData,
+            Enum.Operation.DelegateCall,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            signature
+        );
+    }
+
+    function test_Integration_AllowsWithinBasketShipInsideMultiSendBatch() public {
+        _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_CANONICAL);
+        uint256 ownerPk = 0xA11CE0007;
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+        bytes memory packed = _packMultiSendEntry(address(aqua), _shipCalldata("legit strategy via batch", tokens));
+
+        bool ok = _execMultiSendBatchViaOwner(safe, ownerPk, MULTISEND_CALL_ONLY_CANONICAL, packed);
+        assertTrue(ok, "single-basket ship inside a trusted-relay batch should succeed");
+    }
+
+    function test_Integration_AllowsPmStrategyAcrossBasketsInsideMultiSendBatch() public {
+        _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_CANONICAL);
+        uint256 ownerPk = 0xA11CE0008;
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+
+        address[] memory tokens = new address[](4);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+        tokens[2] = tokenC;
+        tokens[3] = tokenD;
+        bytes memory packed = _packMultiSendEntry(address(aqua), _shipCalldata(pmStrategy, tokens));
+
+        bool ok = _execMultiSendBatchViaOwner(safe, ownerPk, MULTISEND_CALL_ONLY_CANONICAL, packed);
+        assertTrue(ok, "PM's own strategy should be allowed to span baskets inside a trusted-relay batch too");
+    }
+
+    /// @dev The second trusted address (Safe{Wallet}'s own deployed MultiSendCallOnly instance,
+    ///      confirmed via Sourcify to be the exact same source) gets the same real protection,
+    ///      not just the canonical address -- this is the one that matters for a real batch this
+    ///      app's own users actually produce.
+    function test_Integration_BlocksCrossBasketShipViaSafeWalletsOwnMultiSendInstance() public {
+        _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_SAFE_WALLET);
+        uint256 ownerPk = 0xA11CE0009;
+        (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenC;
+        bytes memory packed = _packMultiSendEntry(address(aqua), _shipCalldata("attacker strategy via batch", tokens));
+        (bytes memory multiSendData, bytes memory signature) =
+            _prepareMultiSendBatch(safe, ownerPk, MULTISEND_CALL_ONLY_SAFE_WALLET, packed);
+
+        vm.expectRevert();
+        safe.execTransaction(
+            MULTISEND_CALL_ONLY_SAFE_WALLET,
+            0,
+            multiSendData,
+            Enum.Operation.DelegateCall,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            signature
+        );
+    }
+
+    /// @dev Deliberately out of scope, per this contract's own top doc comment: a batch routed
+    ///      through an address the guard doesn't recognize passes through exactly like any other
+    ///      untrusted target, cross-basket ship buried inside it or not.
+    function test_IgnoresBatchFromAnUntrustedRelayAddress() public view {
+        address untrustedRelay = address(0xBADBAD);
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenC;
+        bytes memory packed =
+            _packMultiSendEntry(address(aqua), _shipCalldata("attacker strategy via unknown relay", tokens));
+        bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (packed));
+
+        // Does not revert -- the guard never even looks inside, since `untrustedRelay` isn't one
+        // of its two trusted addresses.
+        guard.checkTransaction(
+            untrustedRelay,
+            0,
+            multiSendData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
+    }
+
+    /// @dev Pins the explicitly-accepted gap from this contract's own top doc comment: a second,
+    ///      nested batch (a trusted relay's own entry itself targeting a trusted relay again) is
+    ///      not unwrapped a second time. This must NOT revert, even though the cross-basket ship
+    ///      really is in there two levels deep -- proving the guard stops at exactly one level
+    ///      rather than silently doing something unexpected (infinite loop, wrong revert reason)
+    ///      when it meets this shape.
+    function test_DoesNotRecurseIntoASecondNestedMultiSendBatch() public view {
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenC;
+        bytes memory innerPacked =
+            _packMultiSendEntry(address(aqua), _shipCalldata("attacker strategy two levels deep", tokens));
+        bytes memory innerMultiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (innerPacked));
+
+        // The outer batch's one entry targets a trusted relay address again -- from the outer
+        // unwrap's point of view this inner entry is just an ordinary call to AQUA? no: to a
+        // trusted relay, which `_checkSingleCall` (not `_check`) never re-unwraps.
+        bytes memory outerPacked = _packMultiSendEntry(MULTISEND_CALL_ONLY_SAFE_WALLET, innerMultiSendData);
+        bytes memory outerMultiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (outerPacked));
+
+        guard.checkTransaction(
+            MULTISEND_CALL_ONLY_CANONICAL,
+            0,
+            outerMultiSendData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
+    }
+
+    /// @dev The exact attack class Zodiac Roles Modifier's own MultiSendUnwrapper.sol guards
+    ///      against: a declared `bytes` length shorter than the real padded data would make this
+    ///      check parse different bytes than MultiSendCallOnly's own assembly loop (which walks by
+    ///      real offsets, not the declared length) actually executes on-chain.
+    function test_RevertsOnMultiSendHeaderLengthMismatch() public {
+        bytes memory packed = _packMultiSendEntry(address(aqua), _shipCalldata("irrelevant", new address[](0)));
+        bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (packed));
+
+        // Corrupt the declared length word (byte offset 36, right after the selector + the fixed
+        // 0x20 offset word) to claim zero bytes -- a drastic, unambiguous mismatch against the
+        // real payload (ceil32(0) can never equal ceil32(a nonzero length) at any alignment,
+        // unlike a +1 corruption, which can silently land on the same 32-byte-rounded value).
+        assembly {
+            mstore(add(multiSendData, add(0x20, 36)), 0)
+        }
+
+        vm.expectRevert(BasketScopeGuard.MalformedMultiSendHeader.selector);
+        guard.checkTransaction(
+            MULTISEND_CALL_ONLY_CANONICAL,
+            0,
+            multiSendData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
+    }
+
+    function test_RevertsOnMultiSendBodyWithTruncatedEntry() public {
+        // A well-formed header around a body that's too short for the one entry it claims to
+        // hold: this entry's own declared data length reaches past the end of the real buffer.
+        bytes memory truncated = abi.encodePacked(uint8(0), address(aqua), uint256(0), uint256(1_000_000));
+        bytes memory multiSendData = abi.encodeCall(MultiSendCallOnly.multiSend, (truncated));
+
+        vm.expectRevert(BasketScopeGuard.MalformedMultiSendBody.selector);
+        guard.checkTransaction(
+            MULTISEND_CALL_ONLY_CANONICAL,
+            0,
+            multiSendData,
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
     }
 }
