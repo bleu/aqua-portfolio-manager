@@ -48,7 +48,6 @@ export type ActivePortfolioManagerDashboardPageProps = {
   routedTransactionCount: number;
   baskets: DashboardBasket[];
   chartSeries: AllocationHistorySeries[];
-  onUpdateStrategy?: () => void;
   onDeleteStrategy?: () => void;
   isDeletingStrategy?: boolean;
   deleteStrategyError?: string;
@@ -70,7 +69,6 @@ export function ActivePortfolioManagerDashboardPage({
   routedTransactionCount,
   baskets,
   chartSeries,
-  onUpdateStrategy,
   onDeleteStrategy,
   isDeletingStrategy,
   deleteStrategyError,
@@ -99,9 +97,6 @@ export function ActivePortfolioManagerDashboardPage({
             </p>
           </div>
           <div className="relative flex items-center gap-2">
-            <Button variant="accent" onClick={onUpdateStrategy}>
-              Update strategy
-            </Button>
             <IconButton aria-label="More options" onClick={() => setShowMoreMenu((v) => !v)}>
               <MoreIcon className="size-4" />
             </IconButton>
