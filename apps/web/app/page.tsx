@@ -8,8 +8,10 @@ import { wagmiConfig } from "@/lib/wagmi";
 
 const safeConnector = wagmiConfig.connectors.find((c) => c.type === "safe");
 const walletConnectConnector = wagmiConfig.connectors.find((c) => c.type === "walletConnect");
+const baseAccountConnector = wagmiConfig.connectors.find((c) => c.type === "baseAccount");
 
-/** Connection is Safe-only (ADR-0011), not a generic wallet -- see wagmi.ts's own doc comment. */
+/** Two account types connect here, not just Safe -- see ConnectSafePage's own doc comment for
+ *  why a Base Wallet is only ever offered for PM-only use, never shared with another strategy. */
 export default function Page() {
   const router = useRouter();
   const { isConnected } = useAccount();
@@ -18,9 +20,14 @@ export default function Page() {
   const manualConnector = walletConnectConnector ?? safeConnector;
   // Suppresses the silent auto-connect attempt's own failure from showing as a user-facing
   // error -- outside of actually being embedded in Safe{Wallet}, that attempt always fails, and
-  // it isn't something the user did. Only a failure from onConnectSafe's own click below should
-  // ever surface here.
+  // it isn't something the user did. Only a failure from one of the two click handlers below
+  // should ever surface here.
   const [showConnectError, setShowConnectError] = useState(false);
+  // One shared useConnect() call handles both buttons on purpose -- see the existing comment on
+  // attemptedAutoConnect below for why two separate useConnect() instances fight over state
+  // instead of isolating per-connector. This tracks which button's click is in flight, so each
+  // can show its own "Connecting…"/error without the other's attempt bleeding into it.
+  const [attemptingConnectorId, setAttemptingConnectorId] = useState<string>();
 
   // Auto-attempts the Safe connector once on mount, for when this page is actually embedded
   // inside Safe{Wallet} as a Safe App. A real attempt (not a separate silent one) because
@@ -40,29 +47,35 @@ export default function Page() {
     if (isConnected) router.push("/dashboard");
   }, [isConnected, router]);
 
+  async function attemptConnect(connector: NonNullable<typeof manualConnector>) {
+    setShowConnectError(true);
+    setAttemptingConnectorId(connector.uid);
+    // A connector can be left internally marked "connected" after a session died on the wallet's
+    // side (useVerifiedSafeAddress catches that and sends the user back here, but doesn't -- and
+    // can't reliably -- fully reset the connector itself). Clicking Connect then throws
+    // ConnectorAlreadyConnectedError before even attempting a new connection. Forcing a
+    // disconnect first guarantees a clean slate either way -- disconnecting an
+    // already-disconnected connector is a harmless no-op.
+    try {
+      await disconnectAsync({ connector });
+    } catch {
+      // Nothing to tear down, or the old session was already dead -- fine, proceed.
+    }
+    connect({ connector });
+  }
+
   return (
     <ConnectSafePage
-      onConnectSafe={
-        manualConnector
-          ? async () => {
-              setShowConnectError(true);
-              // A connector can be left internally marked "connected" after a session died on the
-              // wallet's side (useVerifiedSafeAddress catches that and sends the user back here,
-              // but doesn't -- and can't reliably -- fully reset the connector itself). Clicking
-              // Connect then throws ConnectorAlreadyConnectedError before even attempting a new
-              // connection. Forcing a disconnect first guarantees a clean slate either way --
-              // disconnecting an already-disconnected connector is a harmless no-op.
-              try {
-                await disconnectAsync({ connector: manualConnector });
-              } catch {
-                // Nothing to tear down, or the old session was already dead -- fine, proceed.
-              }
-              connect({ connector: manualConnector });
-            }
-          : undefined
+      onConnectSafe={manualConnector ? () => attemptConnect(manualConnector) : undefined}
+      isConnecting={isPending && attemptingConnectorId === manualConnector?.uid}
+      connectError={
+        showConnectError && attemptingConnectorId === manualConnector?.uid ? error?.message : undefined
       }
-      isConnecting={isPending}
-      connectError={showConnectError ? error?.message : undefined}
+      onConnectBaseWallet={baseAccountConnector ? () => attemptConnect(baseAccountConnector) : undefined}
+      isConnectingBaseWallet={isPending && attemptingConnectorId === baseAccountConnector?.uid}
+      connectBaseWalletError={
+        showConnectError && attemptingConnectorId === baseAccountConnector?.uid ? error?.message : undefined
+      }
     />
   );
 }

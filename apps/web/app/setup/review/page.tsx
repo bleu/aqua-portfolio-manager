@@ -32,7 +32,9 @@ export default function Page() {
   const address = useVerifiedSafeAddress();
   const { connector } = useAccount();
   const { tokens, rawBalances } = useSafeBalances(address);
-  const { threshold } = useSafeThreshold(address);
+  // A Base Wallet connection has no multisig threshold at all -- see useSafeThreshold's own
+  // doc comment for why this must not even attempt the read for that connector type.
+  const { threshold } = useSafeThreshold(address, connector?.type !== "baseAccount");
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string>();
   const [steps, setSteps] = useState<TransactionStep[]>();
