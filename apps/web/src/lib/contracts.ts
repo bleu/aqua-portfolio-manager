@@ -38,3 +38,12 @@ export const PM_STRATEGY_VALIDATOR_ADDRESS = requiredAddress(
  *  (packages/addresses/base-mainnet.json's "aqua" field) -- not something this repo deploys or
  *  redeploys, but still env-driven rather than hardcoded in case Aqua itself is ever upgraded. */
 export const AQUA_ADDRESS = requiredAddress("NEXT_PUBLIC_AQUA_ADDRESS", process.env.NEXT_PUBLIC_AQUA_ADDRESS);
+
+/** Deliberately optional, unlike every address above: set only once
+ *  packages/contracts/script/DeployBasketScopeGuardFactory.s.sol has actually been run against
+ *  Base mainnet. Left unset, the ship wizard's Guard-deploy/install steps are skipped entirely
+ *  (see buildShipSteps in safeProposal.ts) -- the rest of the app must keep working before that
+ *  one-time deployment happens, so this can't use requiredAddress. */
+export const PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS = process.env.NEXT_PUBLIC_PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS as
+  | Address
+  | undefined;

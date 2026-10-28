@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeStrategyHash, type StrategyGroup } from "./safeProposal";
+import { buildShipSteps, computeStrategyHash, type StrategyGroup } from "./safeProposal";
 
 const MAKER = "0x71a4d045e3Dd40321b5A35e03ed9fc5a8e9F2c3b" as const;
 const GROUPS: StrategyGroup[] = [
@@ -31,5 +31,19 @@ describe("computeStrategyHash", () => {
       MAX_DEVIATION_BPS_PM,
     );
     expect(makerB).not.toBe(makerA);
+  });
+});
+
+describe("buildShipSteps", () => {
+  it("omits the Guard deploy/install steps when no factory address is configured -- the local test env (and any deployment before the factory itself ships) has none set", async () => {
+    const steps = await buildShipSteps({
+      safeAddress: MAKER,
+      groups: GROUPS,
+      feeBpsPm: FEE_BPS_PM,
+      maxDeviationBpsPm: MAX_DEVIATION_BPS_PM,
+      balances: {},
+      tokenSymbols: {},
+    });
+    expect(steps.map((s) => s.kind)).toEqual(["approve", "approve", "attest", "ship"]);
   });
 });

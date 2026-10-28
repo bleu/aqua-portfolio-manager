@@ -130,21 +130,25 @@ export default function Page() {
     setIsCreating(true);
 
     const tokenSymbols = Object.fromEntries(tokens.map((t) => [t.address, t.symbol])) as Record<Address, string>;
-    const builtSteps = buildShipSteps({
-      safeAddress: address as Address,
-      groups: draftBaskets.map((basket) => ({
-        name: basket.name,
-        targetPct: draftTargets[basket.id] ?? 0,
-        tokenAddresses: basket.tokenAddresses as Address[],
-      })),
-      feeBpsPm: BigInt(Math.round(lpFeePct * 1e7)),
-      maxDeviationBpsPm: BigInt(Math.round(priceDeviationPct * 1e7)),
-      balances: rawBalances as Record<Address, bigint>,
-      tokenSymbols,
-    });
-    setSteps(builtSteps.map((step) => ({ label: step.label, status: "pending" })));
 
     try {
+      // buildShipSteps now reads the Guard's predicted address on-chain (when configured), so a
+      // failure here (e.g. a misbehaving RPC) must land in the same catch as every other step
+      // below -- otherwise it would reject outside this try and leave isCreating stuck on true.
+      const builtSteps = await buildShipSteps({
+        safeAddress: address as Address,
+        groups: draftBaskets.map((basket) => ({
+          name: basket.name,
+          targetPct: draftTargets[basket.id] ?? 0,
+          tokenAddresses: basket.tokenAddresses as Address[],
+        })),
+        feeBpsPm: BigInt(Math.round(lpFeePct * 1e7)),
+        maxDeviationBpsPm: BigInt(Math.round(priceDeviationPct * 1e7)),
+        balances: rawBalances as Record<Address, bigint>,
+        tokenSymbols,
+      });
+      setSteps(builtSteps.map((step) => ({ label: step.label, status: "pending" })));
+
       // A retry after an earlier partial failure shouldn't ask the wallet to reconfirm a step
       // that already went through on a prior attempt -- check each on-chain first, mark those
       // done immediately, and only bundle what's actually left into the one transaction below.

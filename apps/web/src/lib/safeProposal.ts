@@ -2,7 +2,7 @@ import SafeAppsSDK from "@safe-global/safe-apps-sdk";
 import { createPublicClient, createWalletClient, custom, encodeFunctionData, erc20Abi, http, keccak256, maxUint256, type Address, type Hex } from "viem";
 import { getCapabilities, sendCalls, waitForCallsStatus } from "viem/actions";
 import { base } from "wagmi/chains";
-import { AQUA_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
+import { AQUA_ADDRESS, PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
 import { buildOrder, buildProgram, encodeOrder, type Group } from "./portfolioManagerEncoding";
 import { getRegistryIndex } from "./tokenFeeds";
 
@@ -85,6 +85,53 @@ const AQUA_ABI = [
   },
 ] as const;
 
+const GUARD_FACTORY_ABI = [
+  {
+    type: "function",
+    name: "computeAddress",
+    stateMutability: "view",
+    inputs: [
+      { name: "aqua", type: "address" },
+      { name: "safe_", type: "address" },
+      { name: "trustedPmStrategyHash", type: "bytes32" },
+      { name: "trustedPmRouter", type: "address" },
+      { name: "tokens", type: "address[]" },
+      { name: "basketIds", type: "uint256[]" },
+    ],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "deploy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "aqua", type: "address" },
+      { name: "safe_", type: "address" },
+      { name: "trustedPmStrategyHash", type: "bytes32" },
+      { name: "trustedPmRouter", type: "address" },
+      { name: "tokens", type: "address[]" },
+      { name: "basketIds", type: "uint256[]" },
+    ],
+    outputs: [{ name: "guard", type: "address" }],
+  },
+] as const;
+
+const SAFE_GUARD_ABI = [
+  {
+    type: "function",
+    name: "setGuard",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "guard", type: "address" }],
+    outputs: [],
+  },
+] as const;
+
+/** keccak256("guard_manager.guard.address") -- the exact slot Safe's own GuardManager.sol reads
+ *  and writes via raw sstore/sload, confirmed against the vendored
+ *  lib/safe-smart-account/contracts/base/GuardManager.sol rather than assumed, since Safe only
+ *  exposes this through StorageAccessible.getStorageAt, never a plain public getter. */
+const GUARD_STORAGE_SLOT = "0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8" as Hex;
+
 export type StrategyGroup = {
   name: string;
   /** Target weight as a percentage, e.g. 60 for 60%. Every group's targetPct across the whole
@@ -139,14 +186,40 @@ export function computeStrategyHash(safeAddress: Address, groups: StrategyGroup[
 export type ShipStep =
   | { kind: "approve"; label: string; to: Address; data: Hex; token: Address }
   | { kind: "attest"; label: string; to: Address; data: Hex; strategyHash: Hex }
-  | { kind: "ship"; label: string; to: Address; data: Hex };
+  | { kind: "ship"; label: string; to: Address; data: Hex }
+  | { kind: "deployGuard"; label: string; to: Address; data: Hex; guardAddress: Address }
+  | { kind: "setGuard"; label: string; to: Address; data: Hex; guardAddress: Address };
+
+/** basketId 0 is reserved (BasketScopeGuard.sol's constructor rejects it), so the first group
+ *  gets 1 -- flattens each group's own tokens against that same id, matching the parallel
+ *  tokens[]/basketIds[] shape BasketScopeGuard's constructor and BasketScopeGuardFactory's
+ *  deploy/computeAddress both expect. */
+function toBasketScopeTokensAndIds(groups: StrategyGroup[]): { tokens: Address[]; basketIds: bigint[] } {
+  const tokens: Address[] = [];
+  const basketIds: bigint[] = [];
+  groups.forEach((group, i) => {
+    const basketId = BigInt(i + 1);
+    for (const token of group.tokenAddresses) {
+      tokens.push(token);
+      basketIds.push(basketId);
+    }
+  });
+  return { tokens, basketIds };
+}
 
 /** Builds the ordered list of plain transactions that ship a strategy (per-token approve, then
  *  attestBuildParameters, then ship -- matching
  *  packages/contracts/script/ShipTestStrategy.s.sol's own sequence), without sending any of
  *  them. Split out from execution so the UI can render the full step list (what's about to
- *  happen, in what order) before the first signature request, not just one step at a time. */
-export function buildShipSteps({
+ *  happen, in what order) before the first signature request, not just one step at a time.
+ *
+ *  Appends two more steps -- deploy the strategy's own BasketScopeGuard, then install it on the
+ *  Safe -- whenever PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS is configured (see that constant's own
+ *  doc comment for why it's optional). Guard installation doesn't need ship() to have run first
+ *  (the Guard only ever reads the strategy hash/router/basket mapping, never Aqua's ledger), so
+ *  it's safe to always place these last: the strategy activates, then every future transaction on
+ *  this Safe is protected against shipping a different strategy across these same baskets. */
+export async function buildShipSteps({
   safeAddress,
   groups,
   feeBpsPm,
@@ -161,7 +234,7 @@ export function buildShipSteps({
   balances: Record<Address, bigint>;
   /** Address -> symbol, for readable step labels only -- never fed into the on-chain encoding. */
   tokenSymbols: Record<Address, string>;
-}): ShipStep[] {
+}): Promise<ShipStep[]> {
   const encodingGroups = toEncodingGroups(groups);
   const program = buildProgram(encodingGroups, feeBpsPm, maxDeviationBpsPm);
   const order = buildOrder(safeAddress, program);
@@ -173,7 +246,7 @@ export function buildShipSteps({
   const amounts = tokens.map((t) => balances[t] ?? 0n);
   const groupNames = groups.map((g) => g.name);
 
-  return [
+  const steps: ShipStep[] = [
     ...uniqueTokens.map(
       (token): ShipStep => ({
         kind: "approve",
@@ -205,6 +278,34 @@ export function buildShipSteps({
       }),
     },
   ];
+
+  if (PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS) {
+    const { tokens: guardTokens, basketIds: guardBasketIds } = toBasketScopeTokensAndIds(groups);
+    const guardArgs = [AQUA_ADDRESS, safeAddress, strategyHash, PM_ROUTER_ADDRESS, guardTokens, guardBasketIds] as const;
+    const guardAddress = await publicClient.readContract({
+      address: PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS,
+      abi: GUARD_FACTORY_ABI,
+      functionName: "computeAddress",
+      args: guardArgs,
+    });
+
+    steps.push({
+      kind: "deployGuard",
+      label: "Deploy this strategy's guard",
+      to: PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS,
+      data: encodeFunctionData({ abi: GUARD_FACTORY_ABI, functionName: "deploy", args: guardArgs }),
+      guardAddress,
+    });
+    steps.push({
+      kind: "setGuard",
+      label: "Protect the Safe with the guard",
+      to: safeAddress,
+      data: encodeFunctionData({ abi: SAFE_GUARD_ABI, functionName: "setGuard", args: [guardAddress] }),
+      guardAddress,
+    });
+  }
+
+  return steps;
 }
 
 /** Checks on-chain whether a step has already gone through -- so retrying after a partial failure
@@ -229,6 +330,17 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
       functionName: "buildParamsAttested",
       args: [step.strategyHash],
     });
+  }
+  if (step.kind === "deployGuard") {
+    const code = await publicClient.getCode({ address: step.guardAddress });
+    return !!code && code !== "0x";
+  }
+  if (step.kind === "setGuard") {
+    const stored = await publicClient.getStorageAt({ address: safeAddress, slot: GUARD_STORAGE_SLOT });
+    if (!stored) return false;
+    // getStorageAt returns the full 32-byte word; an address occupies its low 20 bytes.
+    const installedGuard = `0x${stored.slice(-40)}`.toLowerCase();
+    return installedGuard === step.guardAddress.toLowerCase();
   }
   return false;
 }
