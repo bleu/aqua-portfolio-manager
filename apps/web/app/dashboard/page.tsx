@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { Address } from "viem";
+import { zeroAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { ActivePortfolioManagerDashboardPage } from "@/components/pages/ActivePortfolioManagerDashboardPage";
 import { EmptyDashboardPage } from "@/components/pages/EmptyDashboardPage";
 import { clearActiveStrategy, loadActiveStrategy } from "@/lib/activeStrategyStorage";
-import { buildDockTransaction } from "@/lib/dockProposal";
-import { sendTransaction } from "@/lib/safeProposal";
+import { buildDockTransaction, buildRemoveGuardTransaction } from "@/lib/dockProposal";
+import { readInstalledGuard, sendTransaction } from "@/lib/safeProposal";
 import { useActivePmStrategy } from "@/lib/useActivePmStrategy";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
@@ -23,8 +23,8 @@ export default function Page() {
   const [deleteError, setDeleteError] = useState<string>();
 
   /** Maps a raw thrown error to a plain-language message -- same intent as the Review page's own
-   *  describeCreateTransactionError, scoped to the one thing that can go wrong deleting a
-   *  strategy (no multi-step flow here to attribute the error to a specific step). */
+   *  describeCreateTransactionError, scoped to the one thing that can go wrong docking a
+   *  strategy (the guard-removal step below has its own, separate message). */
   function describeDeleteError(err: unknown): string {
     console.error("Failed to delete the Portfolio Manager:", err);
     const message = err instanceof Error ? err.message : String(err);
@@ -48,6 +48,22 @@ export default function Page() {
       // setIsDeleting below) re-reads loadActiveStrategy(address) fresh and falls through to
       // EmptyDashboardPage on its own, the same way the initial render reads it.
       clearActiveStrategy(address);
+
+      // The strategy is already closed on Aqua's ledger at this point, so a failure past here
+      // is a separate, non-blocking problem, not a reason to tell the user nothing happened --
+      // see buildRemoveGuardTransaction's own doc comment for why a stale guard matters.
+      try {
+        const installedGuard = await readInstalledGuard(address as Address);
+        if (installedGuard !== zeroAddress) {
+          const guardStep = buildRemoveGuardTransaction(address as Address);
+          await sendTransaction(guardStep.to, guardStep.data, address as Address, provider);
+        }
+      } catch (guardErr) {
+        console.error("Docked the strategy, but failed to remove its basket-scope guard:", guardErr);
+        setDeleteError(
+          "The strategy was removed, but clearing its guard failed. It'll block a future strategy with different baskets until you clear it -- try again, or contact the team.",
+        );
+      }
     } catch (err) {
       setDeleteError(describeDeleteError(err));
     } finally {

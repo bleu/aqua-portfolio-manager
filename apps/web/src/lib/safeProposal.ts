@@ -1,5 +1,18 @@
 import SafeAppsSDK from "@safe-global/safe-apps-sdk";
-import { createPublicClient, createWalletClient, custom, encodeFunctionData, erc20Abi, http, keccak256, maxUint256, type Address, type Hex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  encodeFunctionData,
+  erc20Abi,
+  getAddress,
+  http,
+  keccak256,
+  maxUint256,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import { getCapabilities, sendCalls, waitForCallsStatus } from "viem/actions";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
@@ -131,6 +144,17 @@ const SAFE_GUARD_ABI = [
  *  lib/safe-smart-account/contracts/base/GuardManager.sol rather than assumed, since Safe only
  *  exposes this through StorageAccessible.getStorageAt, never a plain public getter. */
 const GUARD_STORAGE_SLOT = "0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8" as Hex;
+
+/** Reads whatever guard is actually installed on a Safe right now, straight from
+ *  GUARD_STORAGE_SLOT -- zeroAddress if none. Shared by isStepAlreadyDone's own "setGuard" check
+ *  below and by the dock flow's decision to skip asking for a pointless signature when there's
+ *  no guard to remove (see dockProposal.ts's own buildRemoveGuardTransaction). */
+export async function readInstalledGuard(safeAddress: Address): Promise<Address> {
+  const stored = await publicClient.getStorageAt({ address: safeAddress, slot: GUARD_STORAGE_SLOT });
+  if (!stored) return zeroAddress;
+  // getStorageAt returns the full 32-byte word; an address occupies its low 20 bytes.
+  return getAddress(`0x${stored.slice(-40)}`);
+}
 
 export type StrategyGroup = {
   name: string;
@@ -336,11 +360,8 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
     return !!code && code !== "0x";
   }
   if (step.kind === "setGuard") {
-    const stored = await publicClient.getStorageAt({ address: safeAddress, slot: GUARD_STORAGE_SLOT });
-    if (!stored) return false;
-    // getStorageAt returns the full 32-byte word; an address occupies its low 20 bytes.
-    const installedGuard = `0x${stored.slice(-40)}`.toLowerCase();
-    return installedGuard === step.guardAddress.toLowerCase();
+    const installedGuard = await readInstalledGuard(safeAddress);
+    return installedGuard === step.guardAddress;
   }
   return false;
 }
