@@ -1,4 +1,4 @@
-import { concatHex, decodeAbiParameters, encodeAbiParameters, numberToHex, size, slice, type Address, type Hex } from "viem";
+import { concatHex, decodeAbiParameters, encodeAbiParameters, hexToNumber, numberToHex, size, slice, type Address, type Hex } from "viem";
 
 /** Byte-for-byte TypeScript port of packages/contracts/src/utils/PortfolioManagerArgsCodec.sol's
  *  build() and packages/contracts/src/utils/PortfolioManagerProgramBuilder.sol's build() --
@@ -182,4 +182,47 @@ export function appendNonceToProgram(program: Hex, nonce: Hex): Hex {
   const newArgsLength = size(newArgs);
   requireArgs(newArgsLength <= 255, `PortfolioManagerArgsTooLarge(${newArgsLength})`);
   return concatHex([opcode, numberToHex(newArgsLength, { size: 1 }), newArgs]);
+}
+
+export type DecodedGroup = {
+  /** PM_BPS-scaled (1e9 = 100%) -- the exact target share buildArgs encoded for this group. */
+  weightBps: number;
+  /** PortfolioManagerTokenRegistry indices, in encoded order. Resolve with tokenFeeds.ts's
+   *  tokenAtRegistryIndex -- never re-derive a registry index any other way (see that function's
+   *  own doc comment for why its 1-based-position mapping is the real one). */
+  tokenIndices: number[];
+};
+
+/** Reverse of buildArgs' own group-encoding section only -- stops before bridges/fee/deviation,
+ *  since no caller here needs them. Mirrors PortfolioManagerArgsCodec.parse()'s exact byte
+ *  layout: groupCount(1) + per group: compactWeight(4, PM_BPS-scaled) + memberCount(1) + per
+ *  member: tokenIndex(2) + feedIndex(2) -- feedIndex is read past, not decoded, since nothing
+ *  here needs it. */
+export function decodeGroups(args: Hex): DecodedGroup[] {
+  const groupCount = hexToNumber(slice(args, 0, 1));
+  const groups: DecodedGroup[] = [];
+  let offset = 1;
+  for (let i = 0; i < groupCount; i++) {
+    const weightBps = hexToNumber(slice(args, offset, offset + 4));
+    const memberCount = hexToNumber(slice(args, offset + 4, offset + 5));
+    offset += 5;
+    const tokenIndices: number[] = [];
+    for (let j = 0; j < memberCount; j++) {
+      tokenIndices.push(hexToNumber(slice(args, offset, offset + 2)));
+      offset += 4; // tokenIndex (2 bytes, just read) + feedIndex (2 bytes, skipped)
+    }
+    groups.push({ weightBps, tokenIndices });
+  }
+  return groups;
+}
+
+/** Decodes an indexer-stored Strategy.encodedOrder straight into its basket groups -- everything
+ *  the dashboard needs for real per-basket target shares, independent of any local wizard draft
+ *  (see activeStrategyStorage.ts's own doc comment for why that snapshot can't be trusted: it's
+ *  wiped on dock and was never written at all for a strategy shipped outside the wizard). */
+export function decodeOrderGroups(encodedOrder: Hex): DecodedGroup[] {
+  const order = decodeOrder(encodedOrder);
+  const argsLength = size(order.data) - 2;
+  const args = slice(order.data, 2, 2 + argsLength);
+  return decodeGroups(args);
 }

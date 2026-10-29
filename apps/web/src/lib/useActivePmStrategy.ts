@@ -8,12 +8,23 @@ import { PM_ROUTER_ADDRESS } from "./contracts";
  *  source of truth for what Aqua.dock() needs (strategyHash and the exact token set it shipped
  *  with), independent of any local wizard state. shippedAt is Ponder's bigint seconds-since-epoch,
  *  serialized as a string over GraphQL to avoid precision loss -- multiply by 1000 for a JS Date. */
-export type ActivePmStrategy = { strategyHash: Hex; tokens: Address[]; shippedAt: string };
+export type ActivePmStrategy = {
+  strategyHash: Hex;
+  tokens: Address[];
+  shippedAt: string;
+  /** Aqua's own Shipped `strategy` bytes -- lets the dashboard decode real basket groups and
+   *  target shares (see portfolioManagerEncoding.ts's decodeOrderGroups) for a strategy that was
+   *  never shipped through this app's own wizard, so has no local draft snapshot to fall back on. */
+  encodedOrder: Hex;
+  /** Null when shipped without a matching attestBuildParameters call, or one that declined to
+   *  name groups -- see ponder.schema.ts's own strategy.groupNames comment. */
+  groupNames: string[] | null;
+};
 
 const QUERY = `
   query ActivePmStrategy($maker: String!, $app: String!) {
     strategys(where: { maker: $maker, app: $app, isActive: true }, limit: 1) {
-      items { strategyHash tokens shippedAt }
+      items { strategyHash tokens shippedAt encodedOrder groupNames }
     }
   }
 `;

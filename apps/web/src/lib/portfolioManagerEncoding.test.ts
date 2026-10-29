@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { appendNonceToProgram, buildArgs, buildOrder, buildProgram, decodeOrder, encodeOrder, type Group } from "./portfolioManagerEncoding";
+import {
+  appendNonceToProgram,
+  buildArgs,
+  buildOrder,
+  buildProgram,
+  decodeGroups,
+  decodeOrder,
+  decodeOrderGroups,
+  encodeOrder,
+  type Group,
+} from "./portfolioManagerEncoding";
 
 /** Golden vectors captured from the real Solidity implementation via
  *  packages/contracts/test/PortfolioManagerEncodingGoldenVectors.t.sol (`forge test
@@ -64,6 +74,25 @@ describe("portfolioManagerEncoding", () => {
     expect(nonced.slice(6).startsWith(program.slice(6))).toBe(true);
     const originalArgsLength = Number.parseInt(program.slice(4, 6), 16);
     expect(Number.parseInt(nonced.slice(4, 6), 16)).toBe(originalArgsLength + 4);
+  });
+
+  it("decodeGroups is the exact reverse of buildArgs' group-encoding section", () => {
+    const args = buildArgs(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM);
+    const decoded = decodeGroups(args);
+
+    expect(decoded).toHaveLength(2);
+    expect(decoded[0]!.tokenIndices).toEqual([5, 9]);
+    expect(decoded[1]!.tokenIndices).toEqual([12]);
+    // 0.6e18/0.4e18 WAD weights, PM_BPS-scaled (1e9 = 100%) -- matches GROUPS' own weightWad split.
+    expect(decoded[0]!.weightBps / 1e9).toBeCloseTo(0.6, 5);
+    expect(decoded[1]!.weightBps / 1e9).toBeCloseTo(0.4, 5);
+    expect(decoded[0]!.weightBps + decoded[1]!.weightBps).toBe(1_000_000_000);
+  });
+
+  it("decodeOrderGroups decodes straight from a full encodedOrder blob, matching decodeGroups(buildArgs(...))", () => {
+    const program = buildProgram(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM);
+    const order = buildOrder(MAKER, program);
+    expect(decodeOrderGroups(encodeOrder(order))).toEqual(decodeGroups(buildArgs(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM)));
   });
 
   it("appendNonceToProgram's nonce bytes decode as if they weren't there -- the real reship guarantee", () => {

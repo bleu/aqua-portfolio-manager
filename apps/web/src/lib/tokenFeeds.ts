@@ -82,6 +82,15 @@ export function getRegistryIndex(tokenAddress: string): number {
   return index + 1;
 }
 
+/** The exact reverse of getRegistryIndex -- the token at a given PortfolioManagerTokenRegistry
+ *  index, or undefined for index 0 (reserved) or anything outside this 40-token universe. Used to
+ *  turn a decoded strategy's token indices (portfolioManagerEncoding.ts's decodeOrderGroups) back
+ *  into real addresses for display, with no on-chain call needed -- see getRegistryIndex's own
+ *  doc comment for why this array's position is already verified against the real registry. */
+export function tokenAtRegistryIndex(index: number): string | undefined {
+  return TOKEN_FEEDS[index - 1]?.tokenAddress;
+}
+
 /** Best-effort symbol lookup for a bare token address (e.g. from indexer data, which only ever
  *  carries addresses) -- falls back to a truncated address for a token outside this universe
  *  rather than throwing, since this is a read-only display helper, not a validation gate. */
