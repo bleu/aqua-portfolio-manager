@@ -216,6 +216,44 @@ export function decodeGroups(args: Hex): DecodedGroup[] {
   return groups;
 }
 
+/** The args section of a program (opcode(1) + argsLength(1) + args) -- the same slice
+ *  appendNonceToProgram itself extracts before appending to it. */
+function programArgs(program: Hex): Hex {
+  return slice(program, 2, size(program));
+}
+
+/** True if `childEncodedOrder` is exactly what reshipping `parentEncodedOrder` produces (see
+ *  buildReshipSteps in safeProposal.ts): same maker, same traits, same opcode, and its args are
+ *  the parent's own args with a trailing nonce appendNonceToProgram tacked on -- not the whole
+ *  program byte-for-byte, since appendNonceToProgram also rewrites the 1-byte argsLength header
+ *  that precedes them. Aqua has no "reshipped from" relationship of its own -- a reship is,
+ *  correctly, a genuinely different strategyHash -- so this is the only way to recover that
+ *  lineage afterward: by comparing the real bytes the two strategies actually ran with, not
+ *  something either side declared. Works for a reship chain of any length (each one 8 bytes
+ *  longer than the last) and for a reship built by any client, not just this app's own
+ *  buildReshipSteps. */
+export function isReshipOf(childEncodedOrder: Hex, parentEncodedOrder: Hex): boolean {
+  const child = decodeOrder(childEncodedOrder);
+  const parent = decodeOrder(parentEncodedOrder);
+  if (child.maker.toLowerCase() !== parent.maker.toLowerCase() || child.traits !== parent.traits) return false;
+  if (slice(child.data, 0, 1) !== slice(parent.data, 0, 1)) return false;
+
+  const childArgs = programArgs(child.data);
+  const parentArgs = programArgs(parent.data);
+  if (size(childArgs) <= size(parentArgs)) return false;
+  return childArgs.toLowerCase().startsWith(parentArgs.toLowerCase());
+}
+
+/** The program's real byte length -- NOT encodedOrder's own hex-string length, which can be
+ *  identical for two strategies whose padded abi-encoding happens to round up to the same 32-byte
+ *  slot. Confirmed on real data: a reship whose nonce still fits the same padding boundary as its
+ *  parent produces an encodedOrder string of the exact same length, even though the real decoded
+ *  program is genuinely longer. Callers ordering a reship chain by generation (closest parent
+ *  first) need this, not encodedOrder.length. */
+export function programByteLength(encodedOrder: Hex): number {
+  return size(decodeOrder(encodedOrder).data);
+}
+
 /** Decodes an indexer-stored Strategy.encodedOrder straight into its basket groups -- everything
  *  the dashboard needs for real per-basket target shares, independent of any local wizard draft
  *  (see activeStrategyStorage.ts's own doc comment for why that snapshot can't be trusted: it's

@@ -8,6 +8,8 @@ import {
   decodeOrder,
   decodeOrderGroups,
   encodeOrder,
+  isReshipOf,
+  programByteLength,
   type Group,
 } from "./portfolioManagerEncoding";
 
@@ -110,5 +112,57 @@ describe("portfolioManagerEncoding", () => {
     const declaredArgsLength = Number.parseInt(nonced.slice(4, 6), 16);
     const actualArgsBytes = (nonced.length - 6) / 2; // total hex chars, minus "0x" and the 2-byte header, /2
     expect(declaredArgsLength).toBe(actualArgsBytes);
+  });
+
+  describe("isReshipOf", () => {
+    const program = buildProgram(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM);
+    const original = encodeOrder(buildOrder(MAKER, program));
+
+    it("recognizes a real reship (parent's program plus a trailing nonce) as a child of its parent", () => {
+      const reshipped = encodeOrder(buildOrder(MAKER, appendNonceToProgram(program, "0xdeadbeef")));
+      expect(isReshipOf(reshipped, original)).toBe(true);
+      expect(isReshipOf(original, reshipped)).toBe(false); // direction matters: parent is never a child of its own reship
+    });
+
+    it("recognizes a chain of two reships, each one generation apart", () => {
+      const first = encodeOrder(buildOrder(MAKER, appendNonceToProgram(program, "0x01020304")));
+      const second = encodeOrder(buildOrder(MAKER, appendNonceToProgram(appendNonceToProgram(program, "0x01020304"), "0x05060708")));
+      expect(isReshipOf(second, first)).toBe(true);
+      expect(isReshipOf(second, original)).toBe(true); // also a descendant of the original, two generations back
+    });
+
+    it("rejects two genuinely unrelated strategies, even same maker, even same byte length", () => {
+      const unrelatedProgram = buildProgram(
+        [GROUPS[1]!, GROUPS[0]!], // same groups, swapped order -- different real bytes, same length
+        FEE_BPS_PM,
+        MAX_DEVIATION_BPS_PM,
+      );
+      const unrelated = encodeOrder(buildOrder(MAKER, unrelatedProgram));
+      expect(isReshipOf(unrelated, original)).toBe(false);
+    });
+
+    it("rejects a different maker's otherwise-identical strategy", () => {
+      const reshipped = encodeOrder(buildOrder("0x2222222222222222222222222222222222222222", appendNonceToProgram(program, "0xdeadbeef")));
+      expect(isReshipOf(reshipped, original)).toBe(false);
+    });
+  });
+
+  describe("programByteLength", () => {
+    // Real encodedOrder pair pulled from the production indexer (one Safe's actual reship):
+    // both strings are the exact same length (450 hex chars) because the reship's nonce still
+    // fits inside the same 32-byte abi-encoding padding slot as its parent -- confirmed by
+    // decoding: the child's args are the parent's own args plus an 8-byte nonce. Pins the bug
+    // PortfolioManagerHistoryPage's own findReshipParent hit: ordering a reship chain by
+    // encodedOrder.length alone can't tell these two generations apart.
+    const REAL_PARENT =
+      "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000ba288819af70a3ab5496238032c5a8c743d48024000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000260024021ee1cd2802001e001e002000201cb8fcd80200260026000500050001312d0002faf0800000000000000000000000000000000000000000000000000000";
+    const REAL_CHILD =
+      "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000ba288819af70a3ab5496238032c5a8c743d480240000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000002e002c021ee1cd2802001e001e002000201cb8fcd80200260026000500050001312d0002faf0809a3fa5ad12a4a329000000000000000000000000000000000000";
+
+    it("tells the real parent and child apart even though their encodedOrder strings are the same length", () => {
+      expect(REAL_PARENT.length).toBe(REAL_CHILD.length);
+      expect(programByteLength(REAL_CHILD)).toBeGreaterThan(programByteLength(REAL_PARENT));
+      expect(isReshipOf(REAL_CHILD, REAL_PARENT)).toBe(true);
+    });
   });
 });

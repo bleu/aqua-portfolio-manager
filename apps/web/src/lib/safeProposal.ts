@@ -17,7 +17,17 @@ import {
 import { getCapabilities, sendCalls, waitForCallsStatus } from "viem/actions";
 import { base } from "wagmi/chains";
 import { AQUA_ADDRESS, PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS, PM_ROUTER_ADDRESS, PM_STRATEGY_VALIDATOR_ADDRESS } from "./contracts";
-import { appendNonceToProgram, buildOrder, buildProgram, decodeOrder, encodeOrder, type Group, type Order } from "./portfolioManagerEncoding";
+import {
+  appendNonceToProgram,
+  buildOrder,
+  buildProgram,
+  decodeOrder,
+  decodeOrderGroups,
+  encodeOrder,
+  type Group,
+  type Order,
+} from "./portfolioManagerEncoding";
+import { tokenAtRegistryIndex } from "./tokenFeeds";
 import { getRegistryIndex } from "./tokenFeeds";
 
 export type EIP1193Provider = { request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown> };
@@ -240,7 +250,10 @@ export type ShipStep =
  *  gets 1 -- flattens each group's own tokens against that same id, matching the parallel
  *  tokens[]/basketIds[] shape BasketScopeGuard's constructor and BasketScopeGuardFactory's
  *  deploy/computeAddress both expect. */
-function toBasketScopeTokensAndIds(groups: StrategyGroup[]): { tokens: Address[]; basketIds: bigint[] } {
+/** Takes just the one field every caller actually needs (StrategyGroup[] from the wizard, or a
+ *  plain array built from decodeOrderGroups' resolved addresses for a reship) -- never the full
+ *  StrategyGroup shape, so a reship's groups don't need fake name/targetPct fields to call this. */
+function toBasketScopeTokensAndIds(groups: { tokenAddresses: Address[] }[]): { tokens: Address[]; basketIds: bigint[] } {
   const tokens: Address[] = [];
   const basketIds: bigint[] = [];
   groups.forEach((group, i) => {
@@ -363,12 +376,12 @@ export async function buildShipSteps({
  *  appendNonceToProgram's own doc comment for why that's enough to get a fresh, shippable
  *  strategyHash) -- every real field decodes identically, so this is genuinely the same strategy.
  *
- *  Deliberately does not add deployGuard/setGuard steps the way buildShipSteps does: building the
- *  Guard's tokens[]/basketIds[] correctly needs the original basket *boundaries* (which token
- *  belonged to which group), and the indexer only stores the flat, already-shipped token list,
- *  not that grouping. Guessing at a grouping (e.g. one basket with everything) would produce a
- *  Guard that looks protective but doesn't actually block anything -- worse than no Guard, since
- *  it'd look like protection that isn't there. */
+ *  Adds the same deployGuard/setGuard steps buildShipSteps does, keyed to the *new* strategyHash
+ *  (the old Guard, if any, stays bound to the docked strategy's hash and is removed separately --
+ *  see dockProposal.ts's buildRemoveGuardTransaction). The real basket *boundaries* needed to
+ *  build the Guard's tokens[]/basketIds[] come from decodeOrderGroups, straight off this same
+ *  encodedOrder -- group membership doesn't change just because a nonce was appended, so decoding
+ *  the pre-nonce bytes gives the exact same groups the reshipped strategy will actually run. */
 export async function buildReshipSteps({
   encodedOrder,
   tokens,
@@ -393,8 +406,9 @@ export async function buildReshipSteps({
 
   const uniqueTokens = [...new Set(tokens)];
   const amounts = tokens.map((t) => balances[t] ?? 0n);
+  const safeAddress = original.maker;
 
-  return [
+  const steps: ShipStep[] = [
     ...uniqueTokens.map(
       (token): ShipStep => ({
         kind: "approve",
@@ -426,6 +440,38 @@ export async function buildReshipSteps({
       }),
     },
   ];
+
+  if (PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS) {
+    const decodedGroups = decodeOrderGroups(encodedOrder);
+    const resolvedGroups = decodedGroups.map((group) => ({
+      tokenAddresses: group.tokenIndices.map((i) => tokenAtRegistryIndex(i)).filter((a): a is Address => !!a),
+    }));
+    const { tokens: guardTokens, basketIds: guardBasketIds } = toBasketScopeTokensAndIds(resolvedGroups);
+    const guardArgs = [AQUA_ADDRESS, safeAddress, strategyHash, PM_ROUTER_ADDRESS, guardTokens, guardBasketIds] as const;
+    const guardAddress = await publicClient.readContract({
+      address: PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS,
+      abi: GUARD_FACTORY_ABI,
+      functionName: "computeAddress",
+      args: guardArgs,
+    });
+
+    steps.push({
+      kind: "deployGuard",
+      label: "Deploy this strategy's guard",
+      to: PM_BASKET_SCOPE_GUARD_FACTORY_ADDRESS,
+      data: encodeFunctionData({ abi: GUARD_FACTORY_ABI, functionName: "deploy", args: guardArgs }),
+      guardAddress,
+    });
+    steps.push({
+      kind: "setGuard",
+      label: "Protect the Safe with the guard",
+      to: safeAddress,
+      data: encodeFunctionData({ abi: SAFE_GUARD_ABI, functionName: "setGuard", args: [guardAddress] }),
+      guardAddress,
+    });
+  }
+
+  return steps;
 }
 
 /** Checks on-chain whether a step has already gone through -- so retrying after a partial failure

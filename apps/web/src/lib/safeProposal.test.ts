@@ -64,7 +64,7 @@ describe("buildReshipSteps", () => {
   const encodedOrder = encodeOrder(originalOrder);
   const tokens = GROUPS.flatMap((g) => g.tokenAddresses);
 
-  it("builds approve + attest + ship only -- no Guard steps, see buildReshipSteps' own doc comment for why", async () => {
+  it("builds approve + attest + ship only -- no Guard steps when no factory address is configured, same as buildShipSteps", async () => {
     const steps = await buildReshipSteps({
       encodedOrder,
       tokens,
