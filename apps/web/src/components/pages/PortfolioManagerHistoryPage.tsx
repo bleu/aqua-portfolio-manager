@@ -131,6 +131,12 @@ export function PortfolioManagerHistoryPage({
                   </div>
 
                   <div className="mt-4 space-y-1.5 text-sm">
+                    <div className="flex items-center justify-between text-gray-400">
+                      <span>Strategy</span>
+                      <span className="font-mono text-xs text-gray-500">
+                        {truncateAddress(entry.strategyHash)}
+                      </span>
+                    </div>
                     {reshipParent && (
                       <div className="text-gray-500">
                         <span>
