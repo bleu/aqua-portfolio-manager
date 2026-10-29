@@ -193,12 +193,13 @@ export type DecodedGroup = {
   tokenIndices: number[];
 };
 
-/** Reverse of buildArgs' own group-encoding section only -- stops before bridges/fee/deviation,
- *  since no caller here needs them. Mirrors PortfolioManagerArgsCodec.parse()'s exact byte
- *  layout: groupCount(1) + per group: compactWeight(4, PM_BPS-scaled) + memberCount(1) + per
- *  member: tokenIndex(2) + feedIndex(2) -- feedIndex is read past, not decoded, since nothing
- *  here needs it. */
-export function decodeGroups(args: Hex): DecodedGroup[] {
+/** Shared by decodeGroups and decodeArgs -- walks the group section once, handing back both the
+ *  decoded groups and the byte offset right after them (where bridges/fee/deviation start), so a
+ *  caller that needs those doesn't have to re-walk the groups to find where they begin. Mirrors
+ *  PortfolioManagerArgsCodec.parse()'s exact byte layout: groupCount(1) + per group:
+ *  compactWeight(4, PM_BPS-scaled) + memberCount(1) + per member: tokenIndex(2) + feedIndex(2) --
+ *  feedIndex is read past, not decoded, since nothing here needs it. */
+function decodeGroupsWithOffset(args: Hex): { groups: DecodedGroup[]; offset: number } {
   const groupCount = hexToNumber(slice(args, 0, 1));
   const groups: DecodedGroup[] = [];
   let offset = 1;
@@ -213,7 +214,36 @@ export function decodeGroups(args: Hex): DecodedGroup[] {
     }
     groups.push({ weightBps, tokenIndices });
   }
-  return groups;
+  return { groups, offset };
+}
+
+/** Reverse of buildArgs' own group-encoding section only -- stops before bridges/fee/deviation.
+ *  Use decodeArgs instead when the fee or deviation limit is needed too. */
+export function decodeGroups(args: Hex): DecodedGroup[] {
+  return decodeGroupsWithOffset(args).groups;
+}
+
+export type DecodedStrategyParameters = {
+  groups: DecodedGroup[];
+  /** PM_BPS-scaled (1e9 = 100%) LP curve fee. Divide by 1e7 for a plain percentage -- the exact
+   *  reverse of safeProposal.ts's own `BigInt(Math.round(lpFeePct * 1e7))` encoding. */
+  feeBps: number;
+  /** PM_BPS-scaled (1e9 = 100%) price-deviation circuit breaker limit, same 1e7-per-percent scale
+   *  as feeBps. Zero disables the check entirely (PortfolioManagerArgsCodec.sol). */
+  maxDeviationBps: number;
+};
+
+/** Full reverse of buildArgs: groups, then skips past any bridge entries (groupA(1) + groupB(1) +
+ *  feed(20) + maxStaleness(3) = 25 bytes each -- bridge content itself isn't decoded, nothing here
+ *  needs it) straight to feeBps(4) and maxDeviationBps(4), the two trailing words buildArgs always
+ *  writes last. */
+export function decodeArgs(args: Hex): DecodedStrategyParameters {
+  const { groups, offset: afterGroups } = decodeGroupsWithOffset(args);
+  const bridgeCount = hexToNumber(slice(args, afterGroups, afterGroups + 1));
+  const afterBridges = afterGroups + 1 + bridgeCount * 25;
+  const feeBps = hexToNumber(slice(args, afterBridges, afterBridges + 4));
+  const maxDeviationBps = hexToNumber(slice(args, afterBridges + 4, afterBridges + 8));
+  return { groups, feeBps, maxDeviationBps };
 }
 
 /** The args section of a program (opcode(1) + argsLength(1) + args) -- the same slice
@@ -263,4 +293,10 @@ export function decodeOrderGroups(encodedOrder: Hex): DecodedGroup[] {
   const argsLength = size(order.data) - 2;
   const args = slice(order.data, 2, 2 + argsLength);
   return decodeGroups(args);
+}
+
+/** Same source as decodeOrderGroups, but also decodes the LP fee and the max price-deviation
+ *  limit -- for a History card showing the strategy's real parameters, not just its baskets. */
+export function decodeOrderParameters(encodedOrder: Hex): DecodedStrategyParameters {
+  return decodeArgs(programArgs(decodeOrder(encodedOrder).data));
 }

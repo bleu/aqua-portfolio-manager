@@ -4,9 +4,11 @@ import {
   buildArgs,
   buildOrder,
   buildProgram,
+  decodeArgs,
   decodeGroups,
   decodeOrder,
   decodeOrderGroups,
+  decodeOrderParameters,
   encodeOrder,
   isReshipOf,
   programByteLength,
@@ -95,6 +97,23 @@ describe("portfolioManagerEncoding", () => {
     const program = buildProgram(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM);
     const order = buildOrder(MAKER, program);
     expect(decodeOrderGroups(encodeOrder(order))).toEqual(decodeGroups(buildArgs(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM)));
+  });
+
+  it("decodeArgs recovers the exact fee and deviation buildArgs encoded, past the groups section", () => {
+    const decoded = decodeArgs(buildArgs(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM));
+    expect(decoded.feeBps).toBe(Number(FEE_BPS_PM));
+    expect(decoded.maxDeviationBps).toBe(Number(MAX_DEVIATION_BPS_PM));
+    expect(decoded.groups).toEqual(decodeGroups(buildArgs(GROUPS, FEE_BPS_PM, MAX_DEVIATION_BPS_PM)));
+  });
+
+  it("decodeOrderParameters matches a real strategy's known fee (2%) and deviation limit (5%)", () => {
+    // Same real encodedOrder as the programByteLength test below -- cross-checked against a
+    // plain Python int('...', 16) of the raw fee/deviation bytes, not hand arithmetic.
+    const real =
+      "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000ba288819af70a3ab5496238032c5a8c743d48024000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000260024021ee1cd2802001e001e002000201cb8fcd80200260026000500050001312d0002faf0800000000000000000000000000000000000000000000000000000";
+    const decoded = decodeOrderParameters(real);
+    expect(decoded.feeBps / 1e7).toBeCloseTo(2, 5);
+    expect(decoded.maxDeviationBps / 1e7).toBeCloseTo(5, 5);
   });
 
   it("appendNonceToProgram's nonce bytes decode as if they weren't there -- the real reship guarantee", () => {

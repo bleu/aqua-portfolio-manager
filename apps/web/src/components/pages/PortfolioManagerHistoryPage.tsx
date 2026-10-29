@@ -5,7 +5,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import type { TabNavItem } from "@/components/TabNav";
 import { formatRelativeTime, truncateAddress } from "@/lib/format";
-import { isReshipOf, programByteLength } from "@/lib/portfolioManagerEncoding";
+import { decodeOrderParameters, isReshipOf, programByteLength } from "@/lib/portfolioManagerEncoding";
 import type { StrategyHistoryEntry } from "@/lib/useStrategyHistory";
 
 /** Aqua gives a reshipped strategy a genuinely different strategyHash (see safeProposal.ts's own
@@ -29,6 +29,14 @@ function findReshipParent(
     }
   }
   return parent;
+}
+
+/** PM_BPS-scaled (1e9 = 100%) -> the plain percentage string the rest of the app already uses
+ *  (ReviewPortfolioManagerPage's own `${pct}%`, no fixed decimal count) -- toFixed(4) then back to
+ *  Number strips the float noise a raw bps/1e7 division can leave (e.g. 1.9999999999999998),
+ *  without forcing trailing zeros onto a value that doesn't have them. */
+function formatPmBps(bps: number): string {
+  return `${Number((bps / 1e7).toFixed(4))}%`;
 }
 
 export type PortfolioManagerHistoryPageProps = {
@@ -107,6 +115,15 @@ export function PortfolioManagerHistoryPage({
           <div className="mt-6 space-y-4">
             {entries.map((entry) => {
               const reshipParent = findReshipParent(entry, entries);
+              // Decoding is best-effort display only -- a malformed or unexpected program (never
+              // produced by this app itself, but encodedOrder is on-chain data from whatever
+              // actually shipped it) just omits this line rather than breaking the card.
+              let parameters: { feeBps: number; maxDeviationBps: number } | undefined;
+              try {
+                parameters = decodeOrderParameters(entry.encodedOrder);
+              } catch (err) {
+                console.error("Failed to decode this strategy's fee/deviation parameters:", err);
+              }
               return (
                 <div
                   key={entry.strategyHash}
@@ -137,6 +154,18 @@ export function PortfolioManagerHistoryPage({
                         {truncateAddress(entry.strategyHash)}
                       </span>
                     </div>
+                    {parameters && (
+                      <div className="flex items-center justify-between text-gray-400">
+                        <span>LP fee</span>
+                        <span>{formatPmBps(parameters.feeBps)}</span>
+                      </div>
+                    )}
+                    {parameters && (
+                      <div className="flex items-center justify-between text-gray-400">
+                        <span>Max deviation</span>
+                        <span>{formatPmBps(parameters.maxDeviationBps)}</span>
+                      </div>
+                    )}
                     {reshipParent && (
                       <div className="text-gray-500">
                         <span>
