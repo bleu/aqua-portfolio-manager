@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
@@ -14,10 +15,11 @@ export type PortfolioManagerHistoryPageProps = {
   error?: string;
   symbolForToken: (tokenAddress: string) => string;
   onSelectTab?: (label: string) => void;
-  /** Reships an exact copy of a docked strategy (see safeProposal.ts's buildReshipSteps) --
-   *  omitted entirely (no button renders) when there's already an active strategy on this Safe,
-   *  since Aqua has no built-in "one active strategy per Safe" limit and this app's dashboard
-   *  isn't built to show two. */
+  /** Reships an exact copy of a docked strategy (see safeProposal.ts's buildReshipSteps). Stays
+   *  available even with an active strategy already on this Safe -- the caller docks that one
+   *  first, batched with the reship, rather than this page hiding the option: a user who just
+   *  deleted their strategy lands back on the "set up a new one" screen and may never think to
+   *  check History again otherwise. */
   onReship?: (strategyHash: string) => void;
   /** strategyHash of the entry currently being reshipped, if any -- disables every Reship button
    *  while one is in flight, not just the one clicked. */
@@ -43,6 +45,7 @@ export function PortfolioManagerHistoryPage({
   reshipError,
 }: PortfolioManagerHistoryPageProps) {
   const hasActiveStrategy = !!entries?.some((e) => e.isActive);
+  const [confirmingStrategyHash, setConfirmingStrategyHash] = useState<string>();
   return (
     <div className="min-h-screen">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} onSelectTab={onSelectTab} />
@@ -97,15 +100,49 @@ export function PortfolioManagerHistoryPage({
                   )}
                 </div>
 
-                {!entry.isActive && !hasActiveStrategy && onReship && (
+                {!entry.isActive && onReship && (
                   <div className="mt-4">
-                    <Button
-                      variant="secondary"
-                      onClick={() => onReship(entry.strategyHash)}
-                      disabled={!!reshippingStrategyHash}
-                    >
-                      {reshippingStrategyHash === entry.strategyHash ? "Reshipping…" : "Reship this strategy"}
-                    </Button>
+                    {confirmingStrategyHash === entry.strategyHash ? (
+                      <div className="rounded-lg border border-border bg-surface-raised p-4 text-sm">
+                        <p className="text-gray-300">
+                          This closes your current active strategy and activates this one instead, in one
+                          transaction.
+                        </p>
+                        <div className="mt-3 flex items-center gap-3">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setConfirmingStrategyHash(undefined);
+                              onReship(entry.strategyHash);
+                            }}
+                            disabled={!!reshippingStrategyHash}
+                          >
+                            Close current & reship this
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => setConfirmingStrategyHash(undefined)}
+                            disabled={!!reshippingStrategyHash}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          hasActiveStrategy ? setConfirmingStrategyHash(entry.strategyHash) : onReship(entry.strategyHash)
+                        }
+                        disabled={!!reshippingStrategyHash}
+                      >
+                        {reshippingStrategyHash === entry.strategyHash
+                          ? "Reshipping…"
+                          : hasActiveStrategy
+                            ? "Reship this strategy…"
+                            : "Reship this strategy"}
+                      </Button>
+                    )}
                     {reshippingStrategyHash === entry.strategyHash && reshipError && (
                       <p className="mt-2 text-sm text-red-400">{reshipError}</p>
                     )}

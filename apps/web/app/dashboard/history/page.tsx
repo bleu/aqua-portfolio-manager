@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { Address } from "viem";
+import { zeroAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { PortfolioManagerHistoryPage } from "@/components/pages/PortfolioManagerHistoryPage";
-import { buildReshipSteps, executeShipSteps } from "@/lib/safeProposal";
+import { buildDockTransaction, buildRemoveGuardTransaction } from "@/lib/dockProposal";
+import { buildReshipSteps, executeShipSteps, readInstalledGuard, type ShipStep } from "@/lib/safeProposal";
 import { symbolForToken } from "@/lib/tokenFeeds";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useStrategyHistory } from "@/lib/useStrategyHistory";
@@ -43,13 +44,40 @@ export default function Page() {
     setReshippingStrategyHash(strategyHash);
     try {
       const tokenSymbols = Object.fromEntries(tokens.map((t) => [t.address, t.symbol])) as Record<Address, string>;
-      const steps = await buildReshipSteps({
+      const reshipSteps = await buildReshipSteps({
         encodedOrder: entry.encodedOrder,
         tokens: entry.tokens,
         groupNames: entry.groupNames,
         balances: rawBalances as Record<Address, bigint>,
         tokenSymbols,
       });
+
+      // A currently-active strategy must be docked first -- Aqua itself has no "one active
+      // strategy per Safe" limit, but this app's dashboard only ever shows one, so leaving the
+      // old one active would silently orphan it. Batched ahead of the reship steps so this is one
+      // atomic action: either both go through, or neither does.
+      const activeEntry = entries?.find((e) => e.isActive);
+      let steps: ShipStep[] = reshipSteps;
+      if (activeEntry) {
+        const dockTx = buildDockTransaction(activeEntry.strategyHash, activeEntry.tokens);
+        const dockSteps: ShipStep[] = [
+          {
+            kind: "dock",
+            label: "Close the current strategy",
+            to: dockTx.to,
+            data: dockTx.data,
+            strategyHash: activeEntry.strategyHash,
+            tokens: activeEntry.tokens,
+          },
+        ];
+        const installedGuard = await readInstalledGuard(address as Address);
+        if (installedGuard !== zeroAddress) {
+          const guardTx = buildRemoveGuardTransaction(address as Address);
+          dockSteps.push({ kind: "removeGuard", label: "Clear its guard", to: guardTx.to, data: guardTx.data });
+        }
+        steps = [...dockSteps, ...reshipSteps];
+      }
+
       // Not /setup/activated: that page renders its summary from local wizard drafts
       // (basketDraftsStorage etc.), which a History-page reship never went through -- it would
       // show a stale or empty draft instead of the strategy that was actually just reshipped.

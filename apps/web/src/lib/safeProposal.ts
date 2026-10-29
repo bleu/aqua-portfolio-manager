@@ -97,7 +97,26 @@ const AQUA_ABI = [
     ],
     outputs: [{ name: "strategyHash", type: "bytes32" }],
   },
+  {
+    type: "function",
+    name: "rawBalances",
+    stateMutability: "view",
+    inputs: [
+      { name: "maker", type: "address" },
+      { name: "app", type: "address" },
+      { name: "strategyHash", type: "bytes32" },
+      { name: "token", type: "address" },
+    ],
+    outputs: [
+      { name: "balance", type: "uint248" },
+      { name: "tokensCount", type: "uint8" },
+    ],
+  },
 ] as const;
+
+/** Aqua.sol's own sentinel for a docked strategy's tokensCount slot -- type(uint8).max. Matches
+ *  packages/contracts/test/e2e/PortfolioManagerDockAndReshipE2E.t.sol's own DOCKED_TOKENS_COUNT. */
+const DOCKED_TOKENS_COUNT = 255;
 
 const GUARD_FACTORY_ABI = [
   {
@@ -213,7 +232,9 @@ export type ShipStep =
   | { kind: "attest"; label: string; to: Address; data: Hex; strategyHash: Hex }
   | { kind: "ship"; label: string; to: Address; data: Hex }
   | { kind: "deployGuard"; label: string; to: Address; data: Hex; guardAddress: Address }
-  | { kind: "setGuard"; label: string; to: Address; data: Hex; guardAddress: Address };
+  | { kind: "setGuard"; label: string; to: Address; data: Hex; guardAddress: Address }
+  | { kind: "dock"; label: string; to: Address; data: Hex; strategyHash: Hex; tokens: Address[] }
+  | { kind: "removeGuard"; label: string; to: Address; data: Hex };
 
 /** basketId 0 is reserved (BasketScopeGuard.sol's constructor rejects it), so the first group
  *  gets 1 -- flattens each group's own tokens against that same id, matching the parallel
@@ -437,6 +458,20 @@ export async function isStepAlreadyDone(step: ShipStep, safeAddress: Address): P
   if (step.kind === "setGuard") {
     const installedGuard = await readInstalledGuard(safeAddress);
     return installedGuard === step.guardAddress;
+  }
+  if (step.kind === "dock") {
+    if (step.tokens.length === 0) return false;
+    const [, tokensCount] = await publicClient.readContract({
+      address: AQUA_ADDRESS,
+      abi: AQUA_ABI,
+      functionName: "rawBalances",
+      args: [safeAddress, PM_ROUTER_ADDRESS, step.strategyHash, step.tokens[0]!],
+    });
+    return tokensCount === DOCKED_TOKENS_COUNT;
+  }
+  if (step.kind === "removeGuard") {
+    const installedGuard = await readInstalledGuard(safeAddress);
+    return installedGuard === zeroAddress;
   }
   return false;
 }
