@@ -16,7 +16,11 @@ export type ConnectSafePageProps = {
  *  call the same `onConnectSafe` handler until that modal replaces it. */
 export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: ConnectSafePageProps) {
   return (
-    <div className="relative min-h-screen overflow-hidden">
+    // flex flex-col + main's flex-1 pins the footer to the true bottom of the viewport when
+    // content is shorter than the screen, instead of leaving it stranded above a dead gap -- that
+    // gap was also why the background image's mountain silhouette (anchored near its own bottom
+    // edge) rendered far below the footer instead of behind it.
+    <div className="relative flex min-h-screen flex-col overflow-hidden">
       {/* The real landing page frame has one full-bleed background image behind everything
           (confirmed node 680:20946's own background) -- a top-left glow plus the wavy horizon
           line visible near the footer. An earlier pass omitted it entirely. */}
@@ -38,7 +42,7 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
           equal grid-cols-2 split had rendered the card noticeably wider, and the hero column
           noticeably narrower, than the real design, which is why the headline wrapped across
           more lines than it should have. */}
-      <main className="relative grid gap-16 px-[clamp(24px,4vw,120px)] py-20 lg:grid-cols-[881fr_522fr] lg:items-center">
+      <main className="relative grid flex-1 gap-16 px-[clamp(24px,4vw,120px)] py-20 lg:grid-cols-[881fr_522fr] lg:items-center">
         <div>
           {/* text-[#f5f7fa] is this exact node's own hardcoded literal (680:20951), a hex step
               off the ink-primary token's variable-bound value -- kept inline rather than through
