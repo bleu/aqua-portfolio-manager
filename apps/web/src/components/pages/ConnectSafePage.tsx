@@ -50,16 +50,12 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
               currentPct: 42,
               targetPct: 33.3,
               caption: "Routing reduces the overweight basket toward 33.3%",
-              // Trim brand guide's Salmon -- confirmed in Figma's allocation-ribbon node names,
-              // each basket gets its own brand color rather than sharing the accent.
-              color: "#d99d8e",
             },
             {
               label: "Stablecoins",
               currentPct: 58,
               targetPct: 66.7,
               caption: "Routing increases the underweight basket toward 66.7%",
-              color: "#94cad1",
             },
           ]}
         />
