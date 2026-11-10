@@ -77,7 +77,7 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
           <img
             src="/octopus-mascot-landing.png"
             alt=""
-            className="pointer-events-none absolute -top-20 right-4 z-20 hidden w-[158px] lg:block"
+            className="pointer-events-none absolute -top-20 right-0 z-20 hidden w-[158px] lg:block"
           />
           <CurrentVsTargetCard
             className="relative z-10"
