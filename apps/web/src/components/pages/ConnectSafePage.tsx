@@ -1,6 +1,6 @@
-import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { CurrentVsTargetCard } from "@/components/CurrentVsTargetCard";
+import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 
 export type ConnectSafePageProps = {
@@ -10,32 +10,37 @@ export type ConnectSafePageProps = {
 };
 
 /** BLEUDEV-397 — "01 · Connect Safe": the entry landing page. FirstAccessIntroductionPage ("02")
- *  follows once connected -- see its own doc comment. */
+ *  follows once connected -- see its own doc comment.
+ *  BLEUDEV-429 — rebranded to Trim. The wallet-choice copy ("WalletConnect or Safe App") this page
+ *  used to show inline moves into the Connect Wallet modal (BLEUDEV-430); both CTAs here still
+ *  call the same `onConnectSafe` handler until that modal replaces it. */
 export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: ConnectSafePageProps) {
   return (
     <div className="min-h-screen">
-      <Header />
+      <Header onLaunchApp={onConnectSafe} />
 
-      <main className="mx-auto grid max-w-6xl gap-12 px-8 py-20 lg:grid-cols-2 lg:items-center">
+      <main className="relative mx-auto grid max-w-6xl gap-12 overflow-hidden px-8 py-20 lg:grid-cols-2 lg:items-center">
+        <img
+          src="/octopus.svg"
+          alt=""
+          className="pointer-events-none absolute -right-10 top-1/2 hidden w-72 -translate-y-1/2 opacity-10 lg:block"
+        />
+
         <div>
-          <Badge variant="outline">Safe smart account required</Badge>
-
-          <h1 className="mt-6 text-5xl leading-[1.05] font-bold text-white">Keep your portfolio on target</h1>
+          <h1 className="mt-6 text-5xl leading-[1.05] font-bold text-white">
+            Manage your DeFi exposure with a few extra hands.
+          </h1>
 
           <p className="mt-6 max-w-md text-base leading-relaxed text-gray-400">
-            Connect a Safe, choose the tokens to manage, and set a target for each group. Trades routed through
-            Aqua help maintain those targets while your portfolio earns LP fees.
+            Choose your exposure targets, then let Trim put Aqua Protocol trades to work rebalancing your portfolio
+            while earning LP fees.
           </p>
 
-          <Button className="mt-8" disabled={isConnecting} onClick={onConnectSafe}>
-            {isConnecting ? "Connecting…" : "Connect Safe"}
+          <Button variant="accent" className="mt-8" disabled={isConnecting} onClick={onConnectSafe}>
+            {isConnecting ? "Connecting…" : "Launch app"}
           </Button>
 
           {connectError && <p className="mt-4 max-w-md text-sm text-red-400">{connectError}</p>}
-
-          <p className="mt-4 text-sm text-gray-500">
-            You can connect with WalletConnect or open Portfolio Manager as a Safe App.
-          </p>
         </div>
 
         <CurrentVsTargetCard
@@ -55,6 +60,8 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
           ]}
         />
       </main>
+
+      <Footer />
     </div>
   );
 }
