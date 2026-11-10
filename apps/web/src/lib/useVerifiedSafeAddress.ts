@@ -21,6 +21,28 @@ import { useAccount, useDisconnect } from "wagmi";
  *           connection at all, or once a dead connection has been caught and is being redirected.
  *           Every page that needs a connected Safe should use this instead of useAccount()'s own
  *           `address` directly. */
+const VERIFY_TIMEOUT_MS = 8_000;
+
+/** A dead WalletConnect relay can leave `eth_accounts` pending forever instead of rejecting --
+ *  neither branch below ever fires, so the caller is stuck on an unverified connection with no
+ *  error and no redirect. Racing it against a timeout guarantees the existing catch path (disconnect
+ *  + send back to "/") still runs. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out verifying the wallet connection")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export function useVerifiedSafeAddress(): Address | undefined {
   const router = useRouter();
   const { address: cachedAddress, isConnected, connector } = useAccount();
@@ -45,7 +67,10 @@ export function useVerifiedSafeAddress(): Address | undefined {
         const provider = (await connector.getProvider()) as {
           request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
         };
-        const accounts = (await provider.request({ method: "eth_accounts" })) as string[] | undefined;
+        const accounts = (await withTimeout(
+          provider.request({ method: "eth_accounts" }),
+          VERIFY_TIMEOUT_MS,
+        )) as string[] | undefined;
         if (cancelled) return;
         if (accounts?.some((a) => a.toLowerCase() === cachedAddress.toLowerCase())) {
           setVerifiedAddress(cachedAddress);

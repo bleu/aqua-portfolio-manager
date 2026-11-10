@@ -24,6 +24,15 @@ export const wagmiConfig = createConfig({
     safe({ unstable_getInfoTimeout: 300 }),
     ...(walletConnectProjectId ? [walletConnect({ projectId: walletConnectProjectId })] : []),
   ],
+  // Not registering `injected()` above isn't enough on its own: wagmi's multi-injected-provider
+  // discovery (default on) announces every EIP-6963 wallet extension in the browser (MetaMask,
+  // Rabby, ...) and silently appends each one as its own connector at hydration, bypassing the
+  // list above entirely. Combined with WagmiProvider's default `reconnectOnMount`, any extension
+  // the user had previously authorized for this origin gets auto-reconnected on every load --
+  // observed directly with Rabby Wallet, landing the user on the dashboard with an unverified EOA
+  // on whatever chain Rabby happened to be set to, not a Safe on Base. Off, so the only connectors
+  // that ever exist are the two declared above.
+  multiInjectedProviderDiscovery: false,
   transports: {
     [base.id]: http(),
   },

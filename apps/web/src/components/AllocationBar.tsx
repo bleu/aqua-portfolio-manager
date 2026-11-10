@@ -1,4 +1,3 @@
-import { ArrowLeftIcon, ArrowRightIcon, PinIcon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 
 export type AllocationBarProps = {
@@ -20,7 +19,9 @@ function formatPct(value: number): string {
 /**
  * One basket's current-vs-target row: a filled bar up to the lower of the two values, a
  * highlighted "gap to target" segment spanning the difference (carrying a directional arrow),
- * and a pin marking the target position.
+ * and a marker pinpointing the target position. Styling confirmed directly on the real landing
+ * page's own basket rows (nodes 680:20967 and 680:20980) -- bar widths stay percentage-driven
+ * from real data rather than copying that static mockup's illustrative fixed pixel widths.
  */
 export function AllocationBar({ label, currentPct, targetPct, caption, className }: AllocationBarProps) {
   const lower = Math.min(currentPct, targetPct);
@@ -29,37 +30,36 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
   const isShrinking = targetPct < currentPct;
 
   return (
-    <div className={cn("rounded-xl border border-border p-5", className)}>
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-[10px] bg-gradient-to-r from-white/[0.02] to-white/[0.04] p-[14px]",
+        className,
+      )}
+    >
       <div className="flex items-baseline justify-between gap-4">
-        <span className="font-semibold text-white">{label}</span>
-        <span className="text-sm text-gray-400">
+        <span className="text-[17px] font-bold text-ink-primary">{label}</span>
+        <span className="text-[14px] text-ink-muted">
           Current {formatPct(currentPct)} · Target {formatPct(targetPct)}
         </span>
       </div>
 
-      <div className="relative mt-4 pt-3">
-        <div className="relative flex h-10 overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="bg-accent/40" style={{ width: `${lower}%` }} />
-          {gapWidth > 0 && (
-            <div
-              className={cn(
-                "flex items-center justify-center bg-accent text-white",
-                isShrinking ? "border-r-2 border-accent-muted" : "border-l-2 border-accent-muted",
-              )}
-              style={{ width: `${gapWidth}%` }}
-            >
-              {isShrinking ? <ArrowLeftIcon className="size-4" /> : <ArrowRightIcon className="size-4" />}
-            </div>
-          )}
-          <div className="absolute inset-y-0 w-[3px] -translate-x-1/2 bg-white" style={{ left: `${targetPct}%` }} />
-        </div>
-        <PinIcon
-          className="absolute top-1.5 size-3 -translate-x-1/2 text-white"
-          style={{ left: `${targetPct}%` }}
+      <div className="relative h-11 overflow-hidden rounded-lg border border-border-subtle bg-surface">
+        <div
+          className="absolute inset-y-0 left-0 rounded-l-md border border-accent-muted bg-gradient-to-b from-accent to-accent-muted"
+          style={{ width: `${lower}%` }}
         />
+        {gapWidth > 0 && (
+          <div
+            className="absolute inset-y-0 flex items-center justify-center bg-difference text-[20px] font-semibold text-surface-card"
+            style={{ left: `${lower}%`, width: `${gapWidth}%` }}
+          >
+            {isShrinking ? "←" : "→"}
+          </div>
+        )}
+        <div className="absolute inset-y-0 w-[3px] -translate-x-1/2 bg-[#f5f7fa]" style={{ left: `${targetPct}%` }} />
       </div>
 
-      <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
+      <div className="flex items-center gap-2 text-[14px] text-ink-muted">
         <span className="size-1.5 shrink-0 rounded-full bg-accent" />
         {caption}
       </div>

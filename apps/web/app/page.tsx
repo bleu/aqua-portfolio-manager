@@ -27,9 +27,18 @@ export default function Page() {
   // wagmi's connector-level pending/error state is shared across hook instances targeting the
   // same connector -- two independent useConnect() calls here fought over it instead of
   // isolating cleanly.
+  //
+  // Gated on actually being in an iframe: the assumption that this attempt "always fails" outside
+  // Safe{Wallet} turned out to be wrong whenever a browser extension wallet (e.g. Rabby) is
+  // installed -- observed directly, the safe connector's handshake probe falls through to that
+  // injected provider instead of rejecting, silently connecting the user's EOA on whatever chain
+  // it happens to be on and sending them into a dashboard built for a verified Safe on Base. A
+  // real Safe App is always loaded inside Safe{Wallet}'s own iframe, so skipping the attempt
+  // outside of one costs nothing for the real use case and closes this off entirely.
   const attemptedAutoConnect = useRef(false);
   useEffect(() => {
-    if (attemptedAutoConnect.current || !safeConnector) return;
+    const isEmbedded = window.self !== window.top;
+    if (attemptedAutoConnect.current || !safeConnector || !isEmbedded) return;
     attemptedAutoConnect.current = true;
     connect({ connector: safeConnector });
     // Only ever attempted once, on mount.
