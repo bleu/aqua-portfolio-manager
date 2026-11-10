@@ -30,7 +30,12 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
   const isShrinking = targetPct < currentPct;
 
   return (
-    <div className={cn("rounded-[10px] bg-gradient-to-r from-white/[0.02] to-white/[0.04] p-[14px]", className)}>
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-[10px] bg-gradient-to-r from-white/[0.02] to-white/[0.04] p-[14px]",
+        className,
+      )}
+    >
       <div className="flex items-baseline justify-between gap-4">
         <span className="text-[17px] font-bold text-ink-primary">{label}</span>
         <span className="text-[14px] text-ink-muted">
@@ -38,7 +43,7 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
         </span>
       </div>
 
-      <div className="relative mt-3.5 h-11 overflow-hidden rounded-lg border border-border-subtle bg-surface">
+      <div className="relative h-11 overflow-hidden rounded-lg border border-border-subtle bg-surface">
         <div
           className="absolute inset-y-0 left-0 rounded-l-md border border-accent-muted bg-gradient-to-b from-accent to-accent-muted"
           style={{ width: `${lower}%` }}
@@ -54,7 +59,7 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
         <div className="absolute inset-y-0 w-[3px] -translate-x-1/2 bg-[#f5f7fa]" style={{ left: `${targetPct}%` }} />
       </div>
 
-      <div className="mt-2 flex items-center gap-2 text-[14px] text-ink-muted">
+      <div className="flex items-center gap-2 text-[14px] text-ink-muted">
         <span className="size-1.5 shrink-0 rounded-full bg-accent" />
         {caption}
       </div>

@@ -26,7 +26,9 @@ function LegendItem({ children, swatch }: { children: ReactNode; swatch: ReactNo
  */
 export function CurrentVsTargetCard({ baskets, className }: CurrentVsTargetCardProps) {
   return (
-    <div className={cn("rounded-2xl bg-surface-card p-6", className)}>
+    // gap-5 (20px) applies uniformly between the legend and every basket row, matching the real
+    // card's own flat gap-[20px] -- not a 20px/16px split between two nesting levels.
+    <div className={cn("flex flex-col gap-5 rounded-2xl bg-surface-card p-6", className)}>
       {/* Confirmed on the real card's "Chart legend": the current-allocation swatch is a mint
           gradient with a border, not a flat tint; "Gap to target" is a distinct purple
           (var(--color-purple-400, #bfb6c9)), not accent at all; "Target" is its own glyph asset,
@@ -41,11 +43,9 @@ export function CurrentVsTargetCard({ baskets, className }: CurrentVsTargetCardP
         <LegendItem swatch={<img src="/target-symbol.svg" alt="" className="h-3.5 w-[11px]" />}>Target</LegendItem>
       </div>
 
-      <div className="mt-5 flex flex-col gap-4">
-        {baskets.map((basket) => (
-          <AllocationBar key={basket.label} {...basket} />
-        ))}
-      </div>
+      {baskets.map((basket) => (
+        <AllocationBar key={basket.label} {...basket} />
+      ))}
     </div>
   );
 }
