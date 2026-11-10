@@ -28,7 +28,14 @@ export function CurrentVsTargetCard({ baskets, className }: CurrentVsTargetCardP
   return (
     // gap-5 (20px) applies uniformly between the legend and every basket row, matching the real
     // card's own flat gap-[20px] -- not a 20px/16px split between two nesting levels.
-    <div className={cn("flex flex-col gap-5 rounded-2xl bg-surface-card p-6", className)}>
+    <div className={cn("relative flex flex-col gap-5 overflow-hidden rounded-2xl bg-surface-card p-6", className)}>
+      {/* The reference shows the card's own fill fading to transparent in the top-right corner,
+          where the mascot sits -- blends the two together instead of a hard card-edge cutting
+          across it. A radial gradient from transparent (at the corner) back to the card's own
+          fill reproduces that; overflow-hidden above keeps it clipped to the card's rounded
+          corner. */}
+      <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-[radial-gradient(circle,transparent_0%,theme(colors.surface.card)_70%)]" />
+
       {/* Confirmed on the real card's "Chart legend": the current-allocation swatch is a mint
           gradient with a border, not a flat tint; "Gap to target" is a distinct purple
           (var(--color-purple-400, #bfb6c9)), not accent at all; "Target" is its own glyph asset,

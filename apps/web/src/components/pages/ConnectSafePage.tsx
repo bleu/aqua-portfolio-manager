@@ -70,11 +70,14 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
               itself (not the whole grid row) so it stays correctly placed regardless of how
               tall the hero text column renders. w-[158px] matches the real node's own 171x156
               size scaled to this page's content width (1512/1636) -- a smaller w-28 was
-              downscaling its fine linework enough to blur into an indistinct smudge. */}
+              downscaling its fine linework enough to blur into an indistinct smudge.
+              z-20, above the card (z-10): the reference shows the mascot layered in FRONT of the
+              card, its tentacles crossing over the card's own top edge -- an earlier pass had
+              this backwards, clipping the mascot behind the card instead. */}
           <img
             src="/octopus-mascot-landing.png"
             alt=""
-            className="pointer-events-none absolute -top-16 right-4 z-0 hidden w-[158px] lg:block"
+            className="pointer-events-none absolute -top-20 right-4 z-20 hidden w-[158px] lg:block"
           />
           <CurrentVsTargetCard
             className="relative z-10"
