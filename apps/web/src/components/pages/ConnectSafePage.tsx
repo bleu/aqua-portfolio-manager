@@ -20,18 +20,24 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
       <Header onLaunchApp={onConnectSafe} />
 
       <main className="relative mx-auto grid max-w-6xl gap-12 overflow-hidden px-8 py-20 lg:grid-cols-2 lg:items-center">
+        {/* Confirmed on the real landing page (node 680:20994, "Polvo carvão com contornos
+            elegantes 1") -- a distinct, darker-outline asset from the header's blue mark, shown
+            at full opacity near the card's top-right corner, not faded/oversized. */}
         <img
-          src="/octopus-mascot.png"
+          src="/octopus-mascot-landing.png"
           alt=""
-          className="pointer-events-none absolute -right-10 top-1/2 hidden w-72 -translate-y-1/2 opacity-10 lg:block"
+          className="pointer-events-none absolute -top-16 right-8 z-0 hidden w-32 lg:block"
         />
 
         <div>
-          <h1 className="mt-6 font-display text-[52px] font-medium leading-[1.25] text-ink-primary">
+          {/* text-[#f5f7fa] is this exact node's own hardcoded literal (680:20951), a hex step
+              off the ink-primary token's variable-bound value -- kept inline rather than through
+              the shared token since the source itself diverges here. */}
+          <h1 className="mt-6 font-display text-[52px] font-medium leading-[1.25] text-[#f5f7fa]">
             Manage your DeFi exposure with a few extra hands.
           </h1>
 
-          <p className="mt-6 max-w-md text-[21px] leading-[1.45] text-ink-secondary">
+          <p className="mt-6 max-w-md text-[18px] leading-[1.25] text-ink-secondary">
             Choose your exposure targets, then let Trim put Aqua Protocol trades to work rebalancing your portfolio
             while earning LP fees.
           </p>

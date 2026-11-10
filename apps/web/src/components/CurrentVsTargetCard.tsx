@@ -42,10 +42,18 @@ export function CurrentVsTargetCard({
         <Badge variant="dot">Aqua routing</Badge>
       </div>
 
+      {/* Confirmed on the real card (node 680:20954's "Chart legend"): the current-allocation
+          swatch is a mint gradient with a border, not a flat tint; "Gap to target" is a distinct
+          purple (var(--color-purple-400, #bfb6c9)), not accent at all; "Target" is its own glyph
+          asset, not a plain dot. */}
       <div className="mt-4 flex flex-wrap items-center gap-4">
-        <LegendItem swatch={<span className="h-2.5 w-4 rounded-full bg-accent/40" />}>Current allocation</LegendItem>
-        <LegendItem swatch={<span className="h-2.5 w-4 rounded-full bg-accent" />}>Gap to target</LegendItem>
-        <LegendItem swatch={<span className="size-2 rounded-full bg-white" />}>Target</LegendItem>
+        <LegendItem
+          swatch={<span className="h-2 w-[18px] rounded-sm border border-accent-muted bg-gradient-to-b from-accent to-accent-muted" />}
+        >
+          Current allocation
+        </LegendItem>
+        <LegendItem swatch={<span className="h-2 w-[18px] rounded-sm bg-difference" />}>Gap to target</LegendItem>
+        <LegendItem swatch={<img src="/target-symbol.svg" alt="" className="h-3.5 w-[11px]" />}>Target</LegendItem>
       </div>
 
       <div className="mt-5 flex flex-col gap-4">

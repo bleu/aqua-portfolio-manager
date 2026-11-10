@@ -4,9 +4,10 @@ import type { ReactNode } from "react";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 
-// Trim's wordmark/headline typeface (brand guide) -- only ever used via the `font-display`
-// Tailwind token, never as the page default.
-const unbounded = Unbounded({ subsets: ["latin"], weight: ["500"], variable: "--font-unbounded" });
+// Trim's wordmark/headline typeface -- only ever used via the `font-display` Tailwind token,
+// never as the page default. 400 (Regular) for the header wordmark, 500 (Medium) for headlines --
+// confirmed on the real landing page's header and hero nodes respectively.
+const unbounded = Unbounded({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-unbounded" });
 
 export const metadata: Metadata = {
   title: "Aqua Portfolio Manager",
