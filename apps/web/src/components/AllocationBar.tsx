@@ -10,6 +10,11 @@ export type AllocationBarProps = {
   targetPct: number;
   /** Short sentence explaining which way routing moves this basket. */
   caption: string;
+  /** This basket's own brand color (hex), e.g. Trim's Mint or Salmon -- each basket gets a
+   *  distinct color, not a shared accent (confirmed in Figma: the allocation visualization
+   *  names its two ribbons "mint / allocation edge" and "salmon / allocation edge"). Defaults
+   *  to the shared accent for callers that don't pass one. */
+  color?: string;
   className?: string;
 };
 
@@ -22,7 +27,14 @@ function formatPct(value: number): string {
  * highlighted "gap to target" segment spanning the difference (carrying a directional arrow),
  * and a pin marking the target position.
  */
-export function AllocationBar({ label, currentPct, targetPct, caption, className }: AllocationBarProps) {
+export function AllocationBar({
+  label,
+  currentPct,
+  targetPct,
+  caption,
+  color = "#94cad1",
+  className,
+}: AllocationBarProps) {
   const lower = Math.min(currentPct, targetPct);
   const upper = Math.max(currentPct, targetPct);
   const gapWidth = upper - lower;
@@ -39,14 +51,11 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
 
       <div className="relative mt-4 pt-3">
         <div className="relative flex h-10 overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="bg-accent/40" style={{ width: `${lower}%` }} />
+          <div style={{ width: `${lower}%`, backgroundColor: `${color}66` }} />
           {gapWidth > 0 && (
             <div
-              className={cn(
-                "flex items-center justify-center bg-accent text-white",
-                isShrinking ? "border-r-2 border-accent-muted" : "border-l-2 border-accent-muted",
-              )}
-              style={{ width: `${gapWidth}%` }}
+              className={cn("flex items-center justify-center text-white", isShrinking ? "border-r-2" : "border-l-2")}
+              style={{ width: `${gapWidth}%`, backgroundColor: color, borderColor: color }}
             >
               {isShrinking ? <ArrowLeftIcon className="size-4" /> : <ArrowRightIcon className="size-4" />}
             </div>
@@ -60,7 +69,7 @@ export function AllocationBar({ label, currentPct, targetPct, caption, className
       </div>
 
       <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
-        <span className="size-1.5 shrink-0 rounded-full bg-accent" />
+        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
         {caption}
       </div>
     </div>

@@ -23,8 +23,12 @@ export function Button({ variant = "primary", size = "default", className, ...re
         paddingX,
         variant === "primary" && "bg-white text-surface hover:bg-gray-200 active:bg-gray-400",
         variant === "secondary" && "border border-border bg-transparent text-white hover:bg-surface-raised",
+        // font-semibold (600), not Figma's literal 590 -- that value only applies cleanly on a
+        // true variable-font instance; system-ui/ui-sans-serif fallbacks render it over-bold on
+        // at least one real browser (reported directly), so the safe, broadly-supported bucket
+        // wins over exact numeric fidelity here.
         variant === "accent" &&
-          "bg-gradient-to-b from-[#f0f9fa] to-accent text-[#0a0c16] text-[15px] font-[590] hover:opacity-90 active:opacity-80",
+          "bg-gradient-to-b from-[#f0f9fa] to-accent text-[#0a0c16] text-[15px] font-semibold hover:opacity-90 active:opacity-80",
         className,
       )}
       {...rest}
