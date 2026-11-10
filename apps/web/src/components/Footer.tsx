@@ -3,7 +3,7 @@
  *  gap-[40px] apart. "BLEU" renders as its own logo graphic, not plain bold text. */
 export function Footer() {
   return (
-    <footer className="mx-auto flex h-[94px] max-w-6xl flex-col items-center justify-between gap-4 px-8 pb-[62px] pt-8 text-sm text-ink-primary sm:flex-row">
+    <footer className="mx-auto flex h-[94px] max-w-[1512px] flex-col items-center justify-between gap-4 px-[62px] pb-[62px] pt-8 text-sm text-ink-primary sm:flex-row">
       <span className="flex items-center gap-1">
         © 2026 Built by
         <img src="/bleu-logo.svg" alt="BLEU" className="h-[11px]" />
