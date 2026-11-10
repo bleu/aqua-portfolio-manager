@@ -73,11 +73,16 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
               downscaling its fine linework enough to blur into an indistinct smudge.
               z-20, above the card (z-10): the reference shows the mascot layered in FRONT of the
               card, its tentacles crossing over the card's own top edge -- an earlier pass had
-              this backwards, clipping the mascot behind the card instead. */}
+              this backwards, clipping the mascot behind the card instead.
+              -right-11 (-44px): measured directly off the reference screenshot -- the mascot's
+              rightmost tentacle overhangs the card's own right edge by about 46px at this page's
+              content-width scale, it isn't flush with it. right-0's own box (confirmed via
+              computed styles: right was genuinely 0px, flush with the card) just wasn't far
+              enough right to match. */}
           <img
             src="/octopus-mascot-landing.png"
             alt=""
-            className="pointer-events-none absolute -top-20 right-0 z-20 hidden w-[158px] lg:block"
+            className="pointer-events-none absolute -top-20 -right-11 z-20 hidden w-[158px] lg:block"
           />
           <CurrentVsTargetCard
             className="relative z-10"
