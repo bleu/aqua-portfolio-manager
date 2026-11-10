@@ -16,14 +16,27 @@ export type ConnectSafePageProps = {
  *  call the same `onConnectSafe` handler until that modal replaces it. */
 export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: ConnectSafePageProps) {
   return (
-    <div className="min-h-screen">
+    <div className="relative min-h-screen overflow-hidden">
+      {/* The real landing page frame has one full-bleed background image behind everything
+          (confirmed node 680:20946's own background) -- a top-left glow plus the wavy horizon
+          line visible near the footer. An earlier pass omitted it entirely. */}
+      <img
+        src="/landing-page-bg.png"
+        alt=""
+        className="pointer-events-none absolute inset-0 -z-10 size-full object-cover"
+      />
+
       <Header onLaunchApp={onConnectSafe} />
 
       {/* max-w-[1512px]/px-[62px] match the real landing page's own canvas width (1636px, minus
           62px padding each side) -- the previous max-w-6xl (1152px) squeezed every fixed-px
           type size (confirmed from Figma) into a narrower box than it was sized for, reading
-          oversized relative to the rest of the page. */}
-      <main className="relative mx-auto grid max-w-[1512px] gap-12 px-[62px] py-20 lg:grid-cols-2 lg:items-center">
+          oversized relative to the rest of the page.
+          grid-cols-[881fr_522fr] matches the real hero/card width ratio (881px:522px) -- an
+          equal grid-cols-2 split had rendered the card noticeably wider, and the hero column
+          noticeably narrower, than the real design, which is why the headline wrapped across
+          more lines than it should have. */}
+      <main className="relative mx-auto grid max-w-[1512px] gap-16 px-[62px] py-20 lg:grid-cols-[881fr_522fr] lg:items-center">
         <div>
           {/* text-[#f5f7fa] is this exact node's own hardcoded literal (680:20951), a hex step
               off the ink-primary token's variable-bound value -- kept inline rather than through
