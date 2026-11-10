@@ -28,24 +28,26 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
 
       <Header onLaunchApp={onConnectSafe} />
 
-      {/* max-w-[1512px]/px-[62px] match the real landing page's own canvas width (1636px, minus
-          62px padding each side) -- the previous max-w-6xl (1152px) squeezed every fixed-px
-          type size (confirmed from Figma) into a narrower box than it was sized for, reading
-          oversized relative to the rest of the page.
+      {/* No max-width (per the user's call): the page fills wide viewports instead of staying
+          capped at the design's own 1512px/1636px content width. Horizontal padding and the
+          headline/body font sizes scale moderately with viewport via clamp() rather than a fixed
+          value -- Figma's canvas has no opinion on behavior past its own edge, so these curves
+          are my own reasonable choice, anchored to equal the confirmed values at the design's
+          1636px width.
           grid-cols-[881fr_522fr] matches the real hero/card width ratio (881px:522px) -- an
           equal grid-cols-2 split had rendered the card noticeably wider, and the hero column
           noticeably narrower, than the real design, which is why the headline wrapped across
           more lines than it should have. */}
-      <main className="relative mx-auto grid max-w-[1512px] gap-16 px-[62px] py-20 lg:grid-cols-[881fr_522fr] lg:items-center">
+      <main className="relative grid gap-16 px-[clamp(24px,4vw,120px)] py-20 lg:grid-cols-[881fr_522fr] lg:items-center">
         <div>
           {/* text-[#f5f7fa] is this exact node's own hardcoded literal (680:20951), a hex step
               off the ink-primary token's variable-bound value -- kept inline rather than through
               the shared token since the source itself diverges here. */}
-          <h1 className="mt-6 font-display text-[52px] font-medium leading-[1.25] text-[#f5f7fa]">
+          <h1 className="mt-6 font-display text-[clamp(52px,2.4px_+_3.03vw,80px)] font-medium leading-[1.25] text-[#f5f7fa]">
             Manage your DeFi exposure with a few extra hands.
           </h1>
 
-          <p className="mt-6 max-w-md text-[18px] leading-[1.25] text-ink-secondary">
+          <p className="mt-6 max-w-2xl text-[clamp(18px,7.4px_+_0.65vw,24px)] leading-[1.25] text-ink-secondary">
             Choose your exposure targets, then let Trim put Aqua Protocol trades to work rebalancing your portfolio
             while earning LP fees.
           </p>
@@ -62,11 +64,13 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
               elegantes 1") -- a distinct, darker-outline asset from the header's blue mark, at
               full opacity, peeking above the card's own top-right corner. Anchored to the card
               itself (not the whole grid row) so it stays correctly placed regardless of how
-              tall the hero text column renders. */}
+              tall the hero text column renders. w-[158px] matches the real node's own 171x156
+              size scaled to this page's content width (1512/1636) -- a smaller w-28 was
+              downscaling its fine linework enough to blur into an indistinct smudge. */}
           <img
             src="/octopus-mascot-landing.png"
             alt=""
-            className="pointer-events-none absolute -top-10 right-4 z-0 hidden w-28 lg:block"
+            className="pointer-events-none absolute -top-16 right-4 z-0 hidden w-[158px] lg:block"
           />
           <CurrentVsTargetCard
             className="relative z-10"
