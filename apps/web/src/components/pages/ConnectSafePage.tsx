@@ -21,17 +21,17 @@ export function ConnectSafePage({ onConnectSafe, isConnecting, connectError }: C
 
       <main className="relative mx-auto grid max-w-6xl gap-12 overflow-hidden px-8 py-20 lg:grid-cols-2 lg:items-center">
         <img
-          src="/octopus.svg"
+          src="/octopus-mascot.png"
           alt=""
           className="pointer-events-none absolute -right-10 top-1/2 hidden w-72 -translate-y-1/2 opacity-10 lg:block"
         />
 
         <div>
-          <h1 className="mt-6 text-5xl leading-[1.05] font-bold text-white">
+          <h1 className="mt-6 font-display text-[52px] font-medium leading-[1.25] text-ink-primary">
             Manage your DeFi exposure with a few extra hands.
           </h1>
 
-          <p className="mt-6 max-w-md text-base leading-relaxed text-gray-400">
+          <p className="mt-6 max-w-md text-[21px] leading-[1.45] text-ink-secondary">
             Choose your exposure targets, then let Trim put Aqua Protocol trades to work rebalancing your portfolio
             while earning LP fees.
           </p>
