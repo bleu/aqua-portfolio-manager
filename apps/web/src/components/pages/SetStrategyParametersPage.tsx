@@ -54,7 +54,8 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-300">Choose a value</span>
-                <Badge className="border-red-400/40 bg-red-400/10 text-red-300">Required</Badge>
+                {/* Confirmed exact hexes on Figma node 431:13362, not Tailwind's generic red. */}
+                <Badge className="border-transparent bg-[#381b1f] text-[#ff9499]">Required</Badge>
               </div>
               <ChoicePillGroup
                 className="mt-2"
