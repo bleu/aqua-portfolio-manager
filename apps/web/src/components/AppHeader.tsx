@@ -16,10 +16,8 @@ export function AppHeader({ tabs, network, safeAddress, onSelectTab }: AppHeader
   return (
     <header className="relative flex items-center justify-between border-b border-border bg-surface-raised px-6 py-3">
       <Link href="/dashboard" className="flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white text-xs font-bold text-surface">
-          P
-        </span>
-        <span className="text-sm font-medium text-gray-100">Portfolio Manager</span>
+        <img src="/octopus.svg" alt="" className="h-5 w-6" />
+        <span className="font-display text-base font-normal text-accent">trim</span>
       </Link>
 
       {tabs && tabs.length > 0 && (
