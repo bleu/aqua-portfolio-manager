@@ -47,6 +47,9 @@ export function TokenListRow({
       className={cn(
         "flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors",
         !readOnly && "cursor-pointer hover:bg-surface-raised",
+        // Figma's own reference (node 398:4941) highlights an already-added row with a distinct
+        // tinted background, not just the trailing "Added" badge -- confirmed on /setup/baskets.
+        added && "bg-accent/10",
         highlighted && "border-accent bg-accent/10",
         blocked && "cursor-not-allowed opacity-50 hover:bg-transparent",
       )}
