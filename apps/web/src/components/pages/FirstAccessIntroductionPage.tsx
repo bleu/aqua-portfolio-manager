@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { AppHeader } from "@/components/AppHeader";
+import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { GroupSummaryCard } from "@/components/GroupSummaryCard";
@@ -32,11 +33,15 @@ export function FirstAccessIntroductionPage({
       <AppHeader network={network} safeAddress={safeAddress} />
 
       <div className="mx-auto max-w-5xl px-6 py-16 text-center">
-        <p className="text-xs font-semibold tracking-wider text-accent">HOW IT WORKS</p>
-        <h1 className="mt-3 text-4xl font-semibold text-white">Set the exposure you want to maintain</h1>
+        {/* Figma's own copy here is sentence case ("How it works"), not all-caps like Badge's
+            other outline-variant uses elsewhere -- overriding just the case transform. */}
+        <Badge variant="outline" className="normal-case tracking-normal">
+          How it works
+        </Badge>
+        <h1 className="mt-4 font-display text-[32px] font-medium text-white">Set the exposure you want to maintain</h1>
         <p className="mx-auto mt-4 max-w-2xl text-sm text-gray-400">
-          Group your managed tokens and set each group&apos;s target share. Portfolio Manager uses trades routed
-          through Aqua to move exposure toward those targets while your portfolio earns LP fees.
+          Group your managed tokens and set each group&apos;s target share. Trim uses trades routed through Aqua to
+          move exposure toward those targets while your portfolio earns LP fees.
         </p>
 
         <Card padding="spacious" className="mt-14 text-left">
