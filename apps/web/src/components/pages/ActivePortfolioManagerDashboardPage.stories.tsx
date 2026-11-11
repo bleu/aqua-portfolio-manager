@@ -69,6 +69,7 @@ export const TwoBaskets: Story = {
     routedTransactionCount: 24,
     baskets,
     chartSeries,
+    onUpdateStrategy: () => {},
   },
 };
 
