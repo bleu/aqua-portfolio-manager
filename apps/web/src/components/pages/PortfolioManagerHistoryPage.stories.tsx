@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { getAddress } from "viem";
+import { getAddress, type Address, type Hex } from "viem";
 import { PortfolioManagerHistoryPage } from "./PortfolioManagerHistoryPage";
 import { DAI, USDC, USDT, WBTC, WETH } from "@/lib/mockData";
 import { buildOrder, buildProgram, encodeOrder } from "@/lib/portfolioManagerEncoding";
@@ -42,27 +42,27 @@ function fakeEncodedOrder(feeBps: bigint, maxDeviationBps: bigint) {
 }
 
 const activeEntry: StrategyHistoryEntry = {
-  strategyHash: "0xaaaa111122223333444455556666777788889999aaaabbbbccccddddeeeeff",
+  strategyHash: "0xaaaa111122223333444455556666777788889999aaaabbbbccccddddeeeeff" as Hex,
   encodedOrder: fakeEncodedOrder(20_000_000n, 10_000_000n),
-  tokens: [USDC.address, WETH.address],
+  tokens: [USDC.address as Address, WETH.address as Address],
   groupNames: ["Stablecoins", "Crypto majors"],
   isActive: true,
   shippedAt: String(Math.floor(Date.now() / 1000) - 3 * 86_400),
-  shippedAtTxHash: "0x8a2f1234aaaa1234bbbb1234cccc1234dddd1234eeee1234ffff123430c1",
+  shippedAtTxHash: "0x8a2f1234aaaa1234bbbb1234cccc1234dddd1234eeee1234ffff123430c1" as Hex,
   dockedAt: null,
   dockedAtTxHash: null,
 };
 
 const dockedEntry: StrategyHistoryEntry = {
-  strategyHash: "0xbbbb222233334444555566667777888899990000aaaabbbbccccddddeeefff0",
+  strategyHash: "0xbbbb222233334444555566667777888899990000aaaabbbbccccddddeeefff0" as Hex,
   encodedOrder: fakeEncodedOrder(50_000_000n, 20_000_000n),
-  tokens: [USDT.address, DAI.address, WBTC.address],
+  tokens: [USDT.address as Address, DAI.address as Address, WBTC.address as Address],
   groupNames: ["Stablecoins", "Crypto majors"],
   isActive: false,
   shippedAt: String(Math.floor(Date.now() / 1000) - 10 * 86_400),
-  shippedAtTxHash: "0x7b3e9876dddd9876cccc9876bbbb9876aaaa98769999876655558765432d2",
+  shippedAtTxHash: "0x7b3e9876dddd9876cccc9876bbbb9876aaaa98769999876655558765432d2" as Hex,
   dockedAt: String(Math.floor(Date.now() / 1000) - 3 * 86_400),
-  dockedAtTxHash: "0x9c4fabcdeeeeabcdddddabcdccccabcdbbbbabcdaaaaabcd99998765210e3",
+  dockedAtTxHash: "0x9c4fabcdeeeeabcdddddabcdccccabcdbbbbabcdaaaaabcd99998765210e3" as Hex,
 };
 
 export const WithHistory: Story = {
