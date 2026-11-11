@@ -29,7 +29,17 @@ export function WizardStepper({ steps, activeIndex }: WizardStepperProps) {
               >
                 {state === "complete" ? "✓" : index + 1}
               </span>
-              <span className={cn("text-sm", state === "upcoming" ? "text-gray-500" : "text-gray-100")}>
+              {/* Figma's own reference (node 75:2) gives a completed step's label the accent
+                  color, not plain white -- confirmed on "Baskets"/"Targets" there, though the
+                  step immediately before the active one ("Parameters") rendered plain white in
+                  that same reference, which reads as an authoring inconsistency rather than a
+                  deliberate "last completed step" rule, so not replicated here. */}
+              <span
+                className={cn(
+                  "text-sm",
+                  state === "upcoming" ? "text-gray-500" : state === "complete" ? "text-accent" : "text-gray-100",
+                )}
+              >
                 {step.label}
               </span>
             </div>
