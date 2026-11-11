@@ -51,6 +51,12 @@ export type ActivePortfolioManagerDashboardPageProps = {
   onDeleteStrategy?: () => void;
   isDeletingStrategy?: boolean;
   deleteStrategyError?: string;
+  /** Figma's reference (node 80:2) shows this as a primary action next to the overflow menu, not
+   *  folded into it -- optional since the actual edit-strategy flow it should navigate to isn't
+   *  part of this epic's 9 screens yet (see BLEUDEV-432's caveat on the app's edit-flow Figma
+   *  frames not being confirmed as implemented). Omit to hide the button entirely rather than
+   *  wire a dead click. */
+  onUpdateStrategy?: () => void;
   /** False while the indexer lookup for this Safe's active strategy hash/tokens (needed to build
    *  the dock() call) is still in flight -- without it, "Delete" would silently no-op. */
   canDeleteStrategy?: boolean;
@@ -74,6 +80,7 @@ export function ActivePortfolioManagerDashboardPage({
   deleteStrategyError,
   canDeleteStrategy = true,
   onSelectTab,
+  onUpdateStrategy,
 }: ActivePortfolioManagerDashboardPageProps) {
   const [range, setRange] = useState<TimeRange>("30d");
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -97,6 +104,11 @@ export function ActivePortfolioManagerDashboardPage({
             </p>
           </div>
           <div className="relative flex items-center gap-2">
+            {onUpdateStrategy && (
+              <Button variant="accent" onClick={onUpdateStrategy}>
+                Update strategy
+              </Button>
+            )}
             <IconButton aria-label="More options" onClick={() => setShowMoreMenu((v) => !v)}>
               <MoreIcon className="size-4" />
             </IconButton>
