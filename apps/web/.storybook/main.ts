@@ -7,7 +7,9 @@ const config: StorybookConfig = {
     name: "@storybook/nextjs",
     options: {},
   },
-  staticDirs: [],
+  // Previously empty -- every story using a /public asset (the octopus mark, background images,
+  // etc.) silently 404'd inside Storybook's iframe, since nothing served the public/ folder there.
+  staticDirs: ["../public"],
 };
 
 export default config;
