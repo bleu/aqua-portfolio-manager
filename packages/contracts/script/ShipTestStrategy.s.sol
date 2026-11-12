@@ -192,7 +192,7 @@ contract ShipTestStrategy is Script {
     function _feedIndexOf(PortfolioManagerFeedRegistry registry, address feed) internal view returns (uint16) {
         uint256 count = registry.feedCount();
         for (uint16 i = 1; i < count; i++) {
-            (address candidate,) = registry.feedAt(i);
+            (address candidate,,) = registry.feedAt(i);
             if (candidate == feed) return i;
         }
         revert ShipTestStrategyFeedNotRegistered(feed);
