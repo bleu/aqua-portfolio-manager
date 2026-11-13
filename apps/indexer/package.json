@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@aqua-portfolio-manager/addresses": "workspace:*",
-    "hono": "^4.13.13",
+    "hono": "^4.13.16",
     "ponder": "^0.16.10",
     "viem": "^2.21.0"
   },
