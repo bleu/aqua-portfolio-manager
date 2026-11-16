@@ -1,3 +1,4 @@
+import { BASKET_COLORS, getBasketColor } from "./basketColors";
 import type { BasketDraft } from "./mockBaskets";
 import type { DraftParameters } from "./parametersDraftStorage";
 
@@ -33,6 +34,10 @@ export function clearActiveStrategy(safeAddress: string): void {
   }
 }
 
+/** Same stale-color risk as basketDraftsStorage.loadDraftBaskets, and the same fix: a strategy
+ *  activated before a basket-palette change keeps whatever hex its snapshot was taken with
+ *  forever, since nothing else ever re-colors it. Re-color by index whenever any basket's stored
+ *  color isn't in the current palette. */
 export function loadActiveStrategy(safeAddress: string): ActiveStrategySnapshot | undefined {
   try {
     const raw = window.localStorage.getItem(storageKey(safeAddress));
@@ -42,7 +47,13 @@ export function loadActiveStrategy(safeAddress: string): ActiveStrategySnapshot 
       Array.isArray(parsed?.baskets) &&
       typeof parsed?.targetsPct === "object" &&
       typeof parsed?.parameters === "object";
-    return isValid ? (parsed as ActiveStrategySnapshot) : undefined;
+    if (!isValid) return undefined;
+
+    const snapshot = parsed as ActiveStrategySnapshot;
+    const isStale = snapshot.baskets.some((b) => !BASKET_COLORS.includes(b.color));
+    return isStale
+      ? { ...snapshot, baskets: snapshot.baskets.map((b, i) => ({ ...b, color: getBasketColor(i).solid })) }
+      : snapshot;
   } catch {
     return undefined;
   }
