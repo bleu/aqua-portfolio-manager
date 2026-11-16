@@ -3,8 +3,7 @@
 import { useMemo, useState } from "react";
 import { AllocationPreviewBar } from "@/components/AllocationPreviewBar";
 import { AppHeader } from "@/components/AppHeader";
-import { Badge } from "@/components/Badge";
-import { InfoBanner } from "@/components/InfoBanner";
+import { Footer } from "@/components/Footer";
 import { TargetAllocationRow } from "@/components/TargetAllocationRow";
 import type { TabNavItem } from "@/components/TabNav";
 import { WizardFooter } from "@/components/WizardFooter";
@@ -57,7 +56,11 @@ function applyTarget(targets: Record<string, number>, id: string, rawValue: numb
   return next;
 }
 
-/** BLEUDEV-414 — "05 · Set target allocation": step 2 of the 4-step setup wizard. */
+/** BLEUDEV-414 — "05 · Set target allocation": step 2 of the 4-step setup wizard. Matches
+ *  Figma's own "2. Targets" flow screen (node 680:20768): one rounded standalone panel holding
+ *  the title, column labels, basket rows, and allocation preview together -- not a separate
+ *  heading/description/badge above a plain divided list, which is what this page looked like
+ *  before. */
 export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack, onContinue }: SetTargetAllocationPageProps) {
   const currentPct = useMemo(() => currentAllocationPct(baskets), [baskets]);
   const [targets, setTargets] = useState<Record<string, number>>(() => ({ ...currentPct }));
@@ -73,31 +76,26 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
     <div className="min-h-screen">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="text-2xl font-semibold text-white">Set target allocation</h1>
-        <p className="mt-1 text-sm text-gray-400">Set the share of the portfolio each basket should represent.</p>
-
-        <div className="mt-6">
+      <div className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mb-6">
           <WizardStepper steps={WIZARD_STEPS} activeIndex={1} />
         </div>
 
-        <div className="mt-8 rounded-xl border border-border bg-surface-card p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Target allocation</h2>
-              <p className="mt-1 text-sm text-gray-400">Targets are prefilled from the portfolio&apos;s current allocation.</p>
-            </div>
-            {/* Figma's own reference (node 565:5717) shows this total as plain text, not its own
-                corner badge -- confirmed directly, not inferred from the ticket's description. */}
-            <span className="shrink-0 text-sm text-gray-400">{total.toFixed(0)}%</span>
+        <div className="flex flex-col gap-6 rounded-[30px] border border-border/60 bg-surface-card p-6">
+          <div>
+            <h1 className="text-2xl font-bold text-ink-primary">Set target allocation</h1>
+            <p className="mt-1 text-base text-ink-muted">Set the share of the portfolio each basket should represent.</p>
           </div>
 
-          <div className="mt-5 divide-y divide-border">
-            <div className="flex items-center justify-between pb-2 text-[11px] font-medium tracking-wide text-gray-500 uppercase">
-              <span>Basket</span>
-              <span>Current allocation</span>
-              <span>Target</span>
-            </div>
+          <div className="h-px w-full bg-border" />
+
+          <div className="flex items-center justify-between px-6 text-xs font-medium tracking-wide text-ink-muted uppercase">
+            <span>Basket</span>
+            <span>Current allocation</span>
+            <span>Target</span>
+          </div>
+
+          <div className="flex flex-col gap-3">
             {baskets.map((basket) => (
               <TargetAllocationRow
                 key={basket.id}
@@ -112,22 +110,14 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
             ))}
           </div>
 
-          <div className="mt-5">
-            <InfoBanner>Changing one target adjusts the other so the total always stays at 100%.</InfoBanner>
+          <div className="flex items-center justify-between text-xs font-medium text-ink-muted">
+            <span>Allocation preview</span>
+            <span className="text-[11px] font-normal">{total.toFixed(0)}%</span>
           </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-white">Allocation preview</h3>
-              <Badge className="border-border bg-surface-raised text-gray-300">
-                {needsRebalance ? "Rebalance required" : "Matches current allocation"}
-              </Badge>
-            </div>
-            <AllocationPreviewBar
-              className="mt-3"
-              baskets={baskets.map((b) => ({ id: b.id, name: b.name, color: b.color, targetPct: targets[b.id] }))}
-            />
-          </div>
+          <AllocationPreviewBar
+            baskets={baskets.map((b) => ({ id: b.id, name: b.name, color: b.color, targetPct: targets[b.id] }))}
+            status={needsRebalance ? "Rebalance required" : "Matches current allocation → No initial rebalance"}
+          />
         </div>
 
         <div className="mt-6">
@@ -140,6 +130,8 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
           />
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }
