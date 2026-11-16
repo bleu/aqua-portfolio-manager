@@ -5,16 +5,21 @@ export type AddBasketButtonProps = {
   onClick?: () => void;
 };
 
-/** The dashed "+ Add basket" action at the bottom of the basket list. */
+/** The solid "+ Add basket" pill at the bottom of the basket list -- matches the Claude Artifact's
+ *  "Baskets · filled" mockup (project/Step1_Baskets_Filled.dc.html, `.btn.b-solid`), not the
+ *  earlier dashed-outline ghost button. */
 export function AddBasketButton({ disabled, onClick }: AddBasketButtonProps) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2.5 text-sm font-medium text-gray-400 transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-gray-400"
+      className="flex h-12 items-center justify-center gap-2 rounded-full bg-accent px-7 text-[15px] font-semibold text-[#0b0d10] transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
     >
-      <span aria-hidden="true">+</span> Add basket
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+      Add basket
     </button>
   );
 }

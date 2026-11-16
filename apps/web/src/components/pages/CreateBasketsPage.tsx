@@ -9,11 +9,12 @@ import { Footer } from "@/components/Footer";
 import { SearchInput } from "@/components/SearchInput";
 import type { TabNavItem } from "@/components/TabNav";
 import { TokenChip } from "@/components/TokenChip";
+import { TokenIcon } from "@/components/TokenIcon";
 import { TokenListRow } from "@/components/TokenListRow";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
-import { BASKET_COLORS } from "@/lib/basketColors";
+import { BASKET_CHIP_GRADIENTS, BASKET_COLORS } from "@/lib/basketColors";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
 import { cn } from "@/lib/cn";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
@@ -185,6 +186,14 @@ export function CreateBasketsPage({
     if (selectedBasketId === id) setSelectedBasketId(remaining[0]?.id);
   }
 
+  /** The gradient a basket's own chips use (Step1_Baskets_Filled.dc.html's .t-teal/.t-sal) is tied
+   *  to its assigned flat color, not its position in the list -- looking it up by color keeps a
+   *  basket's chip tint stable even if an earlier basket is deleted. */
+  function chipGradientFor(basket: BasketDraft) {
+    const index = BASKET_COLORS.indexOf(basket.color);
+    return BASKET_CHIP_GRADIENTS[index === -1 ? 0 : index % BASKET_CHIP_GRADIENTS.length]!;
+  }
+
   const selectedBasketTokens = selectedBasket
     ? safeTokens.filter((t) => selectedBasket.tokenAddresses.includes(t.address))
     : [];
@@ -242,41 +251,44 @@ export function CreateBasketsPage({
         )}
 
         <div className={isUnsupportedNetwork ? "pointer-events-none opacity-30" : undefined}>
-        <h1 className="text-2xl font-semibold text-white">Create your baskets</h1>
-        <p className="mt-1 text-sm text-gray-400">Create baskets on the left, then choose their tokens from the selected basket.</p>
-
         <div className="mt-6">
           <WizardStepper steps={WIZARD_STEPS} activeIndex={0} />
         </div>
 
-        <div className="mt-8 grid grid-cols-[280px_1fr] gap-4">
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-gray-500">
-              Your baskets <span className="ml-1 text-gray-600">{draftBaskets.length}/{MAX_BASKETS}</span>
-            </p>
+        <div className="mt-8 grid grid-cols-2 gap-6">
+          <div className="flex flex-col gap-4 rounded-[28px] border border-white/[0.03] bg-[#16181b] p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-[26px] font-semibold text-white">Create your baskets</h1>
+                <p className="mt-2 text-[15px] text-gray-400">Add baskets and choose their token composition.</p>
+              </div>
+              <span className="flex h-10 shrink-0 items-center rounded-full bg-[#212428] px-[18px] text-[17px] text-[#b5b9bd]">
+                {draftBaskets.length} / {MAX_BASKETS}
+              </span>
+            </div>
+            <div className="h-px bg-[#262a2f]" />
+
             {draftBaskets.map((basket) => {
               const tokens = safeTokens.filter((t) => basket.tokenAddresses.includes(t.address));
               const value = tokens.reduce((sum, t) => sum + t.value, 0);
               const selected = basket.id === selectedBasketId;
+              const gradient = chipGradientFor(basket);
+              const atTokenLimit = tokens.length >= MAX_TOKENS_PER_BASKET;
               return (
                 <div
                   key={basket.id}
                   onClick={() => setSelectedBasketId(basket.id)}
                   className={cn(
-                    "cursor-pointer rounded-xl border bg-surface-card p-3 transition-colors",
-                    selected ? "border-2" : "border-border hover:border-gray-600",
+                    "cursor-pointer rounded-[28px] border-[1.5px] px-6 py-[22px] transition-colors",
+                    selected ? "border-accent bg-[#171a1d]" : "border-transparent bg-[#1a1d21] hover:border-white/10",
                   )}
-                  style={selected ? { borderColor: basket.color } : undefined}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2">
-                      <span className="mt-1.5 size-2.5 shrink-0 rounded-full" style={{ backgroundColor: basket.color }} />
-                      <div>
-                        <p className="text-sm font-medium text-white">{basket.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {tokens.length}/{MAX_TOKENS_PER_BASKET} tokens · ${value.toLocaleString()} managed
-                        </p>
-                      </div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xl font-semibold text-white">{basket.name}</p>
+                      <p className="mt-1.5 text-sm text-[#8b9096]">
+                        {tokens.length}/{MAX_TOKENS_PER_BASKET} tokens · ${value.toLocaleString()} managed
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -285,55 +297,69 @@ export function CreateBasketsPage({
                         e.stopPropagation();
                         deleteBasket(basket.id);
                       }}
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-gray-400 transition-colors hover:text-red-400"
+                      className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#202429] text-[#cfd3d6] transition-colors hover:bg-[#262b31]"
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
                       </svg>
                     </button>
                   </div>
 
-                  {tokens.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {tokens.map((token) => (
-                        <TokenChip
-                          key={token.address}
-                          token={token}
-                          variant="removable"
-                          onRemove={() => removeTokenFromBasket(basket.id, token.address)}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedBasketId(basket.id);
-                    }}
-                    className="mt-2 text-xs font-medium text-accent hover:text-accent/80"
-                  >
-                    + Add token
-                  </button>
+                  <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
+                    {tokens.map((token) => (
+                      <span
+                        key={token.address}
+                        className="inline-flex h-[46px] items-center gap-2 rounded-full py-0 pr-3.5 pl-1.5 text-sm font-semibold text-[#0b0d10]"
+                        style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.to})` }}
+                      >
+                        <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} size={34} />
+                        {token.symbol}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${token.symbol}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeTokenFromBasket(basket.id, token.address);
+                          }}
+                        >
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M6 6l12 12M18 6L6 18" />
+                          </svg>
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBasketId(basket.id);
+                      }}
+                      disabled={atTokenLimit}
+                      className="flex h-[46px] items-center gap-2 rounded-full border border-border px-[18px] text-[15px] text-[#9aa0a5] transition-colors hover:border-accent/60 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                      Add token
+                    </button>
+                  </div>
                 </div>
               );
             })}
-            {draftBaskets.length < MAX_BASKETS && <AddBasketButton onClick={addBasket} />}
-            {draftBaskets.length >= MAX_BASKETS ? (
+
+            <AddBasketButton onClick={addBasket} disabled={draftBaskets.length >= MAX_BASKETS} />
+            {draftBaskets.length >= MAX_BASKETS && (
               <div>
                 <p className="text-sm text-red-500">Maximum baskets reached</p>
                 <p className="mt-1.5 text-sm text-gray-500">
                   You can create up to {MAX_BASKETS} baskets. Remove a basket to add another.
                 </p>
               </div>
-            ) : (
-              <p className="pt-2 text-xs text-gray-600">Each token can only belong to one basket.</p>
             )}
           </div>
 
           {selectedBasket && (
-            <div className="space-y-4 rounded-xl border border-border bg-surface-card p-5">
+            <div className="space-y-4 rounded-[28px] border border-white/[0.03] bg-[#16181b] p-6">
               <BasketPanelHeader
                 name={selectedBasket.name}
                 color={selectedBasket.color}
