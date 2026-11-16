@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { AddBasketButton } from "@/components/AddBasketButton";
 import { AppHeader } from "@/components/AppHeader";
+import { Banner } from "@/components/Banner";
 import { BasketPanelHeader } from "@/components/BasketPanelHeader";
 import { Footer } from "@/components/Footer";
 import { GroupSummaryCard } from "@/components/GroupSummaryCard";
-import { InfoBanner } from "@/components/InfoBanner";
 import { SearchInput } from "@/components/SearchInput";
 import type { TabNavItem } from "@/components/TabNav";
 import { TokenChip } from "@/components/TokenChip";
@@ -16,6 +16,7 @@ import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
+import { dismissSafeBanner, hasDismissedSafeBanner } from "@/lib/safeWalletBannerStorage";
 import { hasSeenWelcome, markWelcomeSeen } from "@/lib/welcomeModalStorage";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
@@ -36,6 +37,11 @@ export type CreateBasketsPageProps = {
   baskets: BasketDraft[];
   safeTokens: SafeToken[];
   tokensLoading?: boolean;
+  /** True when the connected wallet is on a chain other than Base -- dims and disables the whole
+   *  wizard card below the banner, matching the design reference exactly (this app is Base-only,
+   *  see lib/wagmi.ts). The page wrapper owns the actual chain check; this component only renders
+   *  what it's told. */
+  isUnsupportedNetwork?: boolean;
   onBack?: () => void;
   onContinue?: () => void;
 };
@@ -47,6 +53,7 @@ export function CreateBasketsPage({
   baskets,
   safeTokens,
   tokensLoading,
+  isUnsupportedNetwork,
   onBack,
   onContinue,
 }: CreateBasketsPageProps) {
@@ -57,6 +64,7 @@ export function CreateBasketsPage({
   // Defaults to false so the first render always matches the server (no localStorage there),
   // same hydration-mismatch avoidance as the draftBaskets effect below.
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showSafeBanner, setShowSafeBanner] = useState(false);
 
   // Applied after mount, not as useState's initializer, so the first render always matches the
   // server-rendered baskets prop -- avoids a hydration mismatch between what the server sent and
@@ -76,6 +84,15 @@ export function CreateBasketsPage({
   function dismissWelcome() {
     markWelcomeSeen(safeAddress);
     setShowWelcome(false);
+  }
+
+  useEffect(() => {
+    if (!hasDismissedSafeBanner(safeAddress)) setShowSafeBanner(true);
+  }, [safeAddress]);
+
+  function dismissSafeWalletBanner() {
+    dismissSafeBanner(safeAddress);
+    setShowSafeBanner(false);
   }
 
   useEffect(() => {
@@ -164,6 +181,51 @@ export function CreateBasketsPage({
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
       <div className="mx-auto max-w-5xl px-6 py-8">
+        {isUnsupportedNetwork ? (
+          <Banner
+            tone="warning"
+            icon={
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c9ad78" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v5M12 16v.5" />
+              </svg>
+            }
+            title="Unsupported network"
+            description="Trim is only available on Base. Switch your network to Base to continue"
+            action={
+              <span className="flex items-center gap-2 text-sm font-semibold text-accent">
+                Switch to Base in Safe
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M8 16L17 7M9 7h8v8" />
+                </svg>
+              </span>
+            }
+          />
+        ) : (
+          showSafeBanner && (
+            <Banner
+              tone="info"
+              icon={
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1b3a40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z" />
+                </svg>
+              }
+              title="You're using a Safe Wallet"
+              description="To improve your experience while activating your Portfolio Manager, we recommend using the Trim Safe App directly."
+              action={
+                <button type="button" onClick={dismissSafeWalletBanner} className="flex h-12 items-center gap-2 rounded-full border border-[#0e2226] px-6 text-sm font-semibold">
+                  Open Safe App
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M8 16L17 7M9 7h8v8" />
+                  </svg>
+                </button>
+              }
+              className="mb-7"
+            />
+          )
+        )}
+
+        <div className={isUnsupportedNetwork ? "pointer-events-none opacity-30" : undefined}>
         <h1 className="text-2xl font-semibold text-white">Create your baskets</h1>
         <p className="mt-1 text-sm text-gray-400">Create baskets on the left, then choose their tokens from the selected basket.</p>
 
@@ -195,10 +257,16 @@ export function CreateBasketsPage({
                 />
               );
             })}
-            <AddBasketButton onClick={addBasket} disabled={draftBaskets.length >= MAX_BASKETS} />
-            <p className="pt-2 text-xs text-gray-600">Each token can only belong to one basket.</p>
-            {draftBaskets.length >= MAX_BASKETS && (
-              <InfoBanner>A strategy can hold at most {MAX_BASKETS} baskets.</InfoBanner>
+            {draftBaskets.length < MAX_BASKETS && <AddBasketButton onClick={addBasket} />}
+            {draftBaskets.length >= MAX_BASKETS ? (
+              <div>
+                <p className="text-sm text-red-500">Maximum baskets reached</p>
+                <p className="mt-1.5 text-sm text-gray-500">
+                  You can create up to {MAX_BASKETS} baskets. Remove a basket to add another.
+                </p>
+              </div>
+            ) : (
+              <p className="pt-2 text-xs text-gray-600">Each token can only belong to one basket.</p>
             )}
           </div>
 
@@ -227,10 +295,6 @@ export function CreateBasketsPage({
                 </div>
               </div>
 
-              {selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET && (
-                <InfoBanner>A basket can hold at most {MAX_TOKENS_PER_BASKET} tokens.</InfoBanner>
-              )}
-
               <div>
                 <p className="mb-2 text-xs text-gray-500">Add tokens</p>
                 <SearchInput
@@ -251,10 +315,28 @@ export function CreateBasketsPage({
                 </div>
               </div>
 
+              {selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET && (
+                <div>
+                  <p className="text-sm text-red-500">
+                    {MAX_TOKENS_PER_BASKET}/{MAX_TOKENS_PER_BASKET} Tokens added
+                  </p>
+                  <p className="mt-1.5 text-sm text-gray-500">
+                    This basket has reached its token limit. Remove a token to add another.
+                  </p>
+                </div>
+              )}
+
               <div className="max-h-64 space-y-1 overflow-y-auto">
                 {tokensLoading && <p className="text-xs text-gray-500">Loading Safe balances…</p>}
+                {!tokensLoading && query.trim() !== "" && visibleTokens.length === 0 && (
+                  <p className="mb-2 text-sm text-gray-500">
+                    No token found for &quot;{query}&quot;. Try a different search or select a token from the list below.
+                  </p>
+                )}
+                {/* A no-results query falls back to the full, unfiltered list -- the design
+                    reference shows it below the message rather than leaving the list empty. */}
                 {!tokensLoading &&
-                  visibleTokens.map((token) => (
+                  (visibleTokens.length > 0 ? visibleTokens : fundedTokens).map((token) => (
                     <TokenListRow
                       key={token.address}
                       token={token}
@@ -277,8 +359,9 @@ export function CreateBasketsPage({
             showBack
             onBack={onBack}
             onContinue={onContinue}
-            continueDisabled={managedTokenCount === 0}
+            continueDisabled={managedTokenCount === 0 || isUnsupportedNetwork}
           />
+        </div>
         </div>
       </div>
 
