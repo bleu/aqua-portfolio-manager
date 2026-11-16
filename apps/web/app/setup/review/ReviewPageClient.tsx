@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Address, Hex } from "viem";
 import { useAccount } from "wagmi";
-import { ReviewPortfolioManagerPage, type TransactionStep } from "@/components/pages/ReviewPortfolioManagerPage";
+import { PRICE_LIMIT_BLOCKED_MESSAGE, ReviewPortfolioManagerPage, type TransactionStep } from "@/components/pages/ReviewPortfolioManagerPage";
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
@@ -104,6 +104,9 @@ export default function Page() {
     }
     if (message === STEP_TIMEOUT_MESSAGE) {
       return "This step is taking too long -- check your wallet for a pending signature request. If there isn't one, try again.";
+    }
+    if (/ExcessivePriceDeviation/i.test(message)) {
+      return PRICE_LIMIT_BLOCKED_MESSAGE;
     }
     return "Something went wrong creating this transaction. Try again, or contact the team if this keeps happening.";
   }

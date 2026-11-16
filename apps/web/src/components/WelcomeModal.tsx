@@ -6,7 +6,7 @@ import { Button } from "@/components/Button";
 const ACTIONS = [
   {
     icon: "/welcome-choose-exposure.svg",
-    title: "Choose you exposure",
+    title: "Choose your exposure",
     description: "Set the target allocation for each asset group.",
   },
   {

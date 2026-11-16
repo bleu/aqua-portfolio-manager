@@ -61,6 +61,17 @@ export type ActivePortfolioManagerDashboardPageProps = {
    *  the dock() call) is still in flight -- without it, "Delete" would silently no-op. */
   canDeleteStrategy?: boolean;
   onSelectTab?: (label: string) => void;
+  /** "paused" matches the Claude Artifact's Dashboard_Paused.dc.html -- the strategy itself is
+   *  still active on-chain, but automatic rebalancing has stopped because one basket's price
+   *  deviation exceeded the configured limit. Defaults to "active" (today's only real state; no
+   *  on-chain "paused" signal is read yet, so a caller must pass both this and `pausedAlert`
+   *  explicitly once one exists). */
+  status?: "active" | "paused";
+  pausedAlert?: {
+    affectedBasketName: string;
+    priceDeviationPct: number;
+    yourLimitPct: number;
+  };
 };
 
 /** BLEUDEV-419 — the real-data counterpart to EmptyDashboardPage (BLEUDEV-410), shown at the same
@@ -81,6 +92,8 @@ export function ActivePortfolioManagerDashboardPage({
   canDeleteStrategy = true,
   onSelectTab,
   onUpdateStrategy,
+  status = "active",
+  pausedAlert,
 }: ActivePortfolioManagerDashboardPageProps) {
   const [range, setRange] = useState<TimeRange>("30d");
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -95,9 +108,15 @@ export function ActivePortfolioManagerDashboardPage({
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-white">Portfolio Manager</h1>
-              <Badge className="border-transparent bg-positive/15 text-positive" dotColor="#22c55e">
-                Active
-              </Badge>
+              {status === "paused" ? (
+                <Badge className="border-transparent bg-[#d7c39c] text-[#0b0d10]" dotColor="#0b0d10">
+                  Paused
+                </Badge>
+              ) : (
+                <Badge className="border-transparent bg-positive/15 text-positive" dotColor="#22c55e">
+                  Active
+                </Badge>
+              )}
             </div>
             <p className="mt-1 text-sm text-gray-500">
               {truncateAddress(safeAddress)} · {network} · Updated {formatRelativeTime(updatedAt)}
@@ -128,6 +147,42 @@ export function ActivePortfolioManagerDashboardPage({
             )}
           </div>
         </div>
+
+        {status === "paused" && pausedAlert && (
+          <div className="mt-4 flex flex-wrap gap-7 rounded-[34px] border border-[#b79f6e] bg-[#0f1114] p-6">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c9ad78" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-0.5 shrink-0">
+              <path d="M12 4l9 16H3L12 4zM12 10v4M12 17v.5" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-[17px] font-semibold text-white">Rebalancing was paused to protect your portfolio</p>
+              <p className="mt-2.5 max-w-[640px] text-[13px] leading-[1.5] text-[#8b9096]">
+                The {pausedAlert.affectedBasketName} basket is trading outside its allowed deviation from the oracle
+                price. Trim has paused automatic rebalancing to avoid unfavorable trades and potential losses.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-7">
+                <div>
+                  <p className="text-xs text-[#8b9096]">Affected basket</p>
+                  <p className="mt-1.5 text-[17px] font-medium text-white">{pausedAlert.affectedBasketName}</p>
+                </div>
+                <div className="border-l border-[#262a2f] pl-7">
+                  <p className="text-xs text-[#8b9096]">Price deviation</p>
+                  <p className="mt-1.5 text-[17px] font-medium text-white">{pausedAlert.priceDeviationPct}%</p>
+                </div>
+                <div className="border-l border-[#262a2f] pl-7">
+                  <p className="text-xs text-[#8b9096]">Your price limit</p>
+                  <p className="mt-1.5 text-[17px] font-medium text-white">{pausedAlert.yourLimitPct}%</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 border-l border-[#262a2f] pl-7">
+              <p className="text-[17px] font-semibold text-white">What to do</p>
+              <p className="mt-2.5 text-[13px] leading-[1.5] text-[#8b9096]">
+                Make a manual trade in your wallet to bring your baskets to their target allocation. Trim will
+                automatically resume once your target allocation is restored.
+              </p>
+            </div>
+          </div>
+        )}
 
         {showDeleteConfirm && (
           <div className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-4 text-sm text-red-300">

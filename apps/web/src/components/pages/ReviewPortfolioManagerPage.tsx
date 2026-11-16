@@ -11,6 +11,15 @@ const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Para
 const TABS = buildNavTabs("portfolio-manager");
 const REBALANCE_EPSILON_PCT = 0.05;
 
+/** The exact copy the Claude Artifact's own Outcome_Blocked.dc.html uses -- the route wrapper
+ *  (ReviewPageClient's describeCreateTransactionError) returns this literal string when the
+ *  thrown error is PortfolioManagerSwapExcessivePriceDeviation/
+ *  PortfolioManagerStrategyValidatorExcessivePriceDeviation, so this page can show the "blocked by
+ *  price limit" outcome instead of a generic failure without the two files needing to duplicate
+ *  the match pattern. */
+export const PRICE_LIMIT_BLOCKED_MESSAGE =
+  "The price exceeded your configured deviation limit, so the transaction wasn't executed. You can retry when prices are within your limit.";
+
 export type ReviewBasket = {
   id: string;
   name: string;
@@ -92,6 +101,7 @@ export function ReviewPortfolioManagerPage({
   alreadyShippedCheckError,
 }: ReviewPortfolioManagerPageProps) {
   const [showRiskModal, setShowRiskModal] = useState(false);
+  const [dismissedOutcomeError, setDismissedOutcomeError] = useState<string>();
   const needsRebalance = baskets.some((b) => Math.abs(b.currentPct - b.targetPct) > REBALANCE_EPSILON_PCT);
   const hasScopeConflict = !!scopeConflicts && scopeConflicts.length > 0;
   const blocked = hasScopeConflict || alreadyShipped;
@@ -273,11 +283,6 @@ export function ReviewPortfolioManagerPage({
             </p>
           )}
 
-          {createTransactionError && (
-            <p className="mt-4 rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300">
-              {createTransactionError}
-            </p>
-          )}
         </div>
 
         <WizardFooter
@@ -292,6 +297,22 @@ export function ReviewPortfolioManagerPage({
 
       {showRiskModal && (
         <RiskWarningModal onClose={() => setShowRiskModal(false)} onAgree={handleAgreeAndSubmit} />
+      )}
+
+      {createTransactionError && createTransactionError !== dismissedOutcomeError && (
+        <TransactionOutcomeModal
+          key={createTransactionError}
+          variant={createTransactionError === PRICE_LIMIT_BLOCKED_MESSAGE ? "blocked" : "failed"}
+          baskets={baskets}
+          priceDeviationPct={priceDeviationPct}
+          lpFeePct={lpFeePct}
+          totalManagedValue={totalManagedValue}
+          onCancel={() => setDismissedOutcomeError(createTransactionError)}
+          onRetry={() => {
+            setDismissedOutcomeError(undefined);
+            handleSubmitClick();
+          }}
+        />
       )}
     </WizardLayout>
   );
@@ -367,6 +388,106 @@ function RiskWarningModal({ onClose, onAgree }: { onClose: () => void; onAgree: 
         >
           Agree and submit transaction
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** The submission-didn't-go-through outcome, confirmed against the Claude Artifact's own
+ *  project/Outcome_Failed.dc.html and Outcome_Blocked.dc.html -- structurally identical (same
+ *  558px modal, same baskets/parameters recap, same Cancel/Retry pair), only the heading, body
+ *  copy, and icon tint differ between a generic failure and a price-limit block. */
+function TransactionOutcomeModal({
+  variant,
+  baskets,
+  priceDeviationPct,
+  lpFeePct,
+  totalManagedValue,
+  onCancel,
+  onRetry,
+}: {
+  variant: "failed" | "blocked";
+  baskets: ReviewBasket[];
+  priceDeviationPct: number;
+  lpFeePct: number;
+  totalManagedValue: number;
+  onCancel?: () => void;
+  onRetry?: () => void;
+}) {
+  const heading = variant === "blocked" ? "Transaction blocked by price limit" : "Transaction failed";
+  const body =
+    variant === "blocked"
+      ? PRICE_LIMIT_BLOCKED_MESSAGE
+      : "Your Portfolio Manager wasn't activated. Try again.";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#050608]/[0.72] p-6">
+      <div
+        className="w-full max-w-[558px] rounded-[36px] border border-[#26292e] p-[30px_32px_32px] text-center"
+        style={{ background: "linear-gradient(180deg,#1e1d21 0%,#111316 24%)" }}
+      >
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke={variant === "blocked" ? "#c9ad78" : "#e5483f"} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mx-auto">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v5M12 16v.5" />
+        </svg>
+        <p className="mt-6 mb-3.5 text-2xl font-bold text-white">{heading}</p>
+        <p className="mx-auto mb-6 text-[15px] leading-[1.4] text-[#c6cacd]">{body}</p>
+
+        <div className="border-t border-[#262a2f] pt-6 text-left">
+          <p className="mb-5 text-base text-[#8b9096]">Baskets and Targets</p>
+          <div className="flex flex-col gap-[18px]">
+            {baskets.map((basket) => {
+              const targetValue = (basket.targetPct / 100) * totalManagedValue;
+              return (
+                <div key={basket.id} className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-base font-medium text-white">{basket.name}</p>
+                    <p className="mt-2 text-[13px] text-[#8b9096]">{basket.tokenSymbols.join(" · ")}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-[13px] text-[#8b9096]">Current vs. Target allocation</p>
+                    <p className="mt-1.5 text-[15px] font-semibold text-white">
+                      {basket.currentPct.toFixed(0)}% <span className="text-[#8b9096]">→</span> {basket.targetPct.toFixed(0)}%
+                    </p>
+                    <p className="mt-1 text-xs text-[#8b9096]">
+                      ${basket.currentValue.toLocaleString()} → ${targetValue.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="my-[22px] h-px bg-[#262a2f]" />
+
+          <p className="mb-[18px] text-base text-[#8b9096]">Parameters</p>
+          <div className="flex items-center justify-between text-base text-white">
+            <span>Price deviation limit</span>
+            <span>{priceDeviationPct}%</span>
+          </div>
+          <div className="mt-[18px] flex items-center justify-between text-base text-white">
+            <span>LP fee tier</span>
+            <span>{lpFeePct}%</span>
+          </div>
+        </div>
+
+        <div className="mt-[30px] flex gap-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-12 flex-1 items-center justify-center rounded-full bg-[#1c2024] text-[15px] font-semibold text-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="flex h-12 flex-1 items-center justify-center rounded-full text-[15px] font-semibold text-[#0b0d10]"
+            style={{ background: "linear-gradient(180deg,#e3f3f5 0%,#8fc7cf 100%)" }}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     </div>
   );
