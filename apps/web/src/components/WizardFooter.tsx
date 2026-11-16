@@ -20,11 +20,14 @@ export function WizardFooter({
   continueDisabled,
   showBack = true,
 }: WizardFooterProps) {
-  // Figma's own footer (node 398:5029) is a full-bleed bar with its own background, not just a
-  // border -- this gives it that same tinted background without changing the page's existing
-  // centered max-w container into a full-bleed layout, a bigger structural change left alone here.
+  // Earlier doc here (node 398:5029) read Figma's footer as a full-bleed tinted bar with no
+  // border-radius, deliberately kept from becoming a standalone panel. Direct comparison against
+  // the real flow screens (node 680:20012, "Total allocation" on Baskets-Filled) shows a rounded
+  // standalone panel instead -- that full-bleed reading did not hold up and is replaced here, not
+  // just restyled. Continue uses accent (see Button's own doc comment for why that's correct here,
+  // not plain white).
   return (
-    <div className="-mx-6 flex items-center justify-between border-t border-border bg-surface-raised px-6 py-5">
+    <div className="flex items-center justify-between rounded-[30px] border border-border/60 bg-surface-card p-6">
       {showBack ? (
         <Button variant="secondary" onClick={onBack}>
           Back
@@ -34,7 +37,7 @@ export function WizardFooter({
       )}
       <div className="flex items-center gap-4">
         <span className="text-xs text-gray-500">{summary}</span>
-        <Button onClick={onContinue} disabled={continueDisabled}>
+        <Button variant="accent" onClick={onContinue} disabled={continueDisabled}>
           {continueLabel}
         </Button>
       </div>

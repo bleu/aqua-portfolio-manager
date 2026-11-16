@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AddBasketButton } from "@/components/AddBasketButton";
 import { AppHeader } from "@/components/AppHeader";
 import { BasketPanelHeader } from "@/components/BasketPanelHeader";
+import { Footer } from "@/components/Footer";
 import { GroupSummaryCard } from "@/components/GroupSummaryCard";
 import { InfoBanner } from "@/components/InfoBanner";
 import { SearchInput } from "@/components/SearchInput";
@@ -280,6 +281,8 @@ export function CreateBasketsPage({
           />
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }

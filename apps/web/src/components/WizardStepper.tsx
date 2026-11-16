@@ -10,21 +10,28 @@ export type WizardStepperProps = {
   activeIndex: number;
 };
 
-/** The 4-step Baskets/Targets/Parameters/Review indicator. Reused unchanged across every wizard step page. */
+/** The 4-step Baskets/Targets/Parameters/Review indicator. Reused unchanged across every wizard
+ *  step page. Matches Figma's Navigation/Progress/Bar (node 500:20298, Baskets-Filled flow
+ *  screen): each step is its own pill, not a bare circle + label, joined by a connector line
+ *  that stretches to fill the bar -- supersedes an earlier, narrower circle-only reading. */
 export function WizardStepper({ steps, activeIndex }: WizardStepperProps) {
   return (
-    <ol className="flex items-center justify-center gap-3">
+    <ol className="flex w-full items-center gap-3">
       {steps.map((step, index) => {
         const state = index < activeIndex ? "complete" : index === activeIndex ? "active" : "upcoming";
+        const isCurrentOrDone = state !== "upcoming";
         return (
-          <li key={step.label} className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+          <li key={step.label} className="flex flex-1 items-center gap-3 last:flex-none">
+            <div
+              className={cn(
+                "flex shrink-0 items-center gap-2.5 rounded-full p-3",
+                isCurrentOrDone ? "bg-surface-raised" : "bg-gradient-to-r from-white/[0.02] to-white/[0.04]",
+              )}
+            >
               <span
                 className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
-                  state === "complete" && "bg-accent text-white",
-                  state === "active" && "bg-accent text-white",
-                  state === "upcoming" && "border border-border text-gray-500",
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                  isCurrentOrDone ? "bg-accent text-[#0b1514]" : "bg-gradient-to-r from-white/[0.02] to-white/[0.04] text-gray-400",
                 )}
               >
                 {state === "complete" ? "✓" : index + 1}
@@ -36,14 +43,14 @@ export function WizardStepper({ steps, activeIndex }: WizardStepperProps) {
                   deliberate "last completed step" rule, so not replicated here. */}
               <span
                 className={cn(
-                  "text-sm",
-                  state === "upcoming" ? "text-gray-500" : state === "complete" ? "text-accent" : "text-gray-100",
+                  "whitespace-nowrap text-[17px]",
+                  state === "upcoming" ? "text-gray-400" : state === "complete" ? "text-accent" : "text-[#fafbea]",
                 )}
               >
                 {step.label}
               </span>
             </div>
-            {index < steps.length - 1 && <span className="h-px w-8 bg-border" aria-hidden="true" />}
+            {index < steps.length - 1 && <span className="h-px min-w-8 flex-1 bg-border" aria-hidden="true" />}
           </li>
         );
       })}
