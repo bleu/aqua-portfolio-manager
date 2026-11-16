@@ -13,7 +13,8 @@ export type ChoicePillGroupProps = {
 };
 
 /** A single-select row of preset value pills, plus a trailing "Custom" PercentInput -- used for
- *  both the Targets/Parameters percentage pickers and the dashboard's time-range selector.
+ *  both the Targets/Parameters percentage pickers and the dashboard's time-range selector. Pill
+ *  shape (h-12, rounded-full) matches the design reference's own "opt"/"opt on" treatment.
  *  Not the same as TokenChip's `toggle` variant, which is multi-select filtering. */
 export function ChoicePillGroup({ options, value, onChange, disabled, className }: ChoicePillGroupProps) {
   const isCustomValue = value !== undefined && !options.includes(value);
@@ -30,9 +31,9 @@ export function ChoicePillGroup({ options, value, onChange, disabled, className 
             onClick={() => onChange(option)}
             aria-pressed={selected}
             className={cn(
-              "rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              "flex h-12 min-w-[62px] items-center justify-center rounded-full border px-3.5 text-[15px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
               selected
-                ? "border-accent bg-accent/20 text-white"
+                ? "border-accent bg-[#16202a] text-white"
                 : "border-border bg-surface-raised text-gray-300 hover:border-accent/60",
             )}
           >

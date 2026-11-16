@@ -56,20 +56,24 @@ function applyTarget(targets: Record<string, number>, id: string, rawValue: numb
   return next;
 }
 
-/** BLEUDEV-414 — "05 · Set target allocation": step 2 of the 4-step setup wizard. Matches
- *  Figma's own "2. Targets" flow screen (node 680:20768): one rounded standalone panel holding
- *  the title, column labels, basket rows, and allocation preview together -- not a separate
- *  heading/description/badge above a plain divided list, which is what this page looked like
- *  before. */
+/** BLEUDEV-414 — "05 · Set target allocation": step 2 of the 4-step setup wizard. Matches the
+ *  design reference's "2. Targets" / "Targets - rebalance required" screens: one rounded
+ *  standalone panel holding the title, column labels, basket rows, and allocation preview
+ *  together, plus a risk-acknowledgement gate that only appears once the chosen targets actually
+ *  differ from the current allocation. */
 export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack, onContinue }: SetTargetAllocationPageProps) {
   const currentPct = useMemo(() => currentAllocationPct(baskets), [baskets]);
   const [targets, setTargets] = useState<Record<string, number>>(() => ({ ...currentPct }));
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
 
   const total = Object.values(targets).reduce((sum, v) => sum + v, 0);
   const needsRebalance = baskets.some((b) => Math.abs(targets[b.id] - currentPct[b.id]) > REBALANCE_EPSILON_PCT);
 
   function handleTargetChange(id: string, value: number) {
     setTargets((prev) => applyTarget(prev, id, value));
+    // A later edit can turn a rebalance back into a match (or vice versa) -- re-acknowledging is
+    // required either way, not carried over from a previous, different allocation.
+    setRiskAcknowledged(false);
   }
 
   return (
@@ -116,8 +120,38 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
           </div>
           <AllocationPreviewBar
             baskets={baskets.map((b) => ({ id: b.id, name: b.name, color: b.color, targetPct: targets[b.id] }))}
-            status={needsRebalance ? "Rebalance required" : "Matches current allocation → No initial rebalance"}
+            status={
+              needsRebalance
+                ? "Target is different from current allocation → Initial rebalance required"
+                : "Matches current allocation → No initial rebalance"
+            }
           />
+
+          {needsRebalance && (
+            <>
+              <div className="flex items-start gap-4 rounded-[22px] border border-[#b79f6e] bg-[#14161a] p-5">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#c9ad78" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-1 shrink-0">
+                  <path d="M12 4l9 16H3L12 4zM12 10v4M12 17v.5" />
+                </svg>
+                <div>
+                  <p className="text-base font-semibold text-ink-primary">Initial rebalance required</p>
+                  <p className="mt-1.5 text-sm text-[#c6cacd]">
+                    Your target allocation differs from your current allocation. Creating this Portfolio Manager
+                    will require an initial rebalance, which may expose your portfolio to losses.
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2.5 text-sm text-ink-primary">
+                <input
+                  type="checkbox"
+                  checked={riskAcknowledged}
+                  onChange={(e) => setRiskAcknowledged(e.target.checked)}
+                  className="h-[22px] w-[22px] shrink-0 rounded border-border bg-surface-raised accent-accent"
+                />
+                I understand the risks and want to proceed with the initial rebalance.
+              </label>
+            </>
+          )}
         </div>
 
         <div className="mt-6">
@@ -127,6 +161,7 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
             showBack
             onBack={onBack}
             onContinue={() => onContinue?.(targets)}
+            continueDisabled={needsRebalance && !riskAcknowledged}
           />
         </div>
       </div>

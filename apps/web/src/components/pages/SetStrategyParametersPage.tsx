@@ -2,11 +2,8 @@
 
 import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
-import { Badge } from "@/components/Badge";
 import { ChoicePillGroup } from "@/components/ChoicePillGroup";
-import { Disclosure } from "@/components/Disclosure";
-import { InfoBanner } from "@/components/InfoBanner";
-import { NumberedStepCard } from "@/components/NumberedStepCard";
+import { Footer } from "@/components/Footer";
 import type { TabNavItem } from "@/components/TabNav";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
@@ -14,7 +11,9 @@ import { WizardStepper } from "@/components/WizardStepper";
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
 const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
 const PRICE_DEVIATION_OPTIONS = [0.1, 0.5, 1, 2, 5];
-/** Floor matches PortfolioManagerArgsCodec.MIN_FEE_BPS (0.5%) -- a lower preset would revert on-chain. */
+/** Floor matches PortfolioManagerArgsCodec.MIN_FEE_BPS (0.5%) -- a lower preset would revert
+ *  on-chain. The design reference's own preset list starts at 0.05%, below that floor -- not
+ *  copied here for exactly that reason, not an oversight. */
 const LP_FEE_OPTIONS = [0.5, 1, 2, 5];
 const DEFAULT_LP_FEE = 2;
 
@@ -25,73 +24,50 @@ export type SetStrategyParametersPageProps = {
   onContinue?: (params: { priceDeviationPct: number; lpFeePct: number }) => void;
 };
 
-/** BLEUDEV-415 — step 3 of the 4-step setup wizard ("Parameters"). */
+/** BLEUDEV-415 — step 3 of the 4-step setup wizard ("Parameters"). Matches the design reference's
+ *  "3. Parameters" screen: one unified panel (title, both settings, Continue) rather than two
+ *  separate numbered/disclosure cards -- that structural change is the real fix here, the colors
+ *  and chip shape are secondary. Price-deviation stays a required field with no default (the
+ *  reference pre-selects 1%): forcing an explicit choice is an existing safety decision, not a
+ *  styling detail, so it's kept as-is rather than silently relaxed to match the mockup. */
 export function SetStrategyParametersPage({ network, safeAddress, onBack, onContinue }: SetStrategyParametersPageProps) {
   const [priceDeviationPct, setPriceDeviationPct] = useState<number | undefined>(undefined);
   const [lpFeePct, setLpFeePct] = useState<number | undefined>(DEFAULT_LP_FEE);
-
 
   return (
     <div className="min-h-screen">
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="text-2xl font-semibold text-white">Set strategy parameters</h1>
-        <p className="mt-1 text-sm text-gray-400">
-          Choose how strictly prices are protected and how much the strategy charges per routed trade.
-        </p>
-
-        <div className="mt-6">
+      <div className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mt-6 mb-6">
           <WizardStepper steps={WIZARD_STEPS} activeIndex={2} />
         </div>
 
-        <div className="mt-8 space-y-4">
-          <NumberedStepCard
-            index={1}
-            title="Set the price deviation limit"
-            subtitle="Choose the maximum price difference allowed between the quoted price and the oracle price. Lower values provide stricter protection, but may cause more transactions to wait."
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-300">Choose a value</span>
-                {/* Confirmed exact hexes on Figma node 431:13362, not Tailwind's generic red. */}
-                <Badge className="border-transparent bg-[#381b1f] text-[#ff9499]">Required</Badge>
-              </div>
-              <ChoicePillGroup
-                className="mt-2"
-                options={PRICE_DEVIATION_OPTIONS}
-                value={priceDeviationPct}
-                onChange={setPriceDeviationPct}
-              />
-              <p className="mt-2 text-xs text-gray-500">Minimum 0.1% · No maximum</p>
-            </div>
-            <Disclosure label="How price protection works">
-              If the quoted price moves beyond this limit compared to the oracle price, the trade waits instead of
-              executing at a worse rate.
-            </Disclosure>
-          </NumberedStepCard>
+        <div className="rounded-[30px] border border-border/60 bg-surface-card p-6">
+          <h1 className="text-2xl font-bold text-ink-primary">Set protection and fees</h1>
+          <p className="mt-1 text-base text-ink-muted">
+            Choose how strictly prices are protected and how much you&apos;ll charge per routed transaction.
+          </p>
 
-          <NumberedStepCard
-            index={2}
-            title="Set the LP fee tier"
-            subtitle="Choose the fee collected from routed trades. Higher fees may earn more per trade, but can make the strategy less competitive for routing."
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-300">Choose a value</span>
-                <Badge>Default</Badge>
-              </div>
-              <ChoicePillGroup className="mt-2" options={LP_FEE_OPTIONS} value={lpFeePct} onChange={setLpFeePct} />
-              <p className="mt-2 text-xs text-gray-500">
-                The protocol fee is deducted from the LP fee before earnings reach your Safe.
-              </p>
-            </div>
-            <Disclosure label="View protocol fee calculation">
-              The protocol takes a share of every routed trade&apos;s LP fee before the remainder reaches your Safe.
-            </Disclosure>
-          </NumberedStepCard>
+          <div className="my-7 h-px w-full bg-border" />
 
-          <InfoBanner>Both settings apply to the entire strategy.</InfoBanner>
+          <div>
+            <h2 className="text-base font-semibold text-ink-primary">Price deviation limit</h2>
+            <p className="mt-2 mb-4 text-sm text-ink-muted">
+              Set the maximum price difference allowed for transactions to execute. A lower limit offers more
+              protection but may delay execution.
+            </p>
+            <ChoicePillGroup options={PRICE_DEVIATION_OPTIONS} value={priceDeviationPct} onChange={setPriceDeviationPct} />
+          </div>
+
+          <div className="mt-9">
+            <h2 className="text-base font-semibold text-ink-primary">Fee tier</h2>
+            <p className="mt-2 mb-4 text-sm text-ink-muted">
+              Set the fee you&apos;ll earn when trades are routed through your portfolio. Higher fees increase
+              earnings per trade, but may attract fewer trades.
+            </p>
+            <ChoicePillGroup options={LP_FEE_OPTIONS} value={lpFeePct} onChange={setLpFeePct} />
+          </div>
         </div>
 
         <div className="mt-6">
@@ -108,6 +84,8 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
           />
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }
