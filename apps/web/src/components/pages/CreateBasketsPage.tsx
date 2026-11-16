@@ -105,19 +105,24 @@ export function CreateBasketsPage({
   // via plain `safeTokens` lookups elsewhere in this file even if their balance later drops to 0.
   const fundedTokens = useMemo(() => safeTokens.filter((token) => token.balance > 0), [safeTokens]);
 
-  // Tokens already in the selected basket sort first -- the design shows them at the top of this
-  // same list (with a teal ✕ to remove), not in a separate "Tokens in this basket" chip row.
+  // Tokens already in the selected basket must always stay visible, regardless of the current
+  // search query -- otherwise typing a filter that doesn't match them hides the only way to
+  // remove them (a reproduced bug: filtering to "usdc" made an already-added DAI disappear from
+  // this list with no ✕ left to click). They're pulled from `safeTokens` directly, not
+  // `fundedTokens`, so a 0-balance already-added token (e.g. added before the balance dropped)
+  // still renders. The filterable list below excludes them to avoid showing a token twice.
+  const addedTokens = useMemo(() => {
+    const addresses = selectedBasket?.tokenAddresses ?? [];
+    return addresses.map((address) => safeTokens.find((t) => t.address === address)).filter((t): t is SafeToken => !!t);
+  }, [safeTokens, selectedBasket]);
+
   const visibleTokens = useMemo(() => {
     const addedAddresses = new Set(selectedBasket?.tokenAddresses ?? []);
+    const q = query.trim().toLowerCase();
     return fundedTokens
-      .filter((token) => {
-        const q = query.trim().toLowerCase();
-        return q === "" || token.symbol.toLowerCase().includes(q) || token.address.toLowerCase().includes(q);
-      })
-      .sort((a, b) => {
-        const addedDiff = Number(addedAddresses.has(b.address)) - Number(addedAddresses.has(a.address));
-        return addedDiff !== 0 ? addedDiff : b.value - a.value;
-      });
+      .filter((token) => !addedAddresses.has(token.address))
+      .filter((token) => q === "" || token.symbol.toLowerCase().includes(q) || token.address.toLowerCase().includes(q))
+      .sort((a, b) => b.value - a.value);
   }, [fundedTokens, selectedBasket, query]);
 
   function toggleTokenInSelectedBasket(address: string) {
@@ -364,25 +369,40 @@ export function CreateBasketsPage({
 
               <div className="max-h-64 space-y-1 overflow-y-auto">
                 {tokensLoading && <p className="text-xs text-gray-500">Loading Safe balances…</p>}
-                {!tokensLoading && query.trim() !== "" && visibleTokens.length === 0 && (
-                  <p className="mb-2 text-sm text-gray-500">
-                    No token found for &quot;{query}&quot;. Try a different search or select a token from the list below.
-                  </p>
-                )}
-                {/* A no-results query falls back to the full, unfiltered list -- the design
-                    reference shows it below the message rather than leaving the list empty. */}
                 {!tokensLoading &&
-                  (visibleTokens.length > 0 ? visibleTokens : fundedTokens).map((token) => (
+                  addedTokens.map((token) => (
                     <TokenListRow
                       key={token.address}
                       token={token}
                       balance={token.balance}
                       value={token.value}
-                      added={selectedBasket.tokenAddresses.includes(token.address)}
+                      added
                       disabled={selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET}
                       onToggle={() => toggleTokenInSelectedBasket(token.address)}
                     />
                   ))}
+                {!tokensLoading && query.trim() !== "" && visibleTokens.length === 0 && (
+                  <p className="mb-2 text-sm text-gray-500">
+                    No token found for &quot;{query}&quot;. Try a different search or select a token from the list below.
+                  </p>
+                )}
+                {/* A no-results query falls back to the full, unfiltered (still excluding
+                    already-added, shown above) list -- the design reference shows it below the
+                    message rather than leaving the list empty. */}
+                {!tokensLoading &&
+                  (visibleTokens.length > 0 ? visibleTokens : fundedTokens.filter((t) => !addedTokens.some((a) => a.address === t.address))).map(
+                    (token) => (
+                      <TokenListRow
+                        key={token.address}
+                        token={token}
+                        balance={token.balance}
+                        value={token.value}
+                        added={false}
+                        disabled={selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET}
+                        onToggle={() => toggleTokenInSelectedBasket(token.address)}
+                      />
+                    ),
+                  )}
               </div>
             </div>
           )}

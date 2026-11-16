@@ -9,6 +9,7 @@ import { PRICE_LIMIT_BLOCKED_MESSAGE, ReviewPortfolioManagerPage, type Transacti
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { loadDraftParameters } from "@/lib/parametersDraftStorage";
+import { loadBalancesSnapshot } from "@/lib/safeBalancesSnapshot";
 import { buildShipSteps, computeStrategyHash, executeShipSteps, STEP_TIMEOUT_MESSAGE } from "@/lib/safeProposal";
 import { loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useBasketScopeConflict } from "@/lib/useBasketScopeConflict";
@@ -66,13 +67,18 @@ export default function Page() {
     return <div className="min-h-screen" />;
   }
 
+  // Display-only figures read the wizard's step-1 balance snapshot, not a fresh live fetch --
+  // keeps "$X managed" matching what the user saw on Baskets/Targets. `tokens`/`rawBalances`
+  // above stay live: they feed the real ship transaction below, which must use current balances.
+  const displayTokens = loadBalancesSnapshot(address) ?? tokens;
+
   const total = draftBaskets.reduce((sum, basket) => {
-    const basketTokens = tokens.filter((t) => basket.tokenAddresses.includes(t.address));
+    const basketTokens = displayTokens.filter((t) => basket.tokenAddresses.includes(t.address));
     return sum + basketTokens.reduce((s, t) => s + t.value, 0);
   }, 0);
 
   const baskets = draftBaskets.map((basket) => {
-    const basketTokens = tokens.filter((t) => basket.tokenAddresses.includes(t.address));
+    const basketTokens = displayTokens.filter((t) => basket.tokenAddresses.includes(t.address));
     const currentValue = basketTokens.reduce((sum, t) => sum + t.value, 0);
     return {
       id: basket.id,

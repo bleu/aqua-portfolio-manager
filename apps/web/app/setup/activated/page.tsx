@@ -7,6 +7,7 @@ import { saveActiveStrategy } from "@/lib/activeStrategyStorage";
 import { clearDraftBaskets, loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
 import { clearDraftParameters, loadDraftParameters } from "@/lib/parametersDraftStorage";
+import { clearBalancesSnapshot, loadBalancesSnapshot } from "@/lib/safeBalancesSnapshot";
 import { clearDraftTargets, loadDraftTargets } from "@/lib/targetsDraftStorage";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
@@ -24,7 +25,7 @@ export default function Page() {
 function ActivatedPageContent() {
   const router = useRouter();
   const address = useVerifiedSafeAddress();
-  const { tokens } = useSafeBalances(address);
+  const { tokens: liveTokens } = useSafeBalances(address);
   const searchParams = useSearchParams();
   const activationTxHash = searchParams.get("tx") ?? "";
 
@@ -32,6 +33,9 @@ function ActivatedPageContent() {
     return <div className="min-h-screen" />;
   }
 
+  // Same wizard-wide balance snapshot Targets/Review read -- keeps this screen's figures matching
+  // what the user saw throughout, not a fresh live fetch.
+  const tokens = loadBalancesSnapshot(address) ?? liveTokens;
   const draftBaskets = loadDraftBaskets(address) ?? initialBaskets;
   const draftTargets = loadDraftTargets(address) ?? {};
   const draftParameters = loadDraftParameters(address);
@@ -75,6 +79,7 @@ function ActivatedPageContent() {
           });
         }
         clearDraftBaskets(address);
+        clearBalancesSnapshot(address);
         clearDraftTargets(address);
         clearDraftParameters(address);
         router.push("/dashboard");
