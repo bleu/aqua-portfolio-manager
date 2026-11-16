@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { getBasketColor } from "@/lib/basketColors";
-import { ReviewPortfolioManagerPage } from "./ReviewPortfolioManagerPage";
+import { PRICE_LIMIT_BLOCKED_MESSAGE, ReviewPortfolioManagerPage } from "./ReviewPortfolioManagerPage";
 
 const meta: Meta<typeof ReviewPortfolioManagerPage> = {
   title: "Pages/ReviewPortfolioManager",
@@ -97,5 +97,34 @@ export const AlreadyShipped: Story = {
     lpFeePct: 2,
     signaturesRequired: 1,
     alreadyShipped: true,
+  },
+};
+
+/** The TransactionOutcomeModal's generic-failure variant, confirmed against the Claude Artifact's
+ *  Outcome_Failed.dc.html. Reached when proposing the Safe transaction itself throws, which
+ *  happens while still on Review -- before any Pending/signing flow starts. */
+export const TransactionFailed: Story = {
+  args: {
+    network: "Ethereum",
+    safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
+    baskets,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    signaturesRequired: 1,
+    createTransactionError: "Something went wrong creating this transaction. Try again, or contact the team if this keeps happening.",
+  },
+};
+
+/** The TransactionOutcomeModal's blocked-by-price-limit variant, confirmed verbatim against the
+ *  Claude Artifact's Outcome_Blocked.dc.html (same heading/body copy, byte-for-byte). */
+export const TransactionBlocked: Story = {
+  args: {
+    network: "Ethereum",
+    safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
+    baskets,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    signaturesRequired: 1,
+    createTransactionError: PRICE_LIMIT_BLOCKED_MESSAGE,
   },
 };
