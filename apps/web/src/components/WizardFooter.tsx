@@ -11,6 +11,9 @@ export type WizardFooterProps = {
   continueDisabled?: boolean;
   /** First step has no Back action. */
   showBack?: boolean;
+  /** Disables Back too -- e.g. Review, mid-submission, where navigating away could leave an
+   *  in-flight transaction orphaned. */
+  backDisabled?: boolean;
 };
 
 /** Back button + running summary + primary CTA, reused unchanged across every wizard step. */
@@ -21,6 +24,7 @@ export function WizardFooter({
   onContinue,
   continueDisabled,
   showBack = true,
+  backDisabled,
 }: WizardFooterProps) {
   // Earlier doc here (node 398:5029) read Figma's footer as a full-bleed tinted bar with no
   // border-radius, deliberately kept from becoming a standalone panel. Direct comparison against
@@ -31,7 +35,7 @@ export function WizardFooter({
   return (
     <div className="flex items-center justify-between rounded-[30px] border border-border/60 bg-surface-card p-6">
       {showBack ? (
-        <Button variant="secondary" onClick={onBack}>
+        <Button variant="secondary" onClick={onBack} disabled={backDisabled}>
           Back
         </Button>
       ) : (
