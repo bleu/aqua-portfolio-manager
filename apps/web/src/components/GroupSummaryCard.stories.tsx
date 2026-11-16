@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { GroupSummaryCard } from "./GroupSummaryCard";
+import { getBasketColor } from "@/lib/basketColors";
 import type { GroupSummary } from "@/lib/types";
 
 const usdc = { symbol: "USDC", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" };
@@ -9,7 +10,7 @@ const weth = { symbol: "WETH", address: "0x4200000000000000000000000000000000000
 const stablecoinsTarget: GroupSummary = {
   id: "stablecoins",
   name: "Stablecoins",
-  color: "#6366f1",
+  color: getBasketColor(0).solid,
   tokens: [usdc, usdt],
   trailing: { kind: "percentage", value: 0.6 },
 };
@@ -17,7 +18,7 @@ const stablecoinsTarget: GroupSummary = {
 const cryptoMajorsBasket: GroupSummary = {
   id: "crypto-majors",
   name: "Crypto majors",
-  color: "#a855f7",
+  color: getBasketColor(1).solid,
   tokens: [weth],
   trailing: { kind: "amount", value: 4270 },
   selected: true,

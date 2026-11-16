@@ -29,7 +29,7 @@ export function AllocationPreviewBar({ baskets, status, className }: AllocationP
         <div className="flex flex-wrap items-center gap-4">
           {baskets.map((basket) => (
             <span key={basket.id} className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-              <span className={cn("size-[9px] shrink-0")} style={{ backgroundColor: basket.color }} />
+              <span className={cn("size-2 shrink-0 rounded-full")} style={{ backgroundColor: basket.color }} />
               {basket.name} {basket.targetPct.toFixed(0)}%
             </span>
           ))}

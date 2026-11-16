@@ -1,3 +1,4 @@
+import { getBasketColor } from "./basketColors";
 import type { GroupSummary } from "./types";
 
 export const USDC = { symbol: "USDC", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" };
@@ -8,11 +9,11 @@ export const WBTC = { symbol: "WBTC", address: "0x0555E30da8f98308EdB960aa94C0Db
 
 /** Placeholder data matching the Figma "First-access introduction" screen until real data wiring lands. */
 export const currentAllocation: GroupSummary[] = [
-  { id: "stablecoins", name: "Stablecoins", color: "#6366f1", tokens: [USDC, USDT], trailing: { kind: "percentage", value: 0.667 } },
-  { id: "crypto-majors", name: "Crypto majors", color: "#a855f7", tokens: [WETH, WBTC], trailing: { kind: "percentage", value: 0.333 } },
+  { id: "stablecoins", name: "Stablecoins", color: getBasketColor(0).solid, tokens: [USDC, USDT], trailing: { kind: "percentage", value: 0.667 } },
+  { id: "crypto-majors", name: "Crypto majors", color: getBasketColor(1).solid, tokens: [WETH, WBTC], trailing: { kind: "percentage", value: 0.333 } },
 ];
 
 export const targetAllocation: GroupSummary[] = [
-  { id: "stablecoins", name: "Stablecoins", color: "#6366f1", tokens: [USDC, USDT], trailing: { kind: "percentage", value: 0.6 } },
-  { id: "crypto-majors", name: "Crypto majors", color: "#a855f7", tokens: [WETH, WBTC], trailing: { kind: "percentage", value: 0.4 } },
+  { id: "stablecoins", name: "Stablecoins", color: getBasketColor(0).solid, tokens: [USDC, USDT], trailing: { kind: "percentage", value: 0.6 } },
+  { id: "crypto-majors", name: "Crypto majors", color: getBasketColor(1).solid, tokens: [WETH, WBTC], trailing: { kind: "percentage", value: 0.4 } },
 ];

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { getBasketColor } from "@/lib/basketColors";
 import { ActivePortfolioManagerDashboardPage } from "./ActivePortfolioManagerDashboardPage";
 
 const meta: Meta<typeof ActivePortfolioManagerDashboardPage> = {
@@ -16,7 +17,7 @@ const baskets = [
   {
     id: "stablecoins",
     name: "Stablecoins",
-    color: "#6366f1",
+    color: getBasketColor(0).solid,
     managedValue: 10000,
     currentPct: 66.7,
     targetPct: 66.7,
@@ -29,7 +30,7 @@ const baskets = [
   {
     id: "crypto-majors",
     name: "Crypto majors",
-    color: "#22c55e",
+    color: getBasketColor(1).solid,
     managedValue: 5000,
     currentPct: 33.3,
     targetPct: 33.3,
@@ -45,14 +46,14 @@ const chartSeries = [
   {
     id: "stablecoins",
     name: "Stablecoins current",
-    color: "#6366f1",
+    color: getBasketColor(0).solid,
     targetPct: 66.7,
     points: [68, 65, 67, 69, 66.7].map((pct, i) => ({ date: dates[i], pct })),
   },
   {
     id: "crypto-majors",
     name: "Crypto majors current",
-    color: "#22c55e",
+    color: getBasketColor(1).solid,
     targetPct: 33.3,
     points: [32, 35, 33, 31, 33.3].map((pct, i) => ({ date: dates[i], pct })),
   },

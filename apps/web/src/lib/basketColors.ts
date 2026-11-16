@@ -20,3 +20,14 @@ export const BASKET_CHIP_GRADIENTS: { from: string; to: string }[] = [
   { from: "#e5dcf1", to: "#b9a8dc" }, // Lavender -- extrapolated
   { from: "#f3ead2", to: "#d9c48f" }, // Sand -- extrapolated
 ];
+
+/** The ONE place every basket-color callsite (rings, bars, legends, chips, dashboard cards/chart)
+ *  must read from, by basket index -- never a literal hex inline. Round 2's own audit found
+ *  hardcoded indigo/violet leftovers from reading this file's color array directly instead of
+ *  going through a shared accessor; this closes that gap. Cycles defensively, though MAX_BASKETS
+ *  (4) never actually lets index exceed BASKET_COLORS.length for a real strategy. */
+export function getBasketColor(index: number): { solid: string; chipFrom: string; chipTo: string } {
+  const i = index % BASKET_COLORS.length;
+  const gradient = BASKET_CHIP_GRADIENTS[i]!;
+  return { solid: BASKET_COLORS[i]!, chipFrom: gradient.from, chipTo: gradient.to };
+}

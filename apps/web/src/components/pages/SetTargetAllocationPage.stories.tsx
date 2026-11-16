@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { SetTargetAllocationPage } from "./SetTargetAllocationPage";
+import { getBasketColor } from "@/lib/basketColors";
 
 const meta: Meta<typeof SetTargetAllocationPage> = {
   title: "Pages/SetTargetAllocation",
@@ -11,8 +12,8 @@ export default meta;
 type Story = StoryObj<typeof SetTargetAllocationPage>;
 
 const twoBaskets = [
-  { id: "stablecoins", name: "Stablecoins", color: "#6366f1", tokenSymbols: ["USDC", "USDT", "DAI"], currentValue: 10000 },
-  { id: "crypto-majors", name: "Crypto majors", color: "#a855f7", tokenSymbols: ["WETH", "WBTC"], currentValue: 4270 },
+  { id: "stablecoins", name: "Stablecoins", color: getBasketColor(0).solid, tokenSymbols: ["USDC", "USDT", "DAI"], currentValue: 10000 },
+  { id: "crypto-majors", name: "Crypto majors", color: getBasketColor(1).solid, tokenSymbols: ["WETH", "WBTC"], currentValue: 4270 },
 ];
 
 export const TwoBaskets: Story = {
@@ -29,8 +30,8 @@ export const FourBaskets: Story = {
     safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
     baskets: [
       ...twoBaskets,
-      { id: "defi", name: "DeFi", color: "#22c55e", tokenSymbols: ["AAVE", "LINK"], currentValue: 2000 },
-      { id: "memecoins", name: "Memecoins", color: "#f59e0b", tokenSymbols: ["DEGEN"], currentValue: 500 },
+      { id: "defi", name: "DeFi", color: getBasketColor(2).solid, tokenSymbols: ["AAVE", "LINK"], currentValue: 2000 },
+      { id: "memecoins", name: "Memecoins", color: getBasketColor(3).solid, tokenSymbols: ["DEGEN"], currentValue: 500 },
     ],
   },
 };

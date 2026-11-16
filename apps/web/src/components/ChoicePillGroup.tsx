@@ -46,7 +46,7 @@ export function ChoicePillGroup({ options, value, onChange, disabled, className 
         value={isCustomValue ? value : Number.NaN}
         onChange={onChange}
         disabled={disabled}
-        className={cn("h-12 w-24", isCustomValue && "border-accent")}
+        className={cn("h-12", isCustomValue && "border-accent")}
       />
     </div>
   );

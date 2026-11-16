@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { getBasketColor } from "@/lib/basketColors";
 import { ReviewPortfolioManagerPage } from "./ReviewPortfolioManagerPage";
 
 const meta: Meta<typeof ReviewPortfolioManagerPage> = {
@@ -14,7 +15,7 @@ const baskets = [
   {
     id: "stablecoins",
     name: "Stablecoins",
-    color: "#6366f1",
+    color: getBasketColor(0).solid,
     tokenSymbols: ["USDC", "USDT", "DAI"],
     currentPct: 66.7,
     currentValue: 10000,
@@ -23,7 +24,7 @@ const baskets = [
   {
     id: "crypto-majors",
     name: "Crypto majors",
-    color: "#a855f7",
+    color: getBasketColor(1).solid,
     tokenSymbols: ["WETH", "WBTC", "wstETH"],
     currentPct: 33.3,
     currentValue: 5000,

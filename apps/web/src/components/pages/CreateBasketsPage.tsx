@@ -11,7 +11,7 @@ import { TokenListRow } from "@/components/TokenListRow";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardLayout } from "@/components/WizardLayout";
-import { BASKET_CHIP_GRADIENTS, BASKET_COLORS } from "@/lib/basketColors";
+import { BASKET_COLORS, getBasketColor } from "@/lib/basketColors";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
 import { cn } from "@/lib/cn";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
@@ -153,7 +153,7 @@ export function CreateBasketsPage({
   function addBasket() {
     if (draftBaskets.length >= MAX_BASKETS) return;
     const id = `basket-${draftBaskets.length + 1}`;
-    const color = BASKET_COLORS[draftBaskets.length % BASKET_COLORS.length]!;
+    const color = getBasketColor(draftBaskets.length).solid;
     setDraftBaskets((prev) => [...prev, { id, name: `Basket ${prev.length + 1}`, color, tokenAddresses: [] }]);
     setSelectedBasketId(id);
   }
@@ -169,7 +169,7 @@ export function CreateBasketsPage({
    *  basket's chip tint stable even if an earlier basket is deleted. */
   function chipGradientFor(basket: BasketDraft) {
     const index = BASKET_COLORS.indexOf(basket.color);
-    return BASKET_CHIP_GRADIENTS[index === -1 ? 0 : index % BASKET_CHIP_GRADIENTS.length]!;
+    return getBasketColor(index === -1 ? 0 : index);
   }
 
   const managedTokenCount = assignedAddresses.size;
@@ -286,7 +286,7 @@ export function CreateBasketsPage({
                       <span
                         key={token.address}
                         className="inline-flex h-[46px] items-center gap-2 rounded-full py-0 pr-3.5 pl-1.5 text-sm font-semibold text-[#0b0d10]"
-                        style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.to})` }}
+                        style={{ background: `linear-gradient(180deg, ${gradient.chipFrom}, ${gradient.chipTo})` }}
                       >
                         <TokenIcon symbol={token.symbol} iconUrl={token.iconUrl} size={34} />
                         {token.symbol}

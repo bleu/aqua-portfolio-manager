@@ -7,7 +7,7 @@ import { zeroAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { ActivePortfolioManagerDashboardPage } from "@/components/pages/ActivePortfolioManagerDashboardPage";
 import { clearActiveStrategy, loadActiveStrategy } from "@/lib/activeStrategyStorage";
-import { BASKET_COLORS } from "@/lib/basketColors";
+import { getBasketColor } from "@/lib/basketColors";
 import { buildDockTransaction, buildRemoveGuardTransaction } from "@/lib/dockProposal";
 import { decodeOrderGroups, type DecodedGroup } from "@/lib/portfolioManagerEncoding";
 import { readInstalledGuard, sendTransaction } from "@/lib/safeProposal";
@@ -157,7 +157,7 @@ export default function Page() {
             return {
               id: `group-${i}`,
               name: activePmStrategy.groupNames?.[i] ?? `Basket ${i + 1}`,
-              color: BASKET_COLORS[i % BASKET_COLORS.length]!,
+              color: getBasketColor(i).solid,
               managedValue: basketTokens.reduce((sum, t) => sum + t.value, 0),
               targetPct: (group.weightBps / 1_000_000_000) * 100,
               tokens: basketTokens,
@@ -169,7 +169,7 @@ export default function Page() {
             {
               id: "managed",
               name: "Managed tokens",
-              color: BASKET_COLORS[0]!,
+              color: getBasketColor(0).solid,
               managedValue: tokenRows(activePmStrategy.tokens).reduce((sum, t) => sum + t.value, 0),
               targetPct: 100,
               tokens: tokenRows(activePmStrategy.tokens),
