@@ -1,4 +1,5 @@
 import { Badge } from "./Badge";
+import { Identicon } from "./Identicon";
 import { truncateAddress } from "@/lib/format";
 
 export type AddressBadgeProps = {
@@ -12,13 +13,15 @@ export type AddressBadgeProps = {
  *  #1e2123 (surface-raised), border #292c30, 30px radius, 12px padding, 8px gap, Inter Regular
  *  14px white text, and a leading 24px rounded-[8px] avatar icon.
  *
- *  The avatar itself is a flat placeholder, not Figma's real reference image -- this app has no
- *  per-address avatar/blockie generator yet, so there's nothing real to render there. Flagging
- *  rather than fabricating a fake identicon. */
+ *  The icon is a deterministic per-address identicon (lib/identicon.ts), not a fetched "real Safe
+ *  avatar": the Safe Apps SDK's own getInfo() response has no avatar/logo field at all -- Safe's
+ *  own UI generates the same kind of client-side blockie from the address, there's no separate
+ *  server-provided image to fetch here either. An earlier flat placeholder square is replaced by
+ *  this, not supplemented with a loading/fallback state, since there's only ever this one source. */
 export function AddressBadge({ label, address }: AddressBadgeProps) {
   return (
     <Badge
-      icon={<span className="h-6 w-6 shrink-0 rounded-[8px] bg-accent/30" />}
+      icon={<Identicon address={address} size={24} className="shrink-0 rounded-[8px]" />}
       className="gap-2 rounded-[30px] border-[#292c30] bg-surface-raised p-3 text-sm font-normal text-white"
     >
       {label} · {truncateAddress(address)}
