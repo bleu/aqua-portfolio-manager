@@ -192,6 +192,18 @@ export default function Page() {
     targetPct: b.targetPct,
     points: [{ date: "Today", pct: b.currentPct }],
   }));
+  const targetsRecap = baskets.map((b) => ({
+    id: b.id,
+    name: b.name,
+    tokenSymbols: b.tokens.map((t) => t.symbol),
+    targetPct: b.targetPct,
+  }));
+  // Only the local wizard snapshot carries these -- a strategy shipped outside this app's own
+  // wizard (the decodeOrderGroups fallback above) has no local parameters draft to read, same
+  // honest-zero treatment as netLpFeesEarned/routedVolume below until a real on-chain/indexer
+  // source for them exists.
+  const priceDeviationPct = activeStrategy ? activeStrategy.parameters.priceDeviationPct : 0;
+  const lpFeePct = activeStrategy ? activeStrategy.parameters.lpFeePct : 0;
 
   return (
     <ActivePortfolioManagerDashboardPage
@@ -204,6 +216,9 @@ export default function Page() {
       routedTransactionCount={0}
       baskets={baskets}
       chartSeries={chartSeries}
+      priceDeviationPct={priceDeviationPct}
+      lpFeePct={lpFeePct}
+      targetsRecap={targetsRecap}
       onDeleteStrategy={handleDeleteStrategy}
       isDeletingStrategy={isDeleting}
       deleteStrategyError={deleteError}
