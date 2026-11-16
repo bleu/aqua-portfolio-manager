@@ -12,11 +12,15 @@ export type BadgeProps = {
   variant?: "plain" | "outline" | "dot";
   /** Only meaningful for the `plain` variant -- a custom leading dot color. */
   dotColor?: string;
+  /** Only meaningful for the `plain` variant -- a custom leading icon/image, instead of a dot
+   *  (e.g. the header's wallet-indicator pills, which show a real chain/avatar icon). Takes
+   *  priority over `dotColor` if both are passed. */
+  icon?: ReactNode;
   className?: string;
 };
 
 /** Base small-pill primitive. NetworkBadge and AddressBadge are `plain`-variant configurations. */
-export function Badge({ children, variant = "plain", dotColor, className }: BadgeProps) {
+export function Badge({ children, variant = "plain", dotColor, icon, className }: BadgeProps) {
   if (variant === "dot") {
     return (
       <span
@@ -51,7 +55,7 @@ export function Badge({ children, variant = "plain", dotColor, className }: Badg
         className,
       )}
     >
-      {dotColor && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />}
+      {icon ?? (dotColor && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />)}
       {children}
     </span>
   );

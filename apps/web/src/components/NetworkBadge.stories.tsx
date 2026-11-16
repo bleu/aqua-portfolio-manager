@@ -14,5 +14,5 @@ export const Ethereum: Story = {
 };
 
 export const Base: Story = {
-  args: { network: "Base", statusColor: "#2563eb" },
+  args: { network: "Base" },
 };
