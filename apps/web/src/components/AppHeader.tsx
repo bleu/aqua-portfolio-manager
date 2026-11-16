@@ -11,10 +11,13 @@ export type AppHeaderProps = {
   onSelectTab?: (label: string) => void;
 };
 
-/** Shared top nav bar: brand mark, an optional TabNav, and the network/Safe badge group. Reused on every Portfolio Manager page. */
+/** Shared top nav bar: brand mark, an optional TabNav, and the network/Safe badge group. Reused
+ *  on every Portfolio Manager page. Matches Figma's own NavigationHeader (node 546:25636,
+ *  confirmed on the Baskets-Filled flow screen): transparent, sitting directly on the page's own
+ *  background rather than a separate raised bar with its own border. */
 export function AppHeader({ tabs, network, safeAddress, onSelectTab }: AppHeaderProps) {
   return (
-    <header className="relative flex items-center justify-between border-b border-border bg-surface-raised px-6 py-3">
+    <header className="relative flex items-center justify-between px-6 py-3">
       <Link href="/dashboard" className="flex items-center gap-2">
         <img src="/octopus.svg" alt="" className="h-5 w-6" />
         <span className="font-display text-base font-normal text-accent">trim</span>

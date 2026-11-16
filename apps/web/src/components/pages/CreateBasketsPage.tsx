@@ -269,17 +269,20 @@ export function CreateBasketsPage({
             </div>
           )}
         </div>
+      </div>
 
-        <div className="mt-6">
-          <WizardFooter
-            summary={`${draftBaskets.length} baskets · ${managedTokenCount} managed tokens`}
-            continueLabel="Continue to targets"
-            showBack
-            onBack={onBack}
-            onContinue={onContinue}
-            continueDisabled={managedTokenCount === 0}
-          />
-        </div>
+      {/* Outside the max-w-5xl column on purpose -- the action bar stretches full-width,
+          matching the rest of the page's own full-bleed header/footer, not capped to the
+          centered content column like the wizard steps above it. */}
+      <div className="px-6 pb-8">
+        <WizardFooter
+          summary={`${draftBaskets.length} baskets · ${managedTokenCount} managed tokens`}
+          continueLabel="Continue to targets"
+          showBack
+          onBack={onBack}
+          onContinue={onContinue}
+          continueDisabled={managedTokenCount === 0}
+        />
       </div>
 
       <Footer />
