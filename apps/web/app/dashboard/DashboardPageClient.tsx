@@ -7,6 +7,7 @@ import { zeroAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { ActivePortfolioManagerDashboardPage } from "@/components/pages/ActivePortfolioManagerDashboardPage";
 import { clearActiveStrategy, loadActiveStrategy } from "@/lib/activeStrategyStorage";
+import { BASKET_COLORS } from "@/lib/basketColors";
 import { buildDockTransaction, buildRemoveGuardTransaction } from "@/lib/dockProposal";
 import { decodeOrderGroups, type DecodedGroup } from "@/lib/portfolioManagerEncoding";
 import { readInstalledGuard, sendTransaction } from "@/lib/safeProposal";
@@ -14,12 +15,6 @@ import { tokenAtRegistryIndex } from "@/lib/tokenFeeds";
 import { useActivePmStrategy } from "@/lib/useActivePmStrategy";
 import { useSafeBalances } from "@/lib/useSafeBalances";
 import { useVerifiedSafeAddress } from "@/lib/useVerifiedSafeAddress";
-
-/** One basket per LP-declared group, newest/only source of truth for the groups themselves (not
- *  per-token color, which this app has never persisted on-chain) -- cycles if a strategy somehow
- *  declared more groups than colors, though PortfolioManagerArgsCodec.MAX_GROUPS (4) never lets
- *  that happen for a real strategy. */
-const BASKET_COLORS = ["#6366f1", "#a855f7", "#22c55e", "#f59e0b"];
 
 type DashboardBasketDraft = {
   id: string;

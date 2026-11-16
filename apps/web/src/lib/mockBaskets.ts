@@ -1,3 +1,4 @@
+import { BASKET_COLORS } from "./basketColors";
 import { DAI, USDC, USDT, WBTC, WETH } from "./mockData";
 import { POPULAR_TOKEN_ICONS } from "./tokenFeeds";
 import type { Token } from "./types";
@@ -62,6 +63,6 @@ export const safeTokens: SafeToken[] = [
 ].map((token) => ({ ...token, iconUrl: POPULAR_TOKEN_ICONS[token.symbol] }));
 
 export const initialBaskets: BasketDraft[] = [
-  { id: "stablecoins", name: "Stablecoins", color: "#6366f1", tokenAddresses: [USDC.address, USDT.address, DAI.address] },
-  { id: "crypto-majors", name: "Crypto majors", color: "#a855f7", tokenAddresses: [WETH.address, WBTC.address] },
+  { id: "stablecoins", name: "Stablecoins", color: BASKET_COLORS[0]!, tokenAddresses: [USDC.address, USDT.address, DAI.address] },
+  { id: "crypto-majors", name: "Crypto majors", color: BASKET_COLORS[1]!, tokenAddresses: [WETH.address, WBTC.address] },
 ];

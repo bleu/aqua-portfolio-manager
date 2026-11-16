@@ -6,7 +6,6 @@ import { AppHeader } from "@/components/AppHeader";
 import { Banner } from "@/components/Banner";
 import { BasketPanelHeader } from "@/components/BasketPanelHeader";
 import { Footer } from "@/components/Footer";
-import { GroupSummaryCard } from "@/components/GroupSummaryCard";
 import { SearchInput } from "@/components/SearchInput";
 import type { TabNavItem } from "@/components/TabNav";
 import { TokenChip } from "@/components/TokenChip";
@@ -14,7 +13,9 @@ import { TokenListRow } from "@/components/TokenListRow";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
+import { BASKET_COLORS } from "@/lib/basketColors";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
+import { cn } from "@/lib/cn";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
 import { dismissSafeBanner, hasDismissedSafeBanner } from "@/lib/safeWalletBannerStorage";
 import { hasSeenWelcome, markWelcomeSeen } from "@/lib/welcomeModalStorage";
@@ -162,11 +163,26 @@ export function CreateBasketsPage({
     setDraftBaskets((prev) => prev.map((basket) => (basket.id === id ? { ...basket, name } : basket)));
   }
 
+  function removeTokenFromBasket(basketId: string, address: string) {
+    setDraftBaskets((prev) =>
+      prev.map((basket) =>
+        basket.id !== basketId ? basket : { ...basket, tokenAddresses: basket.tokenAddresses.filter((a) => a !== address) },
+      ),
+    );
+  }
+
   function addBasket() {
     if (draftBaskets.length >= MAX_BASKETS) return;
     const id = `basket-${draftBaskets.length + 1}`;
-    setDraftBaskets((prev) => [...prev, { id, name: `Basket ${prev.length + 1}`, color: "#38bdf8", tokenAddresses: [] }]);
+    const color = BASKET_COLORS[draftBaskets.length % BASKET_COLORS.length]!;
+    setDraftBaskets((prev) => [...prev, { id, name: `Basket ${prev.length + 1}`, color, tokenAddresses: [] }]);
     setSelectedBasketId(id);
+  }
+
+  function deleteBasket(id: string) {
+    const remaining = draftBaskets.filter((basket) => basket.id !== id);
+    setDraftBaskets(remaining);
+    if (selectedBasketId === id) setSelectedBasketId(remaining[0]?.id);
   }
 
   const selectedBasketTokens = selectedBasket
@@ -236,25 +252,71 @@ export function CreateBasketsPage({
         <div className="mt-8 grid grid-cols-[280px_1fr] gap-4">
           <div className="space-y-2">
             <p className="text-xs font-medium text-gray-500">
-              Your baskets <span className="ml-1 text-gray-600">{draftBaskets.length}</span>
+              Your baskets <span className="ml-1 text-gray-600">{draftBaskets.length}/{MAX_BASKETS}</span>
             </p>
             {draftBaskets.map((basket) => {
               const tokens = safeTokens.filter((t) => basket.tokenAddresses.includes(t.address));
               const value = tokens.reduce((sum, t) => sum + t.value, 0);
+              const selected = basket.id === selectedBasketId;
               return (
-                <GroupSummaryCard
+                <div
                   key={basket.id}
-                  compact
                   onClick={() => setSelectedBasketId(basket.id)}
-                  group={{
-                    id: basket.id,
-                    name: basket.name,
-                    color: basket.color,
-                    tokens,
-                    trailing: { kind: "amount", value },
-                    selected: basket.id === selectedBasketId,
-                  }}
-                />
+                  className={cn(
+                    "cursor-pointer rounded-xl border bg-surface-card p-3 transition-colors",
+                    selected ? "border-2" : "border-border hover:border-gray-600",
+                  )}
+                  style={selected ? { borderColor: basket.color } : undefined}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2">
+                      <span className="mt-1.5 size-2.5 shrink-0 rounded-full" style={{ backgroundColor: basket.color }} />
+                      <div>
+                        <p className="text-sm font-medium text-white">{basket.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {tokens.length}/{MAX_TOKENS_PER_BASKET} tokens · ${value.toLocaleString()} managed
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${basket.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteBasket(basket.id);
+                      }}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-raised text-gray-400 transition-colors hover:text-red-400"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {tokens.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {tokens.map((token) => (
+                        <TokenChip
+                          key={token.address}
+                          token={token}
+                          variant="removable"
+                          onRemove={() => removeTokenFromBasket(basket.id, token.address)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedBasketId(basket.id);
+                    }}
+                    className="mt-2 text-xs font-medium text-accent hover:text-accent/80"
+                  >
+                    + Add token
+                  </button>
+                </div>
               );
             })}
             {draftBaskets.length < MAX_BASKETS && <AddBasketButton onClick={addBasket} />}
