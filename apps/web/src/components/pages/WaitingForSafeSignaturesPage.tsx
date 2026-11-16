@@ -6,10 +6,10 @@ import { DetailRow } from "@/components/DetailRow";
 import { Disclosure } from "@/components/Disclosure";
 import { SignatureProgressBar } from "@/components/SignatureProgressBar";
 import { StatusIcon } from "@/components/StatusIcon";
-import type { TabNavItem } from "@/components/TabNav";
+import { buildNavTabs } from "@/lib/navTabs";
 import { truncateAddress } from "@/lib/format";
 
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
+const TABS = buildNavTabs("portfolio-manager");
 
 export type WaitingForSafeSignaturesPageProps = {
   network: string;

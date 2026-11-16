@@ -6,10 +6,10 @@ import { Button } from "@/components/Button";
 import { NumberedStepCard } from "@/components/NumberedStepCard";
 import { StatColumn } from "@/components/StatColumn";
 import { StatusIcon } from "@/components/StatusIcon";
-import type { TabNavItem } from "@/components/TabNav";
+import { buildNavTabs } from "@/lib/navTabs";
 import { formatUsd, truncateAddress } from "@/lib/format";
 
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
+const TABS = buildNavTabs("portfolio-manager");
 
 const EXPLAINER_STEPS = [
   {

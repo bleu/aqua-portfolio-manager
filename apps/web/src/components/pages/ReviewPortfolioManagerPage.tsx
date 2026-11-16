@@ -5,12 +5,12 @@ import { Button } from "@/components/Button";
 import { DetailRow } from "@/components/DetailRow";
 import { Disclosure } from "@/components/Disclosure";
 import { TargetAllocationRow } from "@/components/TargetAllocationRow";
-import type { TabNavItem } from "@/components/TabNav";
+import { buildNavTabs } from "@/lib/navTabs";
 import { WizardStepper } from "@/components/WizardStepper";
 import { truncateAddress } from "@/lib/format";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
+const TABS = buildNavTabs("portfolio-manager");
 const REBALANCE_EPSILON_PCT = 0.05;
 
 export type ReviewBasket = {

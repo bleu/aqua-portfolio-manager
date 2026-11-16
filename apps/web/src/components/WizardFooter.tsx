@@ -1,7 +1,9 @@
 import { Button } from "./Button";
 
 export type WizardFooterProps = {
-  summary: string;
+  /** Targets and Parameters dropped this per the design's own call: the status it would repeat
+   *  (allocation match/mismatch, which fields are filled) already shows inline above the footer. */
+  summary?: string;
   continueLabel: string;
   onBack?: () => void;
   onContinue?: () => void;
@@ -36,7 +38,7 @@ export function WizardFooter({
         <span />
       )}
       <div className="flex items-center gap-4">
-        <span className="text-xs text-gray-500">{summary}</span>
+        {summary && <span className="text-xs text-gray-500">{summary}</span>}
         <Button variant="accent" onClick={onContinue} disabled={continueDisabled}>
           {continueLabel}
         </Button>

@@ -23,7 +23,7 @@ export type AppHeaderProps = {
  *  shorter, persistent app bar (py-3) rather than the landing page's taller hero header. */
 export function AppHeader({ tabs, network, safeAddress, onSelectTab }: AppHeaderProps) {
   return (
-    <header className="relative flex items-center justify-between px-6 py-3">
+    <header className="relative flex items-center justify-between px-16 py-3">
       <Link href="/dashboard" className="flex items-center gap-2">
         <img src="/trim-octopus-mark.svg" alt="" className="h-6 w-6 -scale-x-100" />
         <span className="font-display text-xl font-normal text-accent">Trim</span>

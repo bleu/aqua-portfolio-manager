@@ -1,19 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "./Badge";
-import { formatUsd } from "@/lib/format";
 
 export type BasketPanelHeaderProps = {
   name: string;
-  color: string;
-  tokenCount: number;
-  totalValue: number;
   onRename?: (name: string) => void;
 };
 
-/** The selected basket's panel header: color dot + name (click the pencil to rename inline) + token count/value + a "Selected basket" badge. */
-export function BasketPanelHeader({ name, color, tokenCount, totalValue, onRename }: BasketPanelHeaderProps) {
+/** The selected basket's panel header: name (click the pencil to rename inline). No colored dot
+ *  and no "Selected basket" pill -- the Claude Artifact's own right panel
+ *  (project/Step1_Baskets_Filled.dc.html) has neither; the basket being edited is already obvious
+ *  from its own card's accent-colored border in the left column. */
+export function BasketPanelHeader({ name, onRename }: BasketPanelHeaderProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftName, setDraftName] = useState(name);
 
@@ -24,47 +22,38 @@ export function BasketPanelHeader({ name, color, tokenCount, totalValue, onRenam
   }
 
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-          {isEditing ? (
-            <input
-              autoFocus
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitRename();
-                if (e.key === "Escape") {
-                  setDraftName(name);
-                  setIsEditing(false);
-                }
-              }}
-              className="rounded border border-border bg-transparent px-1 text-base font-semibold text-white outline-none"
-            />
-          ) : (
-            <h3 className="text-base font-semibold text-white">{name}</h3>
-          )}
-          <button
-            type="button"
-            onClick={() => {
+    <div className="flex items-center gap-2">
+      {isEditing ? (
+        <input
+          autoFocus
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") {
               setDraftName(name);
-              setIsEditing(true);
-            }}
-            aria-label={`Edit ${name}`}
-            className="text-gray-500 hover:text-gray-300"
-          >
-            ✎
-          </button>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          {tokenCount} {tokenCount === 1 ? "token" : "tokens"} · {formatUsd(totalValue)} current value
-        </p>
-      </div>
-      <Badge className="border-accent/40 bg-accent/10 text-accent" dotColor="#94cad1">
-        Selected basket
-      </Badge>
+              setIsEditing(false);
+            }
+          }}
+          className="rounded border border-border bg-transparent px-1 text-xl font-semibold text-white outline-none"
+        />
+      ) : (
+        <h2 className="text-xl font-semibold text-white">{name}</h2>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          setDraftName(name);
+          setIsEditing(true);
+        }}
+        aria-label={`Edit ${name}`}
+        className="text-gray-500 hover:text-gray-300"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3" />
+        </svg>
+      </button>
     </div>
   );
 }

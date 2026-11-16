@@ -2,36 +2,30 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AddBasketButton } from "@/components/AddBasketButton";
-import { AppHeader } from "@/components/AppHeader";
 import { Banner } from "@/components/Banner";
 import { BasketPanelHeader } from "@/components/BasketPanelHeader";
 import { Footer } from "@/components/Footer";
 import { SearchInput } from "@/components/SearchInput";
-import type { TabNavItem } from "@/components/TabNav";
-import { TokenChip } from "@/components/TokenChip";
 import { TokenIcon } from "@/components/TokenIcon";
 import { TokenListRow } from "@/components/TokenListRow";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { WizardFooter } from "@/components/WizardFooter";
-import { WizardStepper } from "@/components/WizardStepper";
+import { WizardLayout } from "@/components/WizardLayout";
 import { BASKET_CHIP_GRADIENTS, BASKET_COLORS } from "@/lib/basketColors";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
 import { cn } from "@/lib/cn";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
+import { buildNavTabs } from "@/lib/navTabs";
 import { dismissSafeBanner, hasDismissedSafeBanner } from "@/lib/safeWalletBannerStorage";
 import { hasSeenWelcome, markWelcomeSeen } from "@/lib/welcomeModalStorage";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
+const TABS = buildNavTabs("portfolio-manager");
 
 /** Mirrors PortfolioManagerArgsCodec.MAX_MEMBERS_PER_GROUP/MAX_GROUPS -- a strategy that exceeds
  *  either can't ship on-chain, so the wizard blocks it here instead of failing silently later. */
 const MAX_TOKENS_PER_BASKET = 5;
 const MAX_BASKETS = 4;
-
-/** Quick-filter badges only surface this curated subset -- the full 40-token list stays reachable
- *  through the search box below. */
-const POPULAR_TOKEN_SYMBOLS = ["USDC", "USDT", "DAI", "WETH", "CBETH", "WBTC", "CBBTC"];
 
 export type CreateBasketsPageProps = {
   network: string;
@@ -61,7 +55,6 @@ export function CreateBasketsPage({
 }: CreateBasketsPageProps) {
   const [draftBaskets, setDraftBaskets] = useState(baskets);
   const [selectedBasketId, setSelectedBasketId] = useState(baskets[0]?.id);
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   // Defaults to false so the first render always matches the server (no localStorage there),
   // same hydration-mismatch avoidance as the draftBaskets effect below.
@@ -112,35 +105,20 @@ export function CreateBasketsPage({
   // via plain `safeTokens` lookups elsewhere in this file even if their balance later drops to 0.
   const fundedTokens = useMemo(() => safeTokens.filter((token) => token.balance > 0), [safeTokens]);
 
+  // Tokens already in the selected basket sort first -- the design shows them at the top of this
+  // same list (with a teal ✕ to remove), not in a separate "Tokens in this basket" chip row.
   const visibleTokens = useMemo(() => {
+    const addedAddresses = new Set(selectedBasket?.tokenAddresses ?? []);
     return fundedTokens
       .filter((token) => {
-        const matchesFilter = activeFilters.size === 0 || activeFilters.has(token.symbol);
-        const matchesQuery =
-          query.trim() === "" ||
-          token.symbol.toLowerCase().includes(query.toLowerCase()) ||
-          token.address.toLowerCase().includes(query.toLowerCase());
-        return matchesFilter && matchesQuery;
+        const q = query.trim().toLowerCase();
+        return q === "" || token.symbol.toLowerCase().includes(q) || token.address.toLowerCase().includes(q);
       })
-      .sort((a, b) => b.value - a.value);
-  }, [fundedTokens, activeFilters, query]);
-
-  const popularTokens = useMemo(
-    () =>
-      POPULAR_TOKEN_SYMBOLS.map((symbol) => fundedTokens.find((t) => t.symbol === symbol)).filter(
-        (t): t is SafeToken => t !== undefined,
-      ),
-    [fundedTokens],
-  );
-
-  function toggleFilter(symbol: string) {
-    setActiveFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(symbol)) next.delete(symbol);
-      else next.add(symbol);
-      return next;
-    });
-  }
+      .sort((a, b) => {
+        const addedDiff = Number(addedAddresses.has(b.address)) - Number(addedAddresses.has(a.address));
+        return addedDiff !== 0 ? addedDiff : b.value - a.value;
+      });
+  }, [fundedTokens, selectedBasket, query]);
 
   function toggleTokenInSelectedBasket(address: string) {
     if (!selectedBasket) return;
@@ -194,68 +172,66 @@ export function CreateBasketsPage({
     return BASKET_CHIP_GRADIENTS[index === -1 ? 0 : index % BASKET_CHIP_GRADIENTS.length]!;
   }
 
-  const selectedBasketTokens = selectedBasket
-    ? safeTokens.filter((t) => selectedBasket.tokenAddresses.includes(t.address))
-    : [];
-  const selectedBasketValue = selectedBasketTokens.reduce((sum, t) => sum + t.value, 0);
   const managedTokenCount = assignedAddresses.size;
 
+  const banner = isUnsupportedNetwork ? (
+    <Banner
+      tone="warning"
+      icon={
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c9ad78" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v5M12 16v.5" />
+        </svg>
+      }
+      title="Unsupported network"
+      description="Trim is only available on Base. Switch your network to Base to continue"
+      action={
+        <span className="flex items-center gap-2 text-sm font-semibold text-accent">
+          Switch to Base in Safe
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8 16L17 7M9 7h8v8" />
+          </svg>
+        </span>
+      }
+    />
+  ) : (
+    showSafeBanner && (
+      <Banner
+        tone="info"
+        icon={
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1b3a40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z" />
+          </svg>
+        }
+        title="You're using a Safe Wallet"
+        description="To improve your experience while activating your Portfolio Manager, we recommend using the Trim Safe App directly."
+        action={
+          <button type="button" onClick={dismissSafeWalletBanner} className="flex h-12 items-center gap-2 rounded-full border border-[#0e2226] px-6 text-sm font-semibold">
+            Open Safe App
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 16L17 7M9 7h8v8" />
+            </svg>
+          </button>
+        }
+        className="mb-7"
+      />
+    )
+  );
+
   return (
-    <div className="min-h-screen">
-      {showWelcome && <WelcomeModal onContinue={dismissWelcome} />}
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
-
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        {isUnsupportedNetwork ? (
-          <Banner
-            tone="warning"
-            icon={
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c9ad78" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 8v5M12 16v.5" />
-              </svg>
-            }
-            title="Unsupported network"
-            description="Trim is only available on Base. Switch your network to Base to continue"
-            action={
-              <span className="flex items-center gap-2 text-sm font-semibold text-accent">
-                Switch to Base in Safe
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8 16L17 7M9 7h8v8" />
-                </svg>
-              </span>
-            }
-          />
-        ) : (
-          showSafeBanner && (
-            <Banner
-              tone="info"
-              icon={
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1b3a40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z" />
-                </svg>
-              }
-              title="You're using a Safe Wallet"
-              description="To improve your experience while activating your Portfolio Manager, we recommend using the Trim Safe App directly."
-              action={
-                <button type="button" onClick={dismissSafeWalletBanner} className="flex h-12 items-center gap-2 rounded-full border border-[#0e2226] px-6 text-sm font-semibold">
-                  Open Safe App
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M8 16L17 7M9 7h8v8" />
-                  </svg>
-                </button>
-              }
-              className="mb-7"
-            />
-          )
-        )}
-
-        <div className={isUnsupportedNetwork ? "pointer-events-none opacity-30" : undefined}>
-        <div className="mt-6">
-          <WizardStepper steps={WIZARD_STEPS} activeIndex={0} />
-        </div>
-
-        <div className="mt-8 grid grid-cols-2 gap-6">
+    <WizardLayout
+      network={network}
+      safeAddress={safeAddress}
+      tabs={TABS}
+      steps={WIZARD_STEPS}
+      activeStepIndex={0}
+      contentWidthPx={1200}
+      modal={showWelcome ? <WelcomeModal onContinue={dismissWelcome} /> : undefined}
+      banner={banner}
+      dimmed={isUnsupportedNetwork}
+      footer={<Footer />}
+    >
+        <div className="grid grid-cols-2 gap-6">
           <div className="flex flex-col gap-4 rounded-[28px] border border-white/[0.03] bg-[#16181b] p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -360,47 +336,19 @@ export function CreateBasketsPage({
 
           {selectedBasket && (
             <div className="space-y-4 rounded-[28px] border border-white/[0.03] bg-[#16181b] p-6">
-              <BasketPanelHeader
-                name={selectedBasket.name}
-                color={selectedBasket.color}
-                tokenCount={selectedBasketTokens.length}
-                totalValue={selectedBasketValue}
-                onRename={(name) => renameBasket(selectedBasket.id, name)}
-              />
+              <BasketPanelHeader name={selectedBasket.name} onRename={(name) => renameBasket(selectedBasket.id, name)} />
 
-              <div>
-                <p className="mb-2 text-xs text-gray-500">Tokens in this basket</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedBasketTokens.length === 0 && <span className="text-xs text-gray-600">No tokens yet.</span>}
-                  {selectedBasketTokens.map((token) => (
-                    <TokenChip
-                      key={token.address}
-                      token={token}
-                      variant="removable"
-                      onRemove={() => toggleTokenInSelectedBasket(token.address)}
-                    />
-                  ))}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-lg font-semibold text-white">Add tokens</p>
+                  <p className="mt-1 text-sm text-[#8b9096]">Choose from your wallet.</p>
                 </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-xs text-gray-500">Add tokens</p>
                 <SearchInput
-                  placeholder="Search by token name or address"
+                  className="w-[260px]"
+                  placeholder="Search tokens"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {popularTokens.map((token) => (
-                    <TokenChip
-                      key={token.address}
-                      token={token}
-                      variant="toggle"
-                      selected={activeFilters.has(token.symbol)}
-                      onToggle={() => toggleFilter(token.symbol)}
-                    />
-                  ))}
-                </div>
               </div>
 
               {selectedBasket.tokenAddresses.length >= MAX_TOKENS_PER_BASKET && (
@@ -442,18 +390,13 @@ export function CreateBasketsPage({
 
         <div className="mt-6">
           <WizardFooter
-            summary={`${draftBaskets.length} baskets · ${managedTokenCount} managed tokens`}
-            continueLabel="Continue to targets"
+            continueLabel="Continue"
             showBack
             onBack={onBack}
             onContinue={onContinue}
             continueDisabled={managedTokenCount === 0 || isUnsupportedNetwork}
           />
         </div>
-        </div>
-      </div>
-
-      <Footer />
-    </div>
+    </WizardLayout>
   );
 }

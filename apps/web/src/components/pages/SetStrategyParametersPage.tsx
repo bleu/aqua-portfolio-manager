@@ -1,19 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { AppHeader } from "@/components/AppHeader";
 import { ChoicePillGroup } from "@/components/ChoicePillGroup";
 import { Footer } from "@/components/Footer";
-import type { TabNavItem } from "@/components/TabNav";
 import { WizardFooter } from "@/components/WizardFooter";
-import { WizardStepper } from "@/components/WizardStepper";
+import { WizardLayout } from "@/components/WizardLayout";
+import { buildNavTabs } from "@/lib/navTabs";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
-const PRICE_DEVIATION_OPTIONS = [0.1, 0.5, 1, 2, 5];
+const TABS = buildNavTabs("portfolio-manager");
+/** Confirmed against the Claude Artifact's own Step3_Parameters.dc.html -- no on-chain conflict
+ *  (maxDeviationBps has no contract-enforced floor or ceiling). */
+const PRICE_DEVIATION_OPTIONS = [1, 2, 5, 10];
 /** Floor matches PortfolioManagerArgsCodec.MIN_FEE_BPS (0.5%) -- a lower preset would revert
- *  on-chain. The design reference's own preset list starts at 0.05%, below that floor -- not
- *  copied here for exactly that reason, not an oversight. */
+ *  on-chain. The design's own preset list is [0.05%, 0.3%, 1%, 2%]; its lowest two values are
+ *  both below that floor, not just the one value an earlier pass flagged. This list keeps the
+ *  design's low-fee-biased intent (one low preset, two mid, one high) while staying inside the
+ *  floor -- effectively unchanged from what was already here, not a skipped fix. */
 const LP_FEE_OPTIONS = [0.5, 1, 2, 5];
 const DEFAULT_LP_FEE = 2;
 
@@ -35,14 +38,15 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
   const [lpFeePct, setLpFeePct] = useState<number | undefined>(DEFAULT_LP_FEE);
 
   return (
-    <div className="min-h-screen">
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
-
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        <div className="mt-6 mb-6">
-          <WizardStepper steps={WIZARD_STEPS} activeIndex={2} />
-        </div>
-
+    <WizardLayout
+      network={network}
+      safeAddress={safeAddress}
+      tabs={TABS}
+      steps={WIZARD_STEPS}
+      activeStepIndex={2}
+      contentWidthPx={1000}
+      footer={<Footer />}
+    >
         <div className="rounded-[30px] border border-border/60 bg-surface-card p-6">
           <h1 className="text-2xl font-bold text-ink-primary">Set protection and fees</h1>
           <p className="mt-1 text-base text-ink-muted">
@@ -58,6 +62,7 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
               protection but may delay execution.
             </p>
             <ChoicePillGroup options={PRICE_DEVIATION_OPTIONS} value={priceDeviationPct} onChange={setPriceDeviationPct} />
+            {priceDeviationPct === undefined && <p className="mt-2 text-xs text-red-400">Price deviation is required.</p>}
           </div>
 
           <div className="mt-9">
@@ -72,8 +77,7 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
 
         <div className="mt-6">
           <WizardFooter
-            summary={`${priceDeviationPct !== undefined ? `Price deviation ${priceDeviationPct}%` : "Price deviation required"} · LP fee tier ${lpFeePct ?? "—"}%`}
-            continueLabel="Continue to review"
+            continueLabel="Continue"
             showBack
             onBack={onBack}
             continueDisabled={priceDeviationPct === undefined || lpFeePct === undefined}
@@ -83,9 +87,6 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
             }}
           />
         </div>
-      </div>
-
-      <Footer />
-    </div>
+    </WizardLayout>
   );
 }

@@ -106,7 +106,7 @@ export default function Page() {
       reshippingStrategyHash={reshippingStrategyHash}
       reshipError={reshipError}
       onSelectTab={(label) => {
-        if (label === "Portfolio Manager") router.push("/dashboard");
+        if (label === "Portfolio Manager" || label === "Home") router.push("/dashboard");
       }}
     />
   );

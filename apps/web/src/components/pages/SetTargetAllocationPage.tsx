@@ -2,15 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { AllocationPreviewBar } from "@/components/AllocationPreviewBar";
-import { AppHeader } from "@/components/AppHeader";
 import { Footer } from "@/components/Footer";
 import { TargetAllocationRow } from "@/components/TargetAllocationRow";
-import type { TabNavItem } from "@/components/TabNav";
 import { WizardFooter } from "@/components/WizardFooter";
-import { WizardStepper } from "@/components/WizardStepper";
+import { WizardLayout } from "@/components/WizardLayout";
+import { buildNavTabs } from "@/lib/navTabs";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
+const TABS = buildNavTabs("portfolio-manager");
 const REBALANCE_EPSILON_PCT = 0.05;
 
 export type TargetBasket = {
@@ -77,14 +76,15 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
   }
 
   return (
-    <div className="min-h-screen">
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
-
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        <div className="mb-6">
-          <WizardStepper steps={WIZARD_STEPS} activeIndex={1} />
-        </div>
-
+    <WizardLayout
+      network={network}
+      safeAddress={safeAddress}
+      tabs={TABS}
+      steps={WIZARD_STEPS}
+      activeStepIndex={1}
+      contentWidthPx={1000}
+      footer={<Footer />}
+    >
         <div className="flex flex-col gap-6 rounded-[30px] border border-border/60 bg-surface-card p-6">
           <div>
             <h1 className="text-2xl font-bold text-ink-primary">Set target allocation</h1>
@@ -156,17 +156,13 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
 
         <div className="mt-6">
           <WizardFooter
-            summary={`Targets total ${total.toFixed(0)}% · ${needsRebalance ? "Rebalance required" : "No initial rebalance"}`}
-            continueLabel="Continue to parameters"
+            continueLabel="Continue"
             showBack
             onBack={onBack}
             onContinue={() => onContinue?.(targets)}
             continueDisabled={needsRebalance && !riskAcknowledged}
           />
         </div>
-      </div>
-
-      <Footer />
-    </div>
+    </WizardLayout>
   );
 }

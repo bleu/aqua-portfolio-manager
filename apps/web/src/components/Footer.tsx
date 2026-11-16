@@ -12,7 +12,7 @@ export function Footer() {
   return (
     // No max-width (matches Header/main): fills wide viewports instead of staying capped at the
     // design's own content width.
-    <footer className="relative flex h-[94px] flex-col items-center justify-between gap-4 overflow-hidden px-[clamp(24px,4vw,120px)] pb-[62px] pt-8 text-sm text-ink-primary sm:flex-row">
+    <footer className="relative flex h-[94px] flex-col items-center justify-between gap-4 overflow-hidden px-16 pb-[62px] pt-8 text-sm text-ink-primary sm:flex-row">
       <img
         src="/footer-mountains.png"
         alt=""

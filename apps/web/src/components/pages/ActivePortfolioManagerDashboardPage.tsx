@@ -9,13 +9,13 @@ import { IconButton } from "@/components/IconButton";
 import { MetricRow } from "@/components/MetricRow";
 import { ProgressBar } from "@/components/ProgressBar";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import type { TabNavItem } from "@/components/TabNav";
+import { buildNavTabs } from "@/lib/navTabs";
 import { TokenListRow } from "@/components/TokenListRow";
 import { MoreIcon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime, formatUsd, truncateAddress } from "@/lib/format";
 
-const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
+const TABS = buildNavTabs("portfolio-manager");
 const TIME_RANGES = ["24h", "7d", "30d", "90d", "All"] as const;
 type TimeRange = (typeof TIME_RANGES)[number];
 

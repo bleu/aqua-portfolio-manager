@@ -209,7 +209,8 @@ export default function Page() {
       deleteStrategyError={deleteError}
       canDeleteStrategy={!!activePmStrategy}
       onSelectTab={(label) => {
-        if (label === "History") router.push("/dashboard/history");
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
       }}
     />
   );
