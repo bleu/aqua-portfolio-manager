@@ -10,10 +10,12 @@ import { SearchInput } from "@/components/SearchInput";
 import type { TabNavItem } from "@/components/TabNav";
 import { TokenChip } from "@/components/TokenChip";
 import { TokenListRow } from "@/components/TokenListRow";
+import { WelcomeModal } from "@/components/WelcomeModal";
 import { WizardFooter } from "@/components/WizardFooter";
 import { WizardStepper } from "@/components/WizardStepper";
 import { loadDraftBaskets, saveDraftBaskets } from "@/lib/basketDraftsStorage";
 import type { BasketDraft, SafeToken } from "@/lib/mockBaskets";
+import { hasSeenWelcome, markWelcomeSeen } from "@/lib/welcomeModalStorage";
 
 const WIZARD_STEPS = [{ label: "Baskets" }, { label: "Targets" }, { label: "Parameters" }, { label: "Review" }];
 const TABS: TabNavItem[] = [{ label: "Portfolio Manager", active: true }, { label: "History" }];
@@ -51,6 +53,9 @@ export function CreateBasketsPage({
   const [selectedBasketId, setSelectedBasketId] = useState(baskets[0]?.id);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  // Defaults to false so the first render always matches the server (no localStorage there),
+  // same hydration-mismatch avoidance as the draftBaskets effect below.
+  const [showWelcome, setShowWelcome] = useState(false);
 
   // Applied after mount, not as useState's initializer, so the first render always matches the
   // server-rendered baskets prop -- avoids a hydration mismatch between what the server sent and
@@ -62,6 +67,15 @@ export function CreateBasketsPage({
       setSelectedBasketId(stored[0]?.id);
     }
   }, [safeAddress]);
+
+  useEffect(() => {
+    if (!hasSeenWelcome(safeAddress)) setShowWelcome(true);
+  }, [safeAddress]);
+
+  function dismissWelcome() {
+    markWelcomeSeen(safeAddress);
+    setShowWelcome(false);
+  }
 
   useEffect(() => {
     saveDraftBaskets(safeAddress, draftBaskets);
@@ -145,6 +159,7 @@ export function CreateBasketsPage({
 
   return (
     <div className="min-h-screen">
+      {showWelcome && <WelcomeModal onContinue={dismissWelcome} />}
       <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
 
       <div className="mx-auto max-w-5xl px-6 py-8">

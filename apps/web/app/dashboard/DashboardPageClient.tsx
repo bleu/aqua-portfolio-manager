@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { zeroAddress, type Address } from "viem";
 import { useAccount } from "wagmi";
 import { ActivePortfolioManagerDashboardPage } from "@/components/pages/ActivePortfolioManagerDashboardPage";
-import { EmptyDashboardPage } from "@/components/pages/EmptyDashboardPage";
 import { clearActiveStrategy, loadActiveStrategy } from "@/lib/activeStrategyStorage";
 import { buildDockTransaction, buildRemoveGuardTransaction } from "@/lib/dockProposal";
 import { decodeOrderGroups, type DecodedGroup } from "@/lib/portfolioManagerEncoding";
@@ -63,8 +62,8 @@ export default function Page() {
       const { to, data } = buildDockTransaction(activePmStrategy.strategyHash, activePmStrategy.tokens);
       await sendTransaction(to, data, address as Address, provider);
       // No navigation needed: clearing storage here is enough -- the next render (triggered by
-      // setIsDeleting below) re-reads loadActiveStrategy(address) fresh and falls through to
-      // EmptyDashboardPage on its own, the same way the initial render reads it.
+      // setIsDeleting below) re-reads loadActiveStrategy(address) fresh and falls through to the
+      // setup-wizard redirect above on its own, the same way the initial render reads it.
       clearActiveStrategy(address);
 
       // The strategy is already closed on Aqua's ledger at this point, so a failure past here
@@ -96,29 +95,23 @@ export default function Page() {
     if (!isConnected) router.push("/");
   }, [isConnected, router]);
 
-  if (!isConnected || !address) return null;
+  // The dedicated "empty dashboard" screen (BLEUDEV-410) is gone -- a Safe with no active
+  // strategy now goes straight into the setup wizard, whose first step shows the one-time
+  // "Welcome to Trim" modal (see CreateBasketsPage) instead of a separate landing screen.
+  //
+  // Gated on activePmStrategy (the indexer), not loadActiveStrategy (the local snapshot below):
+  // the local snapshot is only ever written when the /setup/activated page's "Go to dashboard"
+  // button is clicked, which a real shipped strategy can easily never reach (a slow confirmation,
+  // a closed tab, an error screen after the transaction had actually already succeeded). Gating on
+  // it alone would redirect a genuinely active, correctly-shipped strategy back into setup --
+  // confirmed happening on a real strategy, not a hypothetical.
+  useEffect(() => {
+    if (isConnected && address && !activePmStrategy) router.push("/setup/baskets");
+  }, [isConnected, address, activePmStrategy, router]);
+
+  if (!isConnected || !address || !activePmStrategy) return null;
 
   const network = chain?.name ?? "Base";
-
-  // The indexer, not the local snapshot below, is the real source of truth for whether a
-  // strategy is active -- see useActivePmStrategy's own doc comment. The local snapshot is only
-  // ever written when the /setup/activated page's "Go to dashboard" button is clicked, which a
-  // real shipped strategy can easily never reach (a slow confirmation, a closed tab, an error
-  // screen after the transaction had actually already succeeded). Gating on it alone left a
-  // genuinely active, correctly-shipped strategy showing "set up a new PM" instead of the
-  // dashboard -- confirmed happening on a real strategy, not a hypothetical.
-  if (!activePmStrategy) {
-    return (
-      <EmptyDashboardPage
-        network={network}
-        safeAddress={address}
-        onStartSetup={() => router.push("/setup/baskets")}
-        onSelectTab={(label) => {
-          if (label === "History") router.push("/dashboard/history");
-        }}
-      />
-    );
-  }
 
   const activeStrategy = loadActiveStrategy(address);
 
