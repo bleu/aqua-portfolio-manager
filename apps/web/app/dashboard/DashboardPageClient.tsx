@@ -30,7 +30,9 @@ export default function Page() {
   const { chain, isConnected, connector } = useAccount();
   const address = useVerifiedSafeAddress();
   const { tokens } = useSafeBalances(address);
-  const { strategy: activePmStrategy } = useActivePmStrategy(address as Address | undefined);
+  const { strategy: activePmStrategy, isLoading: isActivePmStrategyLoading } = useActivePmStrategy(
+    address as Address | undefined,
+  );
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string>();
 
@@ -100,9 +102,16 @@ export default function Page() {
   // a closed tab, an error screen after the transaction had actually already succeeded). Gating on
   // it alone would redirect a genuinely active, correctly-shipped strategy back into setup --
   // confirmed happening on a real strategy, not a hypothetical.
+  //
+  // Also gated on !isActivePmStrategyLoading: without it, this fired on the very first render
+  // after `address` resolves, before useActivePmStrategy's own indexer fetch had even started,
+  // let alone answered -- `activePmStrategy` was simply still undefined at that instant, same as
+  // "confirmed no strategy." Confirmed as a real bug on a real shipped strategy: landing on
+  // /dashboard bounced straight back into the setup wizard every time, purely on this race, not
+  // because anything was actually wrong.
   useEffect(() => {
-    if (isConnected && address && !activePmStrategy) router.push("/setup/baskets");
-  }, [isConnected, address, activePmStrategy, router]);
+    if (isConnected && address && !isActivePmStrategyLoading && !activePmStrategy) router.push("/setup/baskets");
+  }, [isConnected, address, isActivePmStrategyLoading, activePmStrategy, router]);
 
   if (!isConnected) return null;
 
@@ -114,6 +123,16 @@ export default function Page() {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-sm text-gray-400">Verifying your Safe…</p>
+      </div>
+    );
+  }
+
+  // Same reasoning as the redirect effect above: don't treat "still loading" as "no strategy" and
+  // flash/redirect while the indexer answer is still in flight.
+  if (isActivePmStrategyLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-gray-400">Loading your Portfolio Manager…</p>
       </div>
     );
   }

@@ -29,21 +29,32 @@ const QUERY = `
   }
 `;
 
+/** Result state keyed by the address it was actually fetched for -- not a bare `strategy`/
+ *  `isLoading` pair. Two independent `useState`s updated from inside an effect leaves a real gap:
+ *  on the very render where `safeAddress` first turns from undefined into a real address, this
+ *  hook's own effect hasn't run yet, so `isLoading` is still sitting at its OLD value (false) and
+ *  `strategy` at its OLD value (undefined) -- a caller that reacts to "no strategy" in that exact
+ *  render (e.g. DashboardPageClient's own redirect-to-setup effect, which fires in the same commit)
+ *  reads a false "definitely no active strategy" before the fetch for the NEW address has even
+ *  started, let alone finished. Confirmed as a real bug, not a hypothetical: a user who had just
+ *  shipped a real strategy was bounced straight back into the setup wizard on landing on
+ *  /dashboard, purely because the redirect effect ran one tick before the indexer answered.
+ *  Deriving `isLoading` from comparing `fetchedFor` against the current `safeAddress` prop, every
+ *  render, closes that gap -- it's true the instant the address changes, with no state update (and
+ *  therefore no extra render) needed first. */
+type Result = { fetchedFor: Address | undefined; strategy?: ActivePmStrategy; error?: string };
+
 export function useActivePmStrategy(safeAddress: Address | undefined) {
-  const [strategy, setStrategy] = useState<ActivePmStrategy>();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string>();
+  const [result, setResult] = useState<Result>({ fetchedFor: undefined });
 
   useEffect(() => {
     const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_GRAPHQL_URL;
     if (!safeAddress || !indexerUrl) {
-      setStrategy(undefined);
+      setResult({ fetchedFor: safeAddress });
       return;
     }
 
     let cancelled = false;
-    setIsLoading(true);
-    setError(undefined);
 
     fetch(indexerUrl, {
       method: "POST",
@@ -59,15 +70,12 @@ export function useActivePmStrategy(safeAddress: Address | undefined) {
         if (json.errors || !json.data) {
           throw new Error(JSON.stringify(json.errors));
         }
-        setStrategy(json.data.strategys.items[0]);
+        setResult({ fetchedFor: safeAddress, strategy: json.data.strategys.items[0] });
       })
       .catch((err) => {
         if (cancelled) return;
         console.error("Failed to load the active Portfolio Manager strategy:", err);
-        setError("Couldn't reach the indexer to look up your active strategy.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
+        setResult({ fetchedFor: safeAddress, error: "Couldn't reach the indexer to look up your active strategy." });
       });
 
     return () => {
@@ -75,5 +83,8 @@ export function useActivePmStrategy(safeAddress: Address | undefined) {
     };
   }, [safeAddress]);
 
+  const isLoading = safeAddress !== undefined && result.fetchedFor !== safeAddress;
+  const strategy = result.fetchedFor === safeAddress ? result.strategy : undefined;
+  const error = result.fetchedFor === safeAddress ? result.error : undefined;
   return { strategy, isLoading, error };
 }
