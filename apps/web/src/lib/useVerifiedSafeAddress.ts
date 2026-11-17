@@ -23,10 +23,13 @@ import { useAccount, useDisconnect } from "wagmi";
  *           `address` directly. */
 const VERIFY_TIMEOUT_MS = 8_000;
 
-/** A dead WalletConnect relay can leave `eth_accounts` pending forever instead of rejecting --
- *  neither branch below ever fires, so the caller is stuck on an unverified connection with no
- *  error and no redirect. Racing it against a timeout guarantees the existing catch path (disconnect
- *  + send back to "/") still runs. */
+/** A dead WalletConnect relay can leave `eth_accounts` -- or `connector.getProvider()` itself --
+ *  pending forever instead of rejecting, so the caller is stuck on an unverified connection with
+ *  no error and no redirect. Racing the WHOLE check against a timeout (not just the request call)
+ *  guarantees the existing catch path (disconnect + send back to "/") still runs within
+ *  VERIFY_TIMEOUT_MS no matter which step hangs -- wrapping only the inner request left
+ *  `getProvider()` itself unguarded, which is exactly the hang observed in production: approving
+ *  a WalletConnect session, landing on /dashboard, and sitting on a blank screen indefinitely. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Timed out verifying the wallet connection")), ms);
@@ -61,16 +64,20 @@ export function useVerifiedSafeAddress(): Address | undefined {
     if (checkedFor.current === cachedAddress) return;
     checkedFor.current = cachedAddress;
 
+    // Narrowed to a local const so the nested async function below doesn't need TypeScript to
+    // re-prove `connector` is still defined by the time it actually runs.
+    const liveConnector = connector;
+    async function verify(): Promise<string[] | undefined> {
+      const provider = (await liveConnector.getProvider()) as {
+        request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      };
+      return (await provider.request({ method: "eth_accounts" })) as string[] | undefined;
+    }
+
     let cancelled = false;
     (async () => {
       try {
-        const provider = (await connector.getProvider()) as {
-          request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-        };
-        const accounts = (await withTimeout(
-          provider.request({ method: "eth_accounts" }),
-          VERIFY_TIMEOUT_MS,
-        )) as string[] | undefined;
+        const accounts = await withTimeout(verify(), VERIFY_TIMEOUT_MS);
         if (cancelled) return;
         if (accounts?.some((a) => a.toLowerCase() === cachedAddress.toLowerCase())) {
           setVerifiedAddress(cachedAddress);

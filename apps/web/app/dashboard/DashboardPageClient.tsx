@@ -104,7 +104,21 @@ export default function Page() {
     if (isConnected && address && !activePmStrategy) router.push("/setup/baskets");
   }, [isConnected, address, activePmStrategy, router]);
 
-  if (!isConnected || !address || !activePmStrategy) return null;
+  if (!isConnected) return null;
+
+  // Connected, but useVerifiedSafeAddress hasn't resolved yet -- either its eth_accounts check is
+  // still running (up to VERIFY_TIMEOUT_MS), or it just failed and is mid-redirect back to "/".
+  // Rendering nothing here left users on a blank black screen for that whole window with zero
+  // feedback, easily mistaken for the app being broken.
+  if (!address) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-gray-400">Verifying your Safe…</p>
+      </div>
+    );
+  }
+
+  if (!activePmStrategy) return null;
 
   const network = chain?.name ?? "Base";
 
