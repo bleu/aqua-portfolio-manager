@@ -40,6 +40,7 @@ export type CreateBasketsPageProps = {
   isUnsupportedNetwork?: boolean;
   onBack?: () => void;
   onContinue?: () => void;
+  onSelectTab?: (label: string) => void;
 };
 
 /** BLEUDEV-411 — "04C · Create baskets, two-column token selector": step 1 of the 4-step setup wizard. */
@@ -52,6 +53,7 @@ export function CreateBasketsPage({
   isUnsupportedNetwork,
   onBack,
   onContinue,
+  onSelectTab,
 }: CreateBasketsPageProps) {
   const [draftBaskets, setDraftBaskets] = useState(baskets);
   const [selectedBasketId, setSelectedBasketId] = useState(baskets[0]?.id);
@@ -228,6 +230,7 @@ export function CreateBasketsPage({
       network={network}
       safeAddress={safeAddress}
       tabs={TABS}
+      onSelectTab={onSelectTab}
       steps={WIZARD_STEPS}
       activeStepIndex={0}
       contentWidthPx={1200}

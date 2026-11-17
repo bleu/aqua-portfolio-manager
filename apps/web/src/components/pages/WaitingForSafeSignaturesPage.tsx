@@ -25,6 +25,7 @@ export type WaitingForSafeSignaturesPageProps = {
   baskets: PendingBasket[];
   onOpenInSafe?: () => void;
   onViewTransaction?: () => void;
+  onSelectTab?: (label: string) => void;
 };
 
 const PENDING_SPINNER = (
@@ -63,13 +64,14 @@ export function WaitingForSafeSignaturesPage({
   baskets,
   onOpenInSafe,
   onViewTransaction,
+  onSelectTab,
 }: WaitingForSafeSignaturesPageProps) {
   const isExecutePhase = signaturesCollected >= signaturesRequired;
   const totalManagedValue = baskets.reduce((sum, b) => sum + b.currentValue, 0);
 
   return (
     <div className="min-h-screen">
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
+      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} onSelectTab={onSelectTab} />
 
       <div className="mx-auto max-w-[1284px] px-6 py-[70px]">
         <h1 className="mb-[30px] font-display text-4xl font-extrabold leading-tight text-white">

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { WaitingForSafeSignaturesPage } from "@/components/pages/WaitingForSafeSignaturesPage";
 import { loadDraftBaskets } from "@/lib/basketDraftsStorage";
 import { initialBaskets } from "@/lib/mockBaskets";
@@ -31,6 +31,7 @@ export default function Page() {
 /** useSearchParams() (for the proposed tx's safeTxHash) forces this subtree into a Suspense
  *  boundary during static prerendering -- split out so Page itself can provide the fallback. */
 function WaitingForSignaturesPageContent() {
+  const router = useRouter();
   const address = useVerifiedSafeAddress();
   const { threshold } = useSafeThreshold(address);
   const searchParams = useSearchParams();
@@ -77,6 +78,10 @@ function WaitingForSignaturesPageContent() {
       onViewTransaction={() =>
         window.open(safeWalletTransactionUrl(address, safeTxHash), "_blank", "noopener,noreferrer")
       }
+      onSelectTab={(label) => {
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
+      }}
     />
   );
 }

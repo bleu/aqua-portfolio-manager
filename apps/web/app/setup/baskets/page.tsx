@@ -38,6 +38,10 @@ export default function Page() {
       tokensLoading={isLoading}
       isUnsupportedNetwork={chain !== undefined && chain.id !== base.id}
       onContinue={() => router.push("/setup/targets")}
+      onSelectTab={(label) => {
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
+      }}
     />
   );
 }

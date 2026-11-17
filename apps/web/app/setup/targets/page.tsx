@@ -44,6 +44,10 @@ export default function Page() {
         saveDraftTargets(address, targetsPct);
         router.push("/setup/parameters");
       }}
+      onSelectTab={(label) => {
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
+      }}
     />
   );
 }

@@ -180,6 +180,10 @@ export default function Page() {
       scopeConflictCheckError={scopeConflictError}
       alreadyShipped={alreadyShipped}
       alreadyShippedCheckError={alreadyShippedCheckError}
+      onSelectTab={(label) => {
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
+      }}
     />
   );
 }

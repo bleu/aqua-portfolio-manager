@@ -43,6 +43,7 @@ export type PortfolioManagerActivatedPageProps = {
   lpFeePct: number;
   activationTxHash: string;
   onGoToDashboard?: () => void;
+  onSelectTab?: (label: string) => void;
 };
 
 /** Terminal success page of the whole "create a strategy" flow, reached once the Safe
@@ -56,10 +57,11 @@ export function PortfolioManagerActivatedPage({
   lpFeePct,
   activationTxHash,
   onGoToDashboard,
+  onSelectTab,
 }: PortfolioManagerActivatedPageProps) {
   return (
     <div className="min-h-screen">
-      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} />
+      <AppHeader tabs={TABS} network={network} safeAddress={safeAddress} onSelectTab={onSelectTab} />
 
       <div className="mx-auto mt-16 max-w-2xl px-6 text-center">
         <StatusIcon variant="success" className="mx-auto" />

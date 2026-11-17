@@ -26,6 +26,7 @@ export type SetTargetAllocationPageProps = {
   baskets: TargetBasket[];
   onBack?: () => void;
   onContinue?: (targetsPct: Record<string, number>) => void;
+  onSelectTab?: (label: string) => void;
 };
 
 function currentAllocationPct(baskets: TargetBasket[]): Record<string, number> {
@@ -60,7 +61,14 @@ function applyTarget(targets: Record<string, number>, id: string, rawValue: numb
  *  standalone panel holding the title, column labels, basket rows, and allocation preview
  *  together, plus a risk-acknowledgement gate that only appears once the chosen targets actually
  *  differ from the current allocation. */
-export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack, onContinue }: SetTargetAllocationPageProps) {
+export function SetTargetAllocationPage({
+  network,
+  safeAddress,
+  baskets,
+  onBack,
+  onContinue,
+  onSelectTab,
+}: SetTargetAllocationPageProps) {
   const currentPct = useMemo(() => currentAllocationPct(baskets), [baskets]);
   const [targets, setTargets] = useState<Record<string, number>>(() => ({ ...currentPct }));
   const [riskAcknowledged, setRiskAcknowledged] = useState(false);
@@ -80,6 +88,7 @@ export function SetTargetAllocationPage({ network, safeAddress, baskets, onBack,
       network={network}
       safeAddress={safeAddress}
       tabs={TABS}
+      onSelectTab={onSelectTab}
       steps={WIZARD_STEPS}
       activeStepIndex={1}
       contentWidthPx={1000}

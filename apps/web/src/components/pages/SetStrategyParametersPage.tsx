@@ -25,6 +25,7 @@ export type SetStrategyParametersPageProps = {
   safeAddress: string;
   onBack?: () => void;
   onContinue?: (params: { priceDeviationPct: number; lpFeePct: number }) => void;
+  onSelectTab?: (label: string) => void;
 };
 
 /** BLEUDEV-415 — step 3 of the 4-step setup wizard ("Parameters"). Matches the design reference's
@@ -33,7 +34,13 @@ export type SetStrategyParametersPageProps = {
  *  and chip shape are secondary. Price-deviation stays a required field with no default (the
  *  reference pre-selects 1%): forcing an explicit choice is an existing safety decision, not a
  *  styling detail, so it's kept as-is rather than silently relaxed to match the mockup. */
-export function SetStrategyParametersPage({ network, safeAddress, onBack, onContinue }: SetStrategyParametersPageProps) {
+export function SetStrategyParametersPage({
+  network,
+  safeAddress,
+  onBack,
+  onContinue,
+  onSelectTab,
+}: SetStrategyParametersPageProps) {
   const [priceDeviationPct, setPriceDeviationPct] = useState<number | undefined>(undefined);
   const [lpFeePct, setLpFeePct] = useState<number | undefined>(DEFAULT_LP_FEE);
 
@@ -42,6 +49,7 @@ export function SetStrategyParametersPage({ network, safeAddress, onBack, onCont
       network={network}
       safeAddress={safeAddress}
       tabs={TABS}
+      onSelectTab={onSelectTab}
       steps={WIZARD_STEPS}
       activeStepIndex={2}
       contentWidthPx={1000}

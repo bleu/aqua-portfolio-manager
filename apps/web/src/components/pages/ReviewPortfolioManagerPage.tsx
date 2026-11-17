@@ -76,6 +76,7 @@ export type ReviewPortfolioManagerPageProps = {
    *  nonce, so these exact parameters can never ship again. */
   alreadyShipped?: boolean;
   alreadyShippedCheckError?: string;
+  onSelectTab?: (label: string) => void;
 };
 
 /** BLEUDEV-416 — step 4 of the 4-step setup wizard ("Review"). Matches the Claude Artifact's own
@@ -99,6 +100,7 @@ export function ReviewPortfolioManagerPage({
   scopeConflictCheckError,
   alreadyShipped,
   alreadyShippedCheckError,
+  onSelectTab,
 }: ReviewPortfolioManagerPageProps) {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [dismissedOutcomeError, setDismissedOutcomeError] = useState<string>();
@@ -124,6 +126,7 @@ export function ReviewPortfolioManagerPage({
       network={network}
       safeAddress={safeAddress}
       tabs={TABS}
+      onSelectTab={onSelectTab}
       steps={WIZARD_STEPS}
       activeStepIndex={3}
       contentWidthPx={700}

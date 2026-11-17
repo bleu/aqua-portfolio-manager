@@ -22,6 +22,10 @@ export default function Page() {
         saveDraftParameters(address, params);
         router.push("/setup/review");
       }}
+      onSelectTab={(label) => {
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
+      }}
     />
   );
 }

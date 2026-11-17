@@ -84,6 +84,10 @@ function ActivatedPageContent() {
         clearDraftParameters(address);
         router.push("/dashboard");
       }}
+      onSelectTab={(label) => {
+        if (label === "Activity") router.push("/dashboard/history");
+        if (label === "Home") router.push("/dashboard");
+      }}
     />
   );
 }
