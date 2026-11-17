@@ -1,3 +1,4 @@
+import { BASKET_COLORS, getBasketColor } from "./basketColors";
 import type { BasketDraft } from "./mockBaskets";
 
 /** Scoped to the one strategy a connected Safe can currently be building -- the wizard has no
@@ -13,7 +14,15 @@ function storageKey(safeAddress: string): string {
 }
 
 /** Best-effort read -- undefined on anything from a private window to a hand-edited value that
- *  no longer matches BasketDraft's shape, so the caller always has a safe prop-based fallback. */
+ *  no longer matches BasketDraft's shape, so the caller always has a safe prop-based fallback.
+ *
+ *  A draft saved before a basket-palette change (e.g. the indigo/purple set this app used before
+ *  the "Fix the Trim setup flow" rework) keeps whatever hex it was saved with forever -- nothing
+ *  re-colors an already-persisted basket on its own. If any basket's stored color isn't one of
+ *  the CURRENT palette's values, the whole draft predates it, so every basket is re-colored by
+ *  its array index via getBasketColor -- same index a fresh `initialBaskets`/`addBasket()` would
+ *  assign it. A basket created under the current palette always has a color in BASKET_COLORS, so
+ *  this never fires for drafts that don't need it. */
 export function loadDraftBaskets(safeAddress: string): BasketDraft[] | undefined {
   try {
     const raw = window.localStorage.getItem(storageKey(safeAddress));
@@ -27,7 +36,11 @@ export function loadDraftBaskets(safeAddress: string): BasketDraft[] | undefined
         typeof b?.color === "string" &&
         Array.isArray(b?.tokenAddresses),
     );
-    return isValid ? (parsed as BasketDraft[]) : undefined;
+    if (!isValid) return undefined;
+
+    const baskets = parsed as BasketDraft[];
+    const isStale = baskets.some((b) => !BASKET_COLORS.includes(b.color));
+    return isStale ? baskets.map((b, i) => ({ ...b, color: getBasketColor(i).solid })) : baskets;
   } catch {
     return undefined;
   }

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { getBasketColor } from "@/lib/basketColors";
 import { ActivePortfolioManagerDashboardPage } from "./ActivePortfolioManagerDashboardPage";
 
 const meta: Meta<typeof ActivePortfolioManagerDashboardPage> = {
@@ -16,7 +17,7 @@ const baskets = [
   {
     id: "stablecoins",
     name: "Stablecoins",
-    color: "#6366f1",
+    color: getBasketColor(0).solid,
     managedValue: 10000,
     currentPct: 66.7,
     targetPct: 66.7,
@@ -29,7 +30,7 @@ const baskets = [
   {
     id: "crypto-majors",
     name: "Crypto majors",
-    color: "#22c55e",
+    color: getBasketColor(1).solid,
     managedValue: 5000,
     currentPct: 33.3,
     targetPct: 33.3,
@@ -45,17 +46,27 @@ const chartSeries = [
   {
     id: "stablecoins",
     name: "Stablecoins current",
-    color: "#6366f1",
+    color: getBasketColor(0).solid,
     targetPct: 66.7,
-    points: [68, 65, 67, 69, 66.7].map((pct, i) => ({ date: dates[i], pct })),
+    points: [68, 65, 67, 69, 66.7].map((pct, i) => ({ date: dates[i]!, pct })),
   },
   {
     id: "crypto-majors",
     name: "Crypto majors current",
-    color: "#22c55e",
+    color: getBasketColor(1).solid,
     targetPct: 33.3,
-    points: [32, 35, 33, 31, 33.3].map((pct, i) => ({ date: dates[i], pct })),
+    points: [32, 35, 33, 31, 33.3].map((pct, i) => ({ date: dates[i]!, pct })),
   },
+];
+
+const volumeSeries = Array.from({ length: 30 }, (_, i) => ({
+  date: `Day ${i + 1}`,
+  value: 800 + Math.round(Math.sin(i / 3) * 500 + (i % 7) * 120),
+}));
+
+const targetsRecap = [
+  { id: "stablecoins", name: "Stablecoins", tokenSymbols: ["USDC", "USDT", "DAI"], targetPct: 66.7 },
+  { id: "crypto-majors", name: "Crypto majors", tokenSymbols: ["WETH", "WBTC", "wstETH"], targetPct: 33.3 },
 ];
 
 export const TwoBaskets: Story = {
@@ -69,6 +80,11 @@ export const TwoBaskets: Story = {
     routedTransactionCount: 24,
     baskets,
     chartSeries,
+    volumeSeries,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    targetsRecap,
+    onUpdateStrategy: () => {},
   },
 };
 
@@ -83,5 +99,54 @@ export const RecentlyUpdated: Story = {
     routedTransactionCount: 51,
     baskets,
     chartSeries,
+    volumeSeries,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    targetsRecap,
+  },
+};
+
+/** No volumeSeries passed -- the Volume tab's honest empty state (Dashboard_Empty.dc.html), since
+ *  nothing in this app reads historical routed-volume data yet. */
+export const NoActivityYet: Story = {
+  args: {
+    network: "Ethereum",
+    safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
+    updatedAt: Date.now() - 12_000,
+    managedValue: 15000,
+    netLpFeesEarned: 0,
+    routedVolume: 0,
+    routedTransactionCount: 0,
+    baskets,
+    chartSeries,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    targetsRecap,
+  },
+};
+
+/** Matches Dashboard_Paused.dc.html -- automatic rebalancing stopped because one basket's price
+ *  deviation exceeded the configured limit, confirmed in Round 1's own doc comment on `status`. */
+export const Paused: Story = {
+  args: {
+    network: "Ethereum",
+    safeAddress: "0x71A4D045E3dD40321B5a35E03eD9fC5A8e9F2C3B",
+    updatedAt: Date.now() - 12_000,
+    managedValue: 15000,
+    netLpFeesEarned: 128.42,
+    routedVolume: 42830,
+    routedTransactionCount: 24,
+    baskets,
+    chartSeries,
+    volumeSeries,
+    priceDeviationPct: 1,
+    lpFeePct: 2,
+    targetsRecap,
+    status: "paused",
+    pausedAlert: {
+      affectedBasketName: "Crypto majors",
+      priceDeviationPct: 6.4,
+      yourLimitPct: 5,
+    },
   },
 };

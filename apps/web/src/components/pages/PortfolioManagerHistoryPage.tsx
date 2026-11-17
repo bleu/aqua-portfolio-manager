@@ -3,8 +3,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
-import type { TabNavItem } from "@/components/TabNav";
 import { formatRelativeTime, truncateAddress } from "@/lib/format";
+import { buildNavTabs } from "@/lib/navTabs";
 import { decodeOrderParameters, isReshipOf, programByteLength } from "@/lib/portfolioManagerEncoding";
 import type { StrategyHistoryEntry } from "@/lib/useStrategyHistory";
 
@@ -59,10 +59,7 @@ export type PortfolioManagerHistoryPageProps = {
   reshipError?: string;
 };
 
-const TABS: TabNavItem[] = [
-  { label: "Portfolio Manager" },
-  { label: "History", active: true },
-];
+const TABS = buildNavTabs("activity");
 
 /** BLEUDEV-419's History tab -- every strategy this Safe has ever shipped or docked, newest
  *  first, read straight from the indexer (the same source of truth the dashboard itself now

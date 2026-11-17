@@ -4,6 +4,10 @@
 
 html,
 body {
-  background-color: #0b0d12;
+  background-color: #0b0c0e;
+  /* Matches every Claude Artifact screen's own `.root` background exactly -- a soft radial glow
+     at the top fading to near-black, not a flat fill. */
+  background-image: radial-gradient(1200px 500px at 50% -80px, #1c1d22 0%, #0e0f12 60%, #0a0b0d 100%);
+  background-attachment: fixed;
   color: #f3f4f6;
 }

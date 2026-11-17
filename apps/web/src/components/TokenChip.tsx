@@ -65,11 +65,17 @@ export function TokenChip({
     );
   }
 
+  // Figma's basket-summary chip (node I680:20186;431:12841, "Baskets - Filled") is a mint
+  // gradient pill with dark text, only in the icon-shown context -- the icon-less chip
+  // (FirstAccessIntroductionPage's basket preview) is a separate, unverified-against-Figma look
+  // left as-is here.
   return (
     <span
       className={cn(
         base,
-        showIcon ? "border-border bg-surface-raised text-gray-300" : "border-transparent bg-surface-raised text-gray-300",
+        showIcon
+          ? "border-transparent bg-gradient-to-b from-[#f0f9fa] to-accent text-[#0a160b]"
+          : "border-transparent bg-surface-raised text-gray-300",
         className,
       )}
     >

@@ -10,9 +10,9 @@ export default meta;
 type Story = StoryObj<typeof BasketPanelHeader>;
 
 export const Stablecoins: Story = {
-  args: { name: "Stablecoins", color: "#6366f1", tokenCount: 3, totalValue: 10_000 },
+  args: { name: "Stablecoins" },
 };
 
 export const SingleToken: Story = {
-  args: { name: "Crypto majors", color: "#a855f7", tokenCount: 1, totalValue: 4270 },
+  args: { name: "Crypto majors" },
 };

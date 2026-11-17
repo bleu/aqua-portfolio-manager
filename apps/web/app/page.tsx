@@ -15,7 +15,12 @@ export default function Page() {
   const { isConnected } = useAccount();
   const { connect, isPending, error } = useConnect();
   const { disconnectAsync } = useDisconnect();
-  const manualConnector = walletConnectConnector ?? safeConnector;
+  // No `?? safeConnector` fallback here: the safe connector can only ever succeed embedded inside
+  // Safe{Wallet}'s own iframe (see the auto-connect effect below) -- a manual click from a plain
+  // browser tab against it was guaranteed to throw the Safe Apps SDK's own "Provider not found"
+  // straight from @wagmi/core, with no iframe bridge for it to find. That's what was happening
+  // locally without NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID set, not a connector malfunction.
+  const manualConnector = walletConnectConnector;
   // Suppresses the silent auto-connect attempt's own failure from showing as a user-facing
   // error -- outside of actually being embedded in Safe{Wallet}, that attempt always fails, and
   // it isn't something the user did. Only a failure from onConnectSafe's own click below should
@@ -51,27 +56,30 @@ export default function Page() {
 
   return (
     <ConnectSafePage
-      onConnectSafe={
-        manualConnector
-          ? async () => {
-              setShowConnectError(true);
-              // A connector can be left internally marked "connected" after a session died on the
-              // wallet's side (useVerifiedSafeAddress catches that and sends the user back here,
-              // but doesn't -- and can't reliably -- fully reset the connector itself). Clicking
-              // Connect then throws ConnectorAlreadyConnectedError before even attempting a new
-              // connection. Forcing a disconnect first guarantees a clean slate either way --
-              // disconnecting an already-disconnected connector is a harmless no-op.
-              try {
-                await disconnectAsync({ connector: manualConnector });
-              } catch {
-                // Nothing to tear down, or the old session was already dead -- fine, proceed.
-              }
-              connect({ connector: manualConnector });
-            }
+      onConnectSafe={async () => {
+        setShowConnectError(true);
+        if (!manualConnector) return;
+        // A connector can be left internally marked "connected" after a session died on the
+        // wallet's side (useVerifiedSafeAddress catches that and sends the user back here,
+        // but doesn't -- and can't reliably -- fully reset the connector itself). Clicking
+        // Connect then throws ConnectorAlreadyConnectedError before even attempting a new
+        // connection. Forcing a disconnect first guarantees a clean slate either way --
+        // disconnecting an already-disconnected connector is a harmless no-op.
+        try {
+          await disconnectAsync({ connector: manualConnector });
+        } catch {
+          // Nothing to tear down, or the old session was already dead -- fine, proceed.
+        }
+        connect({ connector: manualConnector });
+      }}
+      isConnecting={isPending}
+      connectError={
+        showConnectError
+          ? (manualConnector
+              ? error?.message
+              : "WalletConnect isn't configured in this environment (set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID -- see https://cloud.reown.com). Open this page inside Safe{Wallet} instead to connect.")
           : undefined
       }
-      isConnecting={isPending}
-      connectError={showConnectError ? error?.message : undefined}
     />
   );
 }

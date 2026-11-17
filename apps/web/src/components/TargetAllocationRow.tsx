@@ -1,4 +1,5 @@
-import { PercentInput } from "./PercentInput";
+import { AllocationRing } from "./AllocationRing";
+import { AllocationSelector } from "./AllocationSelector";
 import { cn } from "@/lib/cn";
 import { formatUsd } from "@/lib/format";
 
@@ -16,8 +17,10 @@ export type TargetAllocationRowProps = {
   className?: string;
 };
 
-/** One basket's row in the Targets table: name + token list (left), current allocation (middle),
- *  editable or read-only target % (right). */
+/** One basket's row in the Targets table (node 680:20781/680:20807, "2. Targets" flow screen):
+ *  a standalone gradient sub-card, not a flat divided-list row -- ring + name/tokens on the
+ *  left, the current allocation value in the middle, an editable (or read-only) target on the
+ *  right. */
 export function TargetAllocationRow({
   name,
   color,
@@ -30,27 +33,39 @@ export function TargetAllocationRow({
   className,
 }: TargetAllocationRowProps) {
   return (
-    <div className={cn("flex items-center justify-between gap-4 py-3", className)}>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-          <span className="font-medium text-white">{name}</span>
+    <div
+      className={cn(
+        "flex w-full items-center justify-between gap-4 rounded-[30px] bg-gradient-to-r from-white/[0.02] to-white/[0.04] p-5",
+        className,
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <AllocationRing percentage={currentPct} color={color} size={40} className="shrink-0" />
+        <div className="min-w-0">
+          <p className="font-medium text-ink-primary">{name}</p>
+          <p className="mt-0.5 truncate text-sm text-ink-secondary">{tokenSymbols.join(" · ")}</p>
         </div>
-        <p className="mt-0.5 truncate text-xs text-gray-500">{tokenSymbols.join(" · ")}</p>
       </div>
 
       <div className="shrink-0 text-right">
-        <p className="text-sm text-white">{currentPct.toFixed(1)}%</p>
-        <p className="text-xs text-gray-500">{formatUsd(currentValue)}</p>
+        <p className="text-base font-medium text-[#f8fffe]">{currentPct.toFixed(0)}%</p>
+        <p className="text-xs text-[#a3a3a3]">{formatUsd(currentValue)}</p>
       </div>
 
-      <div className="w-28 shrink-0">
-        {readOnly ? (
-          <p className="text-right text-sm text-white">{targetPct.toFixed(1)}%</p>
-        ) : (
-          <PercentInput value={Number(targetPct.toFixed(1))} onChange={onTargetChange} min={0} max={100} />
-        )}
-      </div>
+      {readOnly ? (
+        <div className="w-[123px] shrink-0 text-right">
+          <p className="text-base text-[#f8f8fc]">{targetPct.toFixed(0)}%</p>
+          <p className="text-xs text-[#a3a3a3]">{formatUsd(currentValue)}</p>
+        </div>
+      ) : (
+        <AllocationSelector
+          value={Number(targetPct.toFixed(0))}
+          valueUsd={currentValue}
+          onChange={onTargetChange}
+          min={0}
+          max={100}
+        />
+      )}
     </div>
   );
 }

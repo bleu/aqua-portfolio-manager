@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { getBasketColor } from "@/lib/basketColors";
 import { AllocationHistoryChart } from "./AllocationHistoryChart";
 
 const meta: Meta<typeof AllocationHistoryChart> = {
@@ -18,14 +19,14 @@ export const TwoBaskets: Story = {
       {
         id: "stablecoins",
         name: "Stablecoins current",
-        color: "#6366f1",
+        color: getBasketColor(0).solid,
         targetPct: 66.7,
         points: [68, 65, 67, 69, 66.7].map((pct, i) => ({ date: dates[i], pct })),
       },
       {
         id: "crypto-majors",
         name: "Crypto majors current",
-        color: "#22c55e",
+        color: getBasketColor(1).solid,
         targetPct: 33.3,
         points: [32, 35, 33, 31, 33.3].map((pct, i) => ({ date: dates[i], pct })),
       },
@@ -39,7 +40,7 @@ export const SingleBasket: Story = {
       {
         id: "stablecoins",
         name: "Stablecoins current",
-        color: "#6366f1",
+        color: getBasketColor(0).solid,
         targetPct: 100,
         points: [100, 100, 100, 100, 100].map((pct, i) => ({ date: dates[i], pct })),
       },
