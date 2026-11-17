@@ -305,7 +305,29 @@ export async function buildShipSteps({
   const amounts = tokens.map((t) => balances[t] ?? 0n);
   const groupNames = groups.map((g) => g.name);
 
+  // A guard left installed from an earlier strategy (its own removal step skipped, failed, or
+  // never run -- e.g. a strategy docked via the History page's Reship flow, which doesn't touch
+  // the guard at all) checks this new ship() call against ITS OWN, unrelated basket-to-id mapping
+  // and rejects any token grouping that doesn't match it, with no connection to whether this new
+  // strategy is otherwise valid. Confirmed directly: a real ship() call reverted with
+  // BasketScopeGuard's own `CrossBasketStrategyForbidden` error purely because a leftover guard
+  // from a previous, differently-grouped strategy was still active. Removing it here, as its own
+  // first step, is the fix -- it must run and be CONFIRMED on-chain before the rest of this batch
+  // is ever sent (see executeShipSteps's own doc comment for why it can't just be bundled in:
+  // Safe's guard.checkTransaction fires once, synchronously, against pre-execution state, so a
+  // bundled removeGuard call hasn't "happened yet" as far as that same check is concerned).
+  const existingGuard = await readInstalledGuard(safeAddress);
   const steps: ShipStep[] = [
+    ...(existingGuard !== zeroAddress
+      ? [
+          {
+            kind: "removeGuard" as const,
+            label: "Remove the previous strategy's leftover Guard",
+            to: safeAddress,
+            data: encodeFunctionData({ abi: SAFE_GUARD_ABI, functionName: "setGuard", args: [zeroAddress] }),
+          },
+        ]
+      : []),
     ...uniqueTokens.map(
       (token): ShipStep => ({
         kind: "approve",
@@ -376,10 +398,12 @@ export async function buildShipSteps({
  *  appendNonceToProgram's own doc comment for why that's enough to get a fresh, shippable
  *  strategyHash) -- every real field decodes identically, so this is genuinely the same strategy.
  *
- *  Adds the same deployGuard/setGuard steps buildShipSteps does, keyed to the *new* strategyHash
- *  (the old Guard, if any, stays bound to the docked strategy's hash and is removed separately --
- *  see dockProposal.ts's buildRemoveGuardTransaction). The real basket *boundaries* needed to
- *  build the Guard's tokens[]/basketIds[] come from decodeOrderGroups, straight off this same
+ *  Adds the same removeGuard/deployGuard/setGuard steps buildShipSteps does: a guard left behind
+ *  from whichever strategy was active before the dock being reshipped here is removed first (see
+ *  buildShipSteps's own doc comment for why that must be its own confirmed transaction, not bundled
+ *  in), then a fresh one is deployed and installed, keyed to the *new* strategyHash. The real
+ *  basket *boundaries* needed to build the Guard's tokens[]/basketIds[] come from decodeOrderGroups,
+ *  straight off this same
  *  encodedOrder -- group membership doesn't change just because a nonce was appended, so decoding
  *  the pre-nonce bytes gives the exact same groups the reshipped strategy will actually run. */
 export async function buildReshipSteps({
@@ -408,7 +432,24 @@ export async function buildReshipSteps({
   const amounts = tokens.map((t) => balances[t] ?? 0n);
   const safeAddress = original.maker;
 
+  // Same leftover-guard hazard buildShipSteps guards against (see its own doc comment) -- this
+  // doc comment's own claim that "the old Guard ... is removed separately" has never actually
+  // been true: nothing in the History page's Reship flow calls buildRemoveGuardTransaction, so a
+  // guard from whichever strategy was active before a dock just stays installed, checking every
+  // later ship() (including this reship) against its own, unrelated basket-to-id mapping.
+  // Confirmed as the real cause of a reproduced CrossBasketStrategyForbidden revert.
+  const existingGuard = await readInstalledGuard(safeAddress);
   const steps: ShipStep[] = [
+    ...(existingGuard !== zeroAddress
+      ? [
+          {
+            kind: "removeGuard" as const,
+            label: "Remove the previous strategy's leftover Guard",
+            to: safeAddress,
+            data: encodeFunctionData({ abi: SAFE_GUARD_ABI, functionName: "setGuard", args: [zeroAddress] }),
+          },
+        ]
+      : []),
     ...uniqueTokens.map(
       (token): ShipStep => ({
         kind: "approve",
@@ -625,36 +666,25 @@ export async function confirmAtomicBatch(id: string, provider: EIP1193Provider):
 
 export type ShipConnector = { id: string; getProvider: () => Promise<unknown> };
 
-/** Sends every step not already done, through whichever path the connected wallet supports --
- *  Safe App batch, EIP-5792 atomic batch, or one eth_sendTransaction per step, falling back in
- *  that order exactly the way the ship wizard's review page originally did inline. Extracted here
- *  so a second flow (the History page's reship action) doesn't have to re-derive this branching
- *  and risk reintroducing the real bug sendTransactionsViaSafeAppsSdk's own doc comment describes
- *  (a hand-rolled MultiSendCallOnly batch making it the maker instead of the Safe).
- *  `onStepStatus` is optional -- a caller that doesn't render a per-step list can omit it. */
-export async function executeShipSteps({
-  steps,
-  safeAddress,
-  connector,
-  onStepStatus,
-}: {
-  steps: ShipStep[];
-  safeAddress: Address;
-  connector: ShipConnector;
-  onStepStatus?: (index: number, status: "done" | "active" | "error") => void;
-}): Promise<Address | undefined> {
-  const remaining: { index: number; step: ShipStep }[] = [];
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]!;
-    if (await isStepAlreadyDone(step, safeAddress)) {
-      onStepStatus?.(i, "done");
-    } else {
-      remaining.push({ index: i, step });
-    }
-  }
+/** How often to re-check readInstalledGuard while waiting for a standalone removeGuard step to
+ *  actually land on-chain (see executeShipSteps's own doc comment for why it can't be skipped). */
+const GUARD_REMOVAL_POLL_INTERVAL_MS = 2_000;
+
+/** Dispatches a batch of not-yet-done steps through whichever path the connected wallet
+ *  supports -- Safe App batch, EIP-5792 atomic batch, or one eth_sendTransaction per step, falling
+ *  back in that order exactly the way the ship wizard's review page originally did inline. Split
+ *  out of executeShipSteps so a leading removeGuard step (see that function's own doc comment) can
+ *  be sent through this same logic as its own one-step batch, without duplicating it. */
+async function sendStepBatch(
+  remaining: { index: number; step: ShipStep }[],
+  safeAddress: Address,
+  connector: ShipConnector,
+  onStepStatus?: (index: number, status: "done" | "active" | "error") => void,
+): Promise<Address | undefined> {
+  if (remaining.length === 0) return undefined;
 
   let txHash: Address | undefined;
-  if (remaining.length > 0 && connector.id === "safe") {
+  if (connector.id === "safe") {
     // Embedded as a Safe App: one real Safe batch via the Safe Apps SDK, which Safe{Wallet}
     // itself constructs (and correctly delegates into) -- see sendTransactionsViaSafeAppsSdk's
     // own doc comment for why this replaced packing calls into MultiSendCallOnly by hand.
@@ -666,7 +696,7 @@ export async function executeShipSteps({
       throw stepErr;
     }
     remaining.forEach(({ index }) => onStepStatus?.(index, "done"));
-  } else if (remaining.length > 0) {
+  } else {
     // Any other connector (WalletConnect): plain eth_sendTransaction has no way to ask Safe to
     // batch, but a wallet that declares EIP-5792 support (confirmed so far: only Safe{Wallet},
     // see supportsAtomicBatch's own doc comment) can still batch atomically via wallet_sendCalls.
@@ -709,4 +739,59 @@ export async function executeShipSteps({
   }
 
   return txHash;
+}
+
+/** Sends every step not already done. `onStepStatus` is optional -- a caller that doesn't render a
+ *  per-step list can omit it.
+ *
+ *  A leading `removeGuard` step (buildShipSteps prepends one when a leftover guard from an
+ *  earlier, differently-grouped strategy is still installed) can NOT be bundled into the same
+ *  batch as the rest: Safe's `guard.checkTransaction` fires once, synchronously, against
+ *  pre-execution state, before any part of a multiSend batch has run -- including a `setGuard(0)`
+ *  call sitting earlier in that same batch. From that single check's point of view the old guard
+ *  is still installed no matter where in the batch its removal appears, so it still evaluates (and
+ *  can still reject) a later `ship()` call in the same bundle against its own stale rules. The
+ *  removal has to be its own transaction, confirmed on-chain, before the rest of the batch is even
+ *  sent -- the same two-step shape the dock flow already uses for the mirror-image case (dockProposal
+ *  .ts's buildRemoveGuardTransaction, sent as its own sendTransaction call after docking). */
+export async function executeShipSteps({
+  steps,
+  safeAddress,
+  connector,
+  onStepStatus,
+}: {
+  steps: ShipStep[];
+  safeAddress: Address;
+  connector: ShipConnector;
+  onStepStatus?: (index: number, status: "done" | "active" | "error") => void;
+}): Promise<Address | undefined> {
+  const remaining: { index: number; step: ShipStep }[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    if (await isStepAlreadyDone(step, safeAddress)) {
+      onStepStatus?.(i, "done");
+    } else {
+      remaining.push({ index: i, step });
+    }
+  }
+
+  if (remaining.length === 0) return undefined;
+
+  const [first, ...rest] = remaining;
+  if (first!.step.kind === "removeGuard") {
+    const removeTxHash = await sendStepBatch([first!], safeAddress, connector, onStepStatus);
+    // sendTransactionsViaSafeAppsSdk/sendTransaction can resolve once a threshold-met transaction
+    // is merely proposed, not yet mined -- poll the same idempotency check isStepAlreadyDone
+    // already uses elsewhere in this file until the removal has genuinely landed, with the same
+    // per-step timeout bound used everywhere else in this flow.
+    const deadline = Date.now() + STEP_TIMEOUT_MS;
+    while (!(await isStepAlreadyDone(first!.step, safeAddress))) {
+      if (Date.now() > deadline) throw new Error(STEP_TIMEOUT_MESSAGE);
+      await new Promise((resolve) => setTimeout(resolve, GUARD_REMOVAL_POLL_INTERVAL_MS));
+    }
+    if (rest.length === 0) return removeTxHash;
+    return sendStepBatch(rest, safeAddress, connector, onStepStatus);
+  }
+
+  return sendStepBatch(remaining, safeAddress, connector, onStepStatus);
 }
