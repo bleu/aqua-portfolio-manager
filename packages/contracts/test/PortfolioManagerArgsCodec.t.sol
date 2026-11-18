@@ -141,7 +141,9 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_BuildThenParseRoundTrips(uint8 seed, uint32 feeBps) public view {
-        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS));
+        // Upper bound excludes PM_BPS itself (100%) -- BLEUDEV-453 made that value rejected by
+        // build() (it made PortfolioManagerPricing.exactOut divide by zero).
+        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS - 1));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -201,7 +203,9 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_DecodeTrustedMatchesParse(uint8 seed, uint32 feeBps, uint32 maxDeviationBps) public view {
-        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS));
+        // Upper bound excludes PM_BPS itself (100%) -- BLEUDEV-453 made that value rejected by
+        // build() (it made PortfolioManagerPricing.exactOut divide by zero).
+        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS - 1));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -515,6 +519,23 @@ contract PortfolioManagerArgsCodecTest is Test {
             )
         );
         this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS + 1));
+    }
+
+    /// @notice BLEUDEV-453: feeBps == PM_BPS (100%, not just above it) used to be allowed, making
+    /// PortfolioManagerPricing.exactOut's WAD - feeWad divisor zero -- every exact-out swap
+    /// against that strategy reverted with an opaque division-by-zero panic instead of this clear
+    /// error, and exact-in silently returned zero output.
+    function test_BuildRevertsOnFeeBpsExactlyAtHundredPercent() public {
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, PortfolioManagerArgsCodec.PM_BPS
+            )
+        );
+        this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS));
     }
 
     // ---- parse: hand-crafted args must be independently validated, not just trust build() ----

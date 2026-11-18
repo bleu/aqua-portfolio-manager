@@ -167,8 +167,10 @@ library OracleAdapter {
     ///      reverts blocks valuation for every strategy that references it -- accepted as the
     ///      tradeoff of a permissionless token registry (PortfolioManagerTokenRegistry's own doc
     ///      comment) and an owner-vetted-but-not-further-validated feed registry; a `try`/`catch`
-    ///      here would only trade a clear revert for a silent mispricing, which is worse. The
-    ///      decimals bound itself (<= 77) is enforced in `FixedPointMath`.
+    ///      here would only trade a clear revert for a silent mispricing, which is worse. Same
+    ///      root cause PortfolioManagerSwap's own call site flags again -- one accepted tradeoff,
+    ///      not two. The decimals bound itself (<= 77, already far above any real token/feed) is
+    ///      enforced in `FixedPointMath`.
     function groupValueWadWithOverride(
         address[] memory tokens,
         uint256[] memory balances,
