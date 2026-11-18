@@ -57,4 +57,24 @@ contract ArbitrageurTest is Test {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
         arbitrageur.sweep(makeAddr("token"), 1e18, stranger);
     }
+
+    /// @notice BLEUDEV-454: a zero-address router/poolManager is immutable and never correctable
+    /// post-deploy, so the constructor now rejects both instead of silently bricking the contract.
+    function test_ConstructorRevertsOnZeroAddressRouter() public {
+        vm.expectRevert(IArbitrageur.ArbitrageurZeroAddress.selector);
+        new Arbitrageur(address(0), makeAddr("poolManager"), owner);
+    }
+
+    function test_ConstructorRevertsOnZeroAddressPoolManager() public {
+        vm.expectRevert(IArbitrageur.ArbitrageurZeroAddress.selector);
+        new Arbitrageur(makeAddr("router"), address(0), owner);
+    }
+
+    /// @notice BLEUDEV-455: sweep(to: address(0)) would otherwise irrecoverably burn the swept
+    /// token.
+    function test_SweepRevertsOnZeroAddressTo() public {
+        vm.prank(owner);
+        vm.expectRevert(IArbitrageur.ArbitrageurZeroAddress.selector);
+        arbitrageur.sweep(makeAddr("token"), 1e18, address(0));
+    }
 }
