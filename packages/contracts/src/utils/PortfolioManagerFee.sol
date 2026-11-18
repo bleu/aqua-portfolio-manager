@@ -5,6 +5,14 @@ pragma solidity 0.8.30;
 
 /// @title PortfolioManagerFee
 /// @notice DAO protocol fee rates and recipient for the PM instruction.
+/// @dev BLEUDEV-451: these two recipients are hardcoded `library` constants, not per-deployment
+///      configuration, so a key rotation or a deployment on a chain where either address is
+///      controlled by someone else would need a new `PortfolioManagerSwap` (every caller inlines
+///      these at compile time -- there is no instance to reconfigure). Accepted as-is: making them
+///      configurable means turning this from a `library` into a stateful contract with its own
+///      governance-gated setter, a bigger redesign than this fee math itself, touching every
+///      constructor in the inheritance chain down to `PortfolioManagerRouter`. Revisit only
+///      alongside a deliberate multi-chain or key-rotation deployment plan, not in isolation.
 library PortfolioManagerFee {
     /// @dev DAO treasury address disclosed in 1IP-103.
     address internal constant DAO_TREASURY_ADDRESS = 0x7951c7ef839e26F63DA87a42C9a87986507f1c07;

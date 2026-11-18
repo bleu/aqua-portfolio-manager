@@ -29,6 +29,12 @@ library OracleAdapter {
     error OracleAdapterSequencerGracePeriodNotElapsed(
         address sequencerUptimeFeed, uint256 timeSinceUp, uint256 gracePeriod
     );
+    /// @dev BLEUDEV-451: a sequencer-uptime feed answering with `startedAt` in the future (a
+    ///      misconfigured or non-Chainlink feed) used to underflow the `timeSinceUp` subtraction
+    ///      below into a Panic(0x11), rather than this clearer, dedicated error.
+    error OracleAdapterSequencerStartedAtInFuture(
+        address sequencerUptimeFeed, uint256 startedAt, uint256 blockTimestamp
+    );
 
     /// @dev Chainlink's own recommended grace period for L2 sequencer-uptime feeds.
     uint256 internal constant SEQUENCER_GRACE_PERIOD = 1 hours;
@@ -121,6 +127,10 @@ library OracleAdapter {
     function requireSequencerUp(AggregatorV3Interface sequencerUptimeFeed) internal view {
         (, int256 answer, uint256 startedAt,,) = sequencerUptimeFeed.latestRoundData();
         require(answer == 0, OracleAdapterSequencerDown(address(sequencerUptimeFeed)));
+        require(
+            startedAt <= block.timestamp,
+            OracleAdapterSequencerStartedAtInFuture(address(sequencerUptimeFeed), startedAt, block.timestamp)
+        );
 
         uint256 timeSinceUp = block.timestamp - startedAt;
         require(
@@ -151,6 +161,14 @@ library OracleAdapter {
     ///         to disable the override, as plain `groupValueWad` does.
     /// @return totalValueWad The group's total value. `overrideDecimals` The override member's
     ///         token decimals, so the caller doesn't have to look them up again either.
+    /// @dev BLEUDEV-451: `IERC20Metadata(tokens[i]).decimals()` below (and each feed's own
+    ///      `decimals()`/`latestRoundData()` in `fetchRawPrice`) trust the registries' entries to
+    ///      behave like a real ERC20/Chainlink feed. A non-standard or later-misbehaving one that
+    ///      reverts blocks valuation for every strategy that references it -- accepted as the
+    ///      tradeoff of a permissionless token registry (PortfolioManagerTokenRegistry's own doc
+    ///      comment) and an owner-vetted-but-not-further-validated feed registry; a `try`/`catch`
+    ///      here would only trade a clear revert for a silent mispricing, which is worse. The
+    ///      decimals bound itself (<= 77) is enforced in `FixedPointMath` (BLEUDEV-453).
     function groupValueWadWithOverride(
         address[] memory tokens,
         uint256[] memory balances,

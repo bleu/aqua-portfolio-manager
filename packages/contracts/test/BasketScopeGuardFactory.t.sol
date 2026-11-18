@@ -55,13 +55,36 @@ contract BasketScopeGuardFactoryTest is Test {
         assertEq(guard.basketOf(tokenB), 1);
     }
 
-    /// @dev A caller that doesn't check computeAddress first and just retries `deploy` after an
-    ///      earlier success gets a clean revert, not a silent second Guard -- CREATE2 itself
-    ///      enforces this, not application logic, so it holds regardless of how deploy is called.
-    function test_DeployRevertsOnRetryWithIdenticalArguments() public {
-        factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
+    /// @notice BLEUDEV-451: retrying `deploy` with identical arguments after an earlier success
+    /// returns the same address instead of reverting -- no silent second Guard either, since
+    /// CREATE2 can't redeploy there, but the caller gets a usable result back, not a failed batch.
+    function test_DeployReturnsSameAddressOnRetryWithIdenticalArguments() public {
+        address first = factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
 
-        vm.expectRevert();
+        address second = factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
+
+        assertEq(second, first, "retrying with the same configuration must return the same Guard address");
+    }
+
+    /// @notice The front-running scenario `deploy`'s own doc comment describes: someone else
+    /// deploys the identical configuration first (simulated here by calling `deploy` directly with
+    /// the same arguments, which is indistinguishable on-chain from a front-runner's own call).
+    /// The real owner's later `deploy()` step in the same atomic batch must not revert.
+    function test_DeployAfterAnotherCallerFrontRanWithIdenticalArgumentsDoesNotRevert() public {
+        vm.prank(address(0xBADBAD));
+        address frontRun = factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
+
+        address ownersResult =
+            factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
+
+        assertEq(ownersResult, frontRun, "the real owner's own deploy step must resolve to the front-run address");
+    }
+
+    function test_EmitsGuardAlreadyDeployedInsteadOfGuardDeployedOnRetry() public {
+        address deployed = factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
+
+        vm.expectEmit(true, true, true, true);
+        emit BasketScopeGuardFactory.GuardAlreadyDeployed(deployed, safe_, pmStrategyHash, address(aqua));
         factory.deploy(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
     }
 

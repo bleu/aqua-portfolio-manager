@@ -11,16 +11,28 @@ import {BasketScopeGuard} from "./BasketScopeGuard.sol";
 ///         atomic transaction without needing the deployment to finish first and report back.
 /// @dev The salt is the hash of the full constructor argument set, not a caller-supplied value --
 ///      the same (Safe, strategy, token/group mapping) tuple always lands at the same address,
-///      and two different configurations can never collide into one. This also makes `deploy`
-///      naturally idempotent: calling it twice with identical arguments reverts the second time
-///      (CREATE2 cannot redeploy to an occupied address) exactly when there is nothing left to do,
-///      which a caller can detect in advance with `computeAddress` instead of simulating first.
+///      and two different configurations can never collide into one. `deploy` is idempotent:
+///      calling it twice with identical arguments (from this factory or, after a front-run, from
+///      anyone else) returns the same address both times instead of reverting the second time --
+///      see `GuardAlreadyDeployed`'s own doc comment for why a plain CREATE2-occupied revert isn't
+///      good enough here.
 contract BasketScopeGuardFactory {
     event GuardDeployed(
         address indexed guard, address indexed safe, bytes32 indexed trustedPmStrategyHash, address aqua
     );
 
-    /// @notice Deploys a new BasketScopeGuard for the given configuration.
+    /// @dev BLEUDEV-451: a front-runner who deploys to the same CREATE2 address first (with the
+    ///      identical configuration -- the salt is the hash of every constructor argument, so
+    ///      nothing else can land there) used to make the real owner's own `deploy()` step revert,
+    ///      breaking an atomic "deploy guard" + "Safe.setGuard(predicted)" batch. Emitted instead
+    ///      of `GuardDeployed` on that path, since nothing was actually deployed by this call.
+    event GuardAlreadyDeployed(
+        address indexed guard, address indexed safe, bytes32 indexed trustedPmStrategyHash, address aqua
+    );
+
+    /// @notice Deploys a new BasketScopeGuard for the given configuration, or returns the already-
+    ///         deployed one at that address if someone (anyone, with the identical configuration)
+    ///         already did -- see `GuardAlreadyDeployed`'s own doc comment for why this matters.
     /// @return guard The deployed Guard's address -- always equal to `computeAddress`'s own
     ///         result for the same arguments, computed ahead of time.
     function deploy(
@@ -32,9 +44,16 @@ contract BasketScopeGuardFactory {
         uint256[] calldata basketIds
     ) external returns (address guard) {
         bytes32 salt = _salt(aqua, safe_, trustedPmStrategyHash, trustedPmRouter, tokens, basketIds);
-        guard = address(
+        guard = _computeAddress(salt, aqua, safe_, trustedPmStrategyHash, trustedPmRouter, tokens, basketIds);
+        if (guard.code.length != 0) {
+            emit GuardAlreadyDeployed(guard, safe_, trustedPmStrategyHash, aqua);
+            return guard;
+        }
+
+        address deployed = address(
             new BasketScopeGuard{salt: salt}(aqua, safe_, trustedPmStrategyHash, trustedPmRouter, tokens, basketIds)
         );
+        assert(deployed == guard);
         emit GuardDeployed(guard, safe_, trustedPmStrategyHash, aqua);
     }
 
@@ -53,6 +72,18 @@ contract BasketScopeGuardFactory {
         uint256[] calldata basketIds
     ) external view returns (address) {
         bytes32 salt = _salt(aqua, safe_, trustedPmStrategyHash, trustedPmRouter, tokens, basketIds);
+        return _computeAddress(salt, aqua, safe_, trustedPmStrategyHash, trustedPmRouter, tokens, basketIds);
+    }
+
+    function _computeAddress(
+        bytes32 salt,
+        address aqua,
+        address safe_,
+        bytes32 trustedPmStrategyHash,
+        address trustedPmRouter,
+        address[] calldata tokens,
+        uint256[] calldata basketIds
+    ) private view returns (address) {
         bytes32 initCodeHash = keccak256(
             abi.encodePacked(
                 type(BasketScopeGuard).creationCode,
