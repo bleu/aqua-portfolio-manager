@@ -583,6 +583,80 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireBalancedWithinTolerance(order, maker);
     }
 
+    /// @dev The actual Almanax finding this guards against (2026-11-18): a member with a nonzero
+    ///      but never-registered feedIndex used to resolve through PortfolioManagerFeedRegistry's
+    ///      own out-of-range fallback to `(address(0), 0)` -- identical to the real numeraire
+    ///      sentinel at index 0 -- so it silently priced as a numeraire (1:1) instead of failing.
+    ///      That bypassed `PortfolioManagerMultipleNumeraireMembers`'s "at most one numeraire per
+    ///      group" check entirely, since this member's feedIndex is nonzero, so it was never
+    ///      counted as a numeraire candidate in the first place. Proves attestation -- which calls
+    ///      groupValueWad, and therefore feedAt, for every member -- now reverts on exactly this
+    ///      shape instead of shipping a mispriced strategy.
+    function test_ToleranceRevertsWhenMemberFeedIndexIsNeverRegistered() public {
+        uint16 neverRegisteredFeedIndex = 9999;
+
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        PortfolioManagerArgsCodec.Member[] memory membersA = new PortfolioManagerArgsCodec.Member[](1);
+        membersA[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenA)),
+            feedIndex: feedRegistry.register(address(feedA), DEFAULT_MAX_STALENESS)
+        });
+        groups[0] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersA});
+
+        PortfolioManagerArgsCodec.Member[] memory membersB = new PortfolioManagerArgsCodec.Member[](1);
+        membersB[0] = PortfolioManagerArgsCodec.Member({
+            tokenIndex: tokenRegistry.register(address(tokenB)),
+            feedIndex: neverRegisteredFeedIndex // not a numeraire (nonzero), and never registered
+        });
+        groups[1] = PortfolioManagerArgsCodec.Group({weight: 0.5e18, members: membersB});
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(groups, 5e6, 0.1e9); // 10%
+        ISwapVM.Order memory order = MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: program
+            })
+        );
+
+        tokenA.mint(maker, 100_000e18);
+        tokenB.mint(maker, 100_000e18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerFeedRegistry.PortfolioManagerFeedRegistryIndexOutOfRange.selector,
+                neverRegisteredFeedIndex
+            )
+        );
+        validator.requireBalancedWithinTolerance(order, maker);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(tokenA);
+        tokens[1] = address(tokenB);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerFeedRegistry.PortfolioManagerFeedRegistryIndexOutOfRange.selector,
+                neverRegisteredFeedIndex
+            )
+        );
+        validator.attestBuildParameters(order, tokens, new string[](0));
+    }
+
     /// @dev Group 0's numeraire is tokenA, group 1's is tokenC -- two different units, no shared
     ///      numeraire (ADR-0017's per-group, bridge-feed design). The registered bridge quotes 1
     ///      tokenA = 2 tokenC. At target, group 0's 100,000 tokenA bridge-adjusts to 200,000
