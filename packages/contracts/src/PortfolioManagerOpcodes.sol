@@ -28,13 +28,6 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
         address feedRegistry
     ) PortfolioManagerSwap(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry) {}
 
-    function _notInstruction(
-        Context memory,
-        /* ctx */
-        bytes calldata /* args */
-    )
-        internal {}
-
     /// @dev Opcode 1 = resolver KYC gate (1inch Aqua access-control -- see
     ///      https://business.1inch.com/portal/documentation/aqua/liquidity-layer/access-resolvers-and-pathfinder),
     ///      checked via `tx.origin` since the resolver, not the taker, is the credentialed party
@@ -50,22 +43,20 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
     ///      either needs a real identity change (an explicit signed resolver identity, or binding
     ///      to `msg.sender`) -- a protocol-level decision for 1inch's resolver model, not a local
     ///      patch.
+    /// @dev Previously built via an assembly trick that repurposed a fixed-size
+    ///      array's leading slot as a dynamic array's length word (same trick AquaOpcodes.sol
+    ///      uses) -- correct, but a sharp edge: it depends on Solidity's current in-memory layout
+    ///      for fixed arrays of internal function pointers, undocumented and unguaranteed across
+    ///      compiler versions. A real dynamic-array `new` expression does exactly the same thing
+    ///      with no layout assumption at all.
     function _opcodes()
         internal
         pure
         virtual
         returns (function(Context memory, bytes calldata) internal[] memory result)
     {
-        function(Context memory, bytes calldata) internal[3] memory instructions = [
-            _notInstruction, PortfolioManagerSwap._portfolioManagerSwapXd, Controls._onlyTxOriginTokenBalanceNonZero
-        ];
-
-        // Same trick AquaOpcodes.sol uses: rewrite the leading _notInstruction with the array's
-        // length, turning a fixed-size literal into a dynamic array with that entry dropped.
-        uint256 instructionsArrayLength = instructions.length - 1;
-        assembly ("memory-safe") {
-            result := instructions
-            mstore(result, instructionsArrayLength)
-        }
+        result = new function(Context memory, bytes calldata) internal[](2);
+        result[CURVE_OPCODE] = PortfolioManagerSwap._portfolioManagerSwapXd;
+        result[KYC_GATE_OPCODE] = Controls._onlyTxOriginTokenBalanceNonZero;
     }
 }
