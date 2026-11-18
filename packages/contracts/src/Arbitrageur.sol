@@ -82,6 +82,11 @@ contract Arbitrageur is Ownable, IArbitrageur {
             p.amountIn,
             _takerTraits(address(this), abi.encodePacked(p.minCurveAmountOut), p.deadline)
         );
+        // ROUTER isn't guaranteed to pull the full approved amountIn (e.g. a partial fill, or any
+        // future taker path that settles for less) -- reset regardless of how much was actually
+        // spent so no allowance to ROUTER survives this call, same reasoning as the Fynd-leg reset
+        // right below.
+        IERC20(p.tokenIn).forceApprove(address(ROUTER), 0);
 
         // 2. tokenOut -> tokenIn via whatever route Fynd found, executed as an arbitrary
         // external call -- this contract has no opinion on which DEXs that route touches.
