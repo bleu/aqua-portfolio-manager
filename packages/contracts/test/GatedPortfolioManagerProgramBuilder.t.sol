@@ -209,15 +209,23 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     /// @dev `address(0)` has no code, so `IERC20(token).balanceOf(...)` fails ABI-decoding the
     ///      empty returndata instead of hitting `TxOriginTokenBalanceIsZero` -- still fails safe
     ///      (no uncredentialed swap goes through), just with a different, less informative revert.
-    function test_GatedStrategyRevertsForZeroAddressToken() public {
-        bytes memory program = GatedPortfolioManagerProgramBuilder.build(groups, 5e6, address(0));
-        ISwapVM.Order memory order = _orderForProgram(program);
-        _shipOrder(order);
-        MockTaker taker = _fundedTakerFor(uncredentialedResolver);
+    /// @dev vm.expectRevert needs an external call boundary -- GatedPortfolioManagerProgramBuilder
+    ///      is a library, so a direct call from this test would inline it into this same frame.
+    function _externalBuild(PortfolioManagerArgsCodec.Group[] memory groups_, uint32 feeBps, address resolverKycToken)
+        external
+        pure
+        returns (bytes memory)
+    {
+        return GatedPortfolioManagerProgramBuilder.build(groups_, feeBps, resolverKycToken);
+    }
 
-        vm.expectRevert();
-        vm.prank(uncredentialedResolver, uncredentialedResolver);
-        taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, _exactInTakerData());
+    /// @notice BLEUDEV-452: a zero resolverKycToken now fails fast at build time instead of
+    /// silently producing a program that would brick every swap the first time someone tried it.
+    function test_BuildRevertsForZeroAddressResolverKycToken() public {
+        vm.expectRevert(
+            GatedPortfolioManagerProgramBuilder.GatedPortfolioManagerProgramBuilderZeroResolverKycToken.selector
+        );
+        this._externalBuild(groups, 5e6, address(0));
     }
 
     function test_GatedStrategySucceedsForCredentialedResolver() public {
