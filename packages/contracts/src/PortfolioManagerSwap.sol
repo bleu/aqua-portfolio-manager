@@ -305,6 +305,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      for the member at `tradedMemberIdx` instead of fetching its feed again, and returns
     ///      that member's decimals and native balance alongside the group total so the caller
     ///      doesn't have to look either up a second time.
+    /// @dev BLEUDEV-449: the token registry is permissionless, so `token` below can be a
+    ///      malicious contract. Its `balanceOf()`/`decimals()` cannot reenter this router with any
+    ///      state-changing call: both are invoked through `IERC20`/`IERC20Metadata`, interfaces
+    ///      that declare them `view`, so Solidity compiles these two calls as `STATICCALL` --
+    ///      and the EVM itself (not just Solidity) propagates that read-only context to every call
+    ///      the token's own code makes in turn, with no bypass available to the callee (not even
+    ///      via inline assembly). Confirmed empirically, not assumed: see
+    ///      test/PortfolioManagerSwapReentrancyGuard.t.sol, which has a malicious member token
+    ///      attempt exactly this and shows it revert with `StateChangeDuringStaticCall`.
     function _groupValueWad(
         PortfolioManagerArgsCodec.Group memory group,
         address maker,
