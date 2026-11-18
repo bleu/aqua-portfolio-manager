@@ -11,7 +11,9 @@ import {PortfolioManagerProgramBuilder} from "./PortfolioManagerProgramBuilder.s
 ///         `PortfolioManagerStrategyValidator._args()`).
 library GatedPortfolioManagerProgramBuilder {
     /// @dev Must match `PortfolioManagerOpcodes._opcodes()`'s dynamic-array index exactly --
-    ///      no compile-time check ties these together, so reordering that array breaks this silently.
+    ///      see `PortfolioManagerOpcodes.KYC_GATE_OPCODE`'s own doc comment for why this can't be
+    ///      a single shared symbol, and `PortfolioManagerOpcodesLayoutGuard.t.sol` for the
+    ///      regression test that catches a drift between the two.
     uint8 internal constant KYC_GATE_OPCODE = 1;
 
     /// @param groups, feeBps  The LP's own declared groups and curve fee.
