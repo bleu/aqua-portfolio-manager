@@ -8,7 +8,7 @@ pragma solidity 0.8.30;
 interface IBasketScopeGuard {
     error TokenBasketLengthMismatch();
     error BasketIdZeroReserved();
-    /// @dev BLEUDEV-455: nothing previously checked that Safe hook calls (checkTransaction/
+    /// @dev Nothing previously checked that Safe hook calls (checkTransaction/
     ///      checkModuleTransaction) actually came from the `SAFE` this Guard was configured for --
     ///      a Guard accidentally installed on a different Safe would still evaluate using the
     ///      wrong strategy hash/basket mapping.

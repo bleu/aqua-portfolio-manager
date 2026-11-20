@@ -262,7 +262,7 @@ contract BasketScopeGuardTest is Test {
         );
     }
 
-    /// @notice BLEUDEV-455: this Guard's SAFE (set in setUp() to address(this)) is the only
+    /// @notice This Guard's SAFE (set in setUp() to address(this)) is the only
     /// caller its hooks accept -- a call from anything else must fail closed instead of
     /// evaluating with that caller's own, different notion of "this Guard's Safe".
     function test_CheckTransactionRevertsWhenCalledByAnyoneOtherThanItsOwnSafe() public {
@@ -392,7 +392,7 @@ contract BasketScopeGuardTest is Test {
         safe = Safe(payable(address(factory.createProxyWithNonce(address(singleton), setupData, 0))));
     }
 
-    /// @dev BLEUDEV-455's msg.sender == SAFE check means the shared `guard` from setUp() (bound
+    /// @dev The msg.sender == SAFE check means the shared `guard` from setUp() (bound
     ///      to `address(this)`) can no longer be installed on these freshly-deployed Safes --
     ///      each integration test needs its own Guard instance bound to its own Safe, with the
     ///      same token/basket configuration `guard` itself uses.

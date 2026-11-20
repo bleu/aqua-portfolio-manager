@@ -18,7 +18,7 @@ import {IBasketScopeGuard} from "./interfaces/IBasketScopeGuard.sol";
 ///      and why unwrapping stops at one level. A batch routed through anything else, or a
 ///      ship() nested two batches deep, is outside this check, same as any other untrusted
 ///      target. See docs/adr/0011-safe-wallet-with-basket-scope-guard.md.
-/// @dev BLEUDEV-455: `checkTransaction`/`checkModuleTransaction` require `msg.sender == SAFE` --
+/// @dev `checkTransaction`/`checkModuleTransaction` require `msg.sender == SAFE` --
 ///      Safe's own architecture already guarantees the Safe itself is the only caller of its
 ///      installed guard's hooks, but this binds the check to *this* Guard's own configured Safe
 ///      specifically, so an instance accidentally installed on a different Safe fails closed
