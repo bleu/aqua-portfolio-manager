@@ -414,6 +414,25 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
         assertEq(wbtc.balanceOf(address(arbitrageur)), quotedOut - fyndPulledAmount, "unspent wbtc remains on contract");
     }
 
+    /// @notice An exact-in curve trade against this codebase's own PortfolioManagerRouter always
+    ///         pulls the full approved amountIn today, so this real-fork flow can't force a
+    ///         genuine partial-pull the way MockFyndRouter above does on purpose -- the reset is
+    ///         unconditional either way, so pinning the post-condition on a real successful trade
+    ///         still proves the invariant: no approval to ROUTER ever survives `unlockCallback`.
+    function test_FlashArbitrageResetsRouterApprovalAfterCurveSwap() public {
+        uint256 amountIn = 1_000e6;
+        (ISwapVM.Order memory order, uint256 quotedOut) = _setUpFlashArb(amountIn);
+
+        uint256 fyndReturnAmount = (amountIn * 105) / 100;
+        IArbitrageur.FlashArbParams memory params =
+            _flashParams(order, amountIn, quotedOut, quotedOut, fyndReturnAmount);
+
+        vm.prank(arbitrageurOwner);
+        arbitrageur.executeFlashArbitrage(params);
+
+        assertEq(usdt.allowance(address(arbitrageur), address(router)), 0, "leftover ROUTER allowance must be reset");
+    }
+
     /// @notice Proves the repayment check reads this trade's own gain, not the contract's
     /// absolute tokenIn balance -- a prior flash arbitrage's unswept profit sitting on the
     /// contract must not be able to paper over a losing current trade.
