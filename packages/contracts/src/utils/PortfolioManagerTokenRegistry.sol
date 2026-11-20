@@ -11,7 +11,7 @@ pragma solidity 0.8.30;
 ///      to, nothing to get wrong about it the way a feed can quote the wrong pair. Registration
 ///      is open to anyone. Index 0 is reserved and never assigned, so `indexOf[token] == 0`
 ///      unambiguously means "not registered."
-/// @dev BLEUDEV-449/454: `uint16` caps this registry at 65535 real entries, and `register()` is
+/// @dev `uint16` caps this registry at 65535 real entries, and `register()` is
 ///      permissionless, so a well-funded attacker could eventually fill it and block new token
 ///      onboarding. Accepted as-is rather than widened to `uint32`+: the 2-byte index is a wire-
 ///      format budget shared with every encoded strategy argument (PortfolioManagerArgsCodec),

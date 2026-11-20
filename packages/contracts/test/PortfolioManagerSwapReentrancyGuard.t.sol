@@ -19,8 +19,8 @@ import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenR
 import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice BLEUDEV-449's regression test: Almanax flagged that a permissionless member token's
-/// balanceOf()/decimals() could reenter this router mid-swap (e.g. to execute a nested fill
+/// @notice A permissionless member token's balanceOf()/decimals() could reenter this router
+/// mid-swap (e.g. to execute a nested fill
 /// against a *different* order -- SwapVM's own reentrancy lock is per-orderHash, so it alone
 /// would not catch that). This token attempts exactly that nested call. It cannot succeed: both
 /// calls are made through IERC20/IERC20Metadata, interfaces that declare them `view`, so Solidity

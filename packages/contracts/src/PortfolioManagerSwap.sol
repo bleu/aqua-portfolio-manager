@@ -305,7 +305,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      for the member at `tradedMemberIdx` instead of fetching its feed again, and returns
     ///      that member's decimals and native balance alongside the group total so the caller
     ///      doesn't have to look either up a second time.
-    /// @dev BLEUDEV-449: the token registry is permissionless, so `token` below can be a
+    /// @dev The token registry is permissionless, so `token` below can be a
     ///      malicious contract. Its `balanceOf()`/`decimals()` cannot reenter this router with any
     ///      state-changing call: both are invoked through `IERC20`/`IERC20Metadata`, interfaces
     ///      that declare them `view`, so Solidity compiles these two calls as `STATICCALL` --
