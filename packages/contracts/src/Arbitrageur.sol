@@ -117,7 +117,7 @@ contract Arbitrageur is Ownable, IArbitrageur {
 
     /// @notice Collects `executeFlashArbitrage`'s profit -- by design left on this contract
     ///         instead of forwarded automatically, same as any token stranded here by mistake.
-    /// @dev BLEUDEV-455: `to == address(0)` would otherwise irrecoverably burn whatever is swept.
+    /// @dev `to == address(0)` would otherwise irrecoverably burn whatever is swept.
     function sweep(address token, uint256 amount, address to) external onlyOwner {
         require(to != address(0), ArbitrageurZeroAddress());
         IERC20(token).safeTransfer(to, amount);

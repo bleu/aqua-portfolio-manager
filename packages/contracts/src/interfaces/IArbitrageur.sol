@@ -43,7 +43,7 @@ interface IArbitrageur is IUnlockCallback {
     error ArbitrageurUnauthorizedFlashLoanCallback(address caller);
     error ArbitrageurFyndCallFailed(bytes reason);
     error ArbitrageurInsufficientRepayment(uint256 owed, uint256 actual);
-    /// @dev BLEUDEV-454/455: `ROUTER`/`POOL_MANAGER` are immutable (constructor-only, never
+    /// @dev `ROUTER`/`POOL_MANAGER` are immutable (constructor-only, never
     ///      correctable) and `sweep`'s `to` would otherwise irrecoverably burn whatever it sweeps.
     error ArbitrageurZeroAddress();
 

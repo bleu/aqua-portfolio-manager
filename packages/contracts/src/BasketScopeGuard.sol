@@ -41,7 +41,7 @@ contract BasketScopeGuard is BaseGuard, IBasketScopeGuard {
     ///      guard's one-level unwrap relies on: an inner entry can never itself be a delegatecall
     ///      into a second, nested batch that could hide a ship() call from this check differently
     ///      than the trusted-relay case handles it.
-    /// @dev BLEUDEV-454: Almanax flagged that a chain where these two addresses carry no code (or
+    /// @dev A chain where these two addresses carry no code (or
     ///      different code) would silently skip batch unwrapping. This is already this contract's
     ///      own documented, tested behavior, not an oversight: `_check` falls through to
     ///      `_checkSingleCall` for any `to` that isn't one of these two exact addresses, same as

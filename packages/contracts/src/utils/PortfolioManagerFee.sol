@@ -22,11 +22,10 @@ library PortfolioManagerFee {
 
     /// @notice Returns one quarter of the LP fee at or below the threshold, or one sixth above it.
     /// @dev Integer division rounds down. Zero LP fee gives zero DAO fee.
-    /// @dev BLEUDEV-454 (Info): `feePmBps` must already be PM_BPS-scaled (1e9 = 100%), not a
-    ///      1e4-style bps value -- renamed from the previous `feeBps` to make that explicit. The
-    ///      only production caller (`PortfolioManagerSwap`) always passes an already-decoded,
-    ///      already-attested strategy's `feeBps`, itself bounded to
-    ///      `[MIN_FEE_BPS, PM_BPS)` by `PortfolioManagerArgsCodec.build` (BLEUDEV-453) -- this
+    /// @dev `feePmBps` must already be PM_BPS-scaled (1e9 = 100%), not a 1e4-style bps value --
+    ///      named to make that explicit. The only production caller (`PortfolioManagerSwap`)
+    ///      always passes an already-decoded, already-attested strategy's `feeBps`, itself
+    ///      bounded to `[MIN_FEE_BPS, PM_BPS)` by `PortfolioManagerArgsCodec.build` -- this
     ///      function stays unbounded-input `pure` math, not a second place to repeat that check.
     function daoFeeBps(uint32 feePmBps) internal pure returns (uint32) {
         return feePmBps <= TIER_THRESHOLD_BPS ? feePmBps / 4 : feePmBps / 6;

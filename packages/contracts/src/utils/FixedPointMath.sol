@@ -31,7 +31,7 @@ library FixedPointMath {
     /// @dev Reverts when an intermediate reciprocal power exceeds PRBMath's domain, even
     /// if the final value would fit. Exact shortcuts can cause small discontinuities in
     /// the bounds; directed rounding does not promise strict monotonicity across them.
-    /// @dev BLEUDEV-454: a sufficiently extreme base/exponent pair can push `_powUpAboveOne`'s
+    /// @dev A sufficiently extreme base/exponent pair can push `_powUpAboveOne`'s
     ///      intermediate `log2`/`exp2` values outside PRBMath's own domain, reverting instead of
     ///      returning a bounded result. Accepted as-is rather than clamped here: this library has
     ///      no way to know a safe input range for every caller, and `PortfolioManagerPricing` (the
