@@ -32,6 +32,10 @@ contract PortfolioManagerFeedRegistry is Ownable2Step {
     error PortfolioManagerFeedRegistryZeroAddress();
     error PortfolioManagerFeedRegistryZeroMaxStaleness();
     error PortfolioManagerFeedRegistryFull();
+    /// @dev An out-of-range index must never be confused with index 0's numeraire sentinel --
+    ///      both used to resolve to the same `(address(0), 0)`, letting an unregistered,
+    ///      never-vetted `feedIndex` silently price as a numeraire instead of failing.
+    error PortfolioManagerFeedRegistryIndexOutOfRange(uint16 index);
 
     event FeedRegistered(address indexed feed, uint16 index, uint32 maxStaleness);
 
@@ -52,13 +56,11 @@ contract PortfolioManagerFeedRegistry is Ownable2Step {
     }
 
     /// @notice Returns the feed and its staleness bound at `index` -- both zero for index 0
-    ///         (numeraire) or an out-of-range index.
+    ///         (the reserved numeraire sentinel). Reverts for any other out-of-range index.
     function feedAt(uint16 index) external view returns (address feed, uint32 maxStaleness) {
-        if (index < feedsByIndex.length) {
-            FeedEntry storage entry = feedsByIndex[index];
-            return (entry.feed, entry.maxStaleness);
-        }
-        return (address(0), 0);
+        require(index < feedsByIndex.length, PortfolioManagerFeedRegistryIndexOutOfRange(index));
+        FeedEntry storage entry = feedsByIndex[index];
+        return (entry.feed, entry.maxStaleness);
     }
 
     function feedCount() external view returns (uint256) {
