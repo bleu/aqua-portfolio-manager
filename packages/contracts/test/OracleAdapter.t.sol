@@ -286,7 +286,7 @@ contract OracleAdapterTest is Test {
         this._requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
     }
 
-    /// @notice BLEUDEV-451: a sequencer-uptime feed reporting `startedAt` in the future (a
+    /// @notice A sequencer-uptime feed reporting `startedAt` in the future (a
     /// misconfigured or non-Chainlink feed) used to underflow `block.timestamp - startedAt` into
     /// an opaque Panic(0x11) instead of this dedicated, clearer error.
     function test_RequireSequencerUpRevertsWithDedicatedErrorWhenStartedAtIsInTheFuture() public {

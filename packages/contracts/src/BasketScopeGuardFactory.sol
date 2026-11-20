@@ -21,7 +21,7 @@ contract BasketScopeGuardFactory {
         address indexed guard, address indexed safe, bytes32 indexed trustedPmStrategyHash, address aqua
     );
 
-    /// @dev BLEUDEV-451: a front-runner who deploys to the same CREATE2 address first (with the
+    /// @dev A front-runner who deploys to the same CREATE2 address first (with the
     ///      identical configuration -- the salt is the hash of every constructor argument, so
     ///      nothing else can land there) used to make the real owner's own `deploy()` step revert,
     ///      breaking an atomic "deploy guard" + "Safe.setGuard(predicted)" batch. Emitted instead

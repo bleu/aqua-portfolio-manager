@@ -29,7 +29,7 @@ library OracleAdapter {
     error OracleAdapterSequencerGracePeriodNotElapsed(
         address sequencerUptimeFeed, uint256 timeSinceUp, uint256 gracePeriod
     );
-    /// @dev BLEUDEV-451: a sequencer-uptime feed answering with `startedAt` in the future (a
+    /// @dev A sequencer-uptime feed answering with `startedAt` in the future (a
     ///      misconfigured or non-Chainlink feed) used to underflow the `timeSinceUp` subtraction
     ///      below into a Panic(0x11), rather than this clearer, dedicated error.
     error OracleAdapterSequencerStartedAtInFuture(
@@ -161,14 +161,14 @@ library OracleAdapter {
     ///         to disable the override, as plain `groupValueWad` does.
     /// @return totalValueWad The group's total value. `overrideDecimals` The override member's
     ///         token decimals, so the caller doesn't have to look them up again either.
-    /// @dev BLEUDEV-451: `IERC20Metadata(tokens[i]).decimals()` below (and each feed's own
+    /// @dev `IERC20Metadata(tokens[i]).decimals()` below (and each feed's own
     ///      `decimals()`/`latestRoundData()` in `fetchRawPrice`) trust the registries' entries to
     ///      behave like a real ERC20/Chainlink feed. A non-standard or later-misbehaving one that
     ///      reverts blocks valuation for every strategy that references it -- accepted as the
     ///      tradeoff of a permissionless token registry (PortfolioManagerTokenRegistry's own doc
     ///      comment) and an owner-vetted-but-not-further-validated feed registry; a `try`/`catch`
     ///      here would only trade a clear revert for a silent mispricing, which is worse. The
-    ///      decimals bound itself (<= 77) is enforced in `FixedPointMath` (BLEUDEV-453).
+    ///      decimals bound itself (<= 77) is enforced in `FixedPointMath`.
     function groupValueWadWithOverride(
         address[] memory tokens,
         uint256[] memory balances,

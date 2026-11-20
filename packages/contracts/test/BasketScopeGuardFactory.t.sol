@@ -55,7 +55,7 @@ contract BasketScopeGuardFactoryTest is Test {
         assertEq(guard.basketOf(tokenB), 1);
     }
 
-    /// @notice BLEUDEV-451: retrying `deploy` with identical arguments after an earlier success
+    /// @notice Retrying `deploy` with identical arguments after an earlier success
     /// returns the same address instead of reverting -- no silent second Guard either, since
     /// CREATE2 can't redeploy there, but the caller gets a usable result back, not a failed batch.
     function test_DeployReturnsSameAddressOnRetryWithIdenticalArguments() public {
