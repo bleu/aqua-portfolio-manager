@@ -22,6 +22,10 @@ library FixedPointMath {
     uint256 private constant EXP2_RELATIVE_ERROR = 8;
 
     error FixedPointMathUnsupportedDecimalDifference(uint8 difference);
+    /// @dev Scaling up multiplies by a power of ten and used to overflow into an
+    ///      opaque Panic(0x11) for a large enough `value`/decimal difference, instead of this
+    ///      clearer, dedicated error.
+    error FixedPointMathScaleOverflow(uint256 value, uint8 difference);
 
     /// @notice Lower bound on base^exponent, with WAD-scaled inputs/output; 0^0 is WAD.
     /// @dev Reverts when an intermediate reciprocal power exceeds PRBMath's domain, even
@@ -93,7 +97,7 @@ library FixedPointMath {
     /// @dev Decimal differences above 77 and unrepresentable scaled results revert.
     function scaleDown(uint256 value, uint8 fromDecimals, uint8 toDecimals) internal pure returns (uint256) {
         if (fromDecimals == toDecimals) return value;
-        if (fromDecimals < toDecimals) return value * _decimalFactor(toDecimals - fromDecimals);
+        if (fromDecimals < toDecimals) return _scaleUpByFactor(value, toDecimals - fromDecimals);
         return mulDivDown(value, 1, _decimalFactor(fromDecimals - toDecimals));
     }
 
@@ -101,8 +105,17 @@ library FixedPointMath {
     /// @dev Increasing precision is exact and has the same behavior as scaleDown.
     function scaleUp(uint256 value, uint8 fromDecimals, uint8 toDecimals) internal pure returns (uint256) {
         if (fromDecimals == toDecimals) return value;
-        if (fromDecimals < toDecimals) return value * _decimalFactor(toDecimals - fromDecimals);
+        if (fromDecimals < toDecimals) return _scaleUpByFactor(value, toDecimals - fromDecimals);
         return mulDivUp(value, 1, _decimalFactor(fromDecimals - toDecimals));
+    }
+
+    /// @dev `value * 10**difference` can overflow uint256 for a large enough `value` (e.g. a raw
+    ///      oracle answer or user-supplied amount) and decimal difference -- checked explicitly
+    ///      here instead of leaving it to Solidity's own overflow panic.
+    function _scaleUpByFactor(uint256 value, uint8 difference) private pure returns (uint256) {
+        uint256 factor = _decimalFactor(difference);
+        require(value == 0 || value <= type(uint256).max / factor, FixedPointMathScaleOverflow(value, difference));
+        return value * factor;
     }
 
     function _decimalFactor(uint8 difference) private pure returns (uint256) {

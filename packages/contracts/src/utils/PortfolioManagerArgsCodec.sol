@@ -157,7 +157,12 @@ library PortfolioManagerArgsCodec {
         require(groups.length > 0, PortfolioManagerEmptyUniverse());
         require(groups.length >= MIN_GROUPS, PortfolioManagerTooFewGroups(groups.length));
         require(groups.length <= MAX_GROUPS, PortfolioManagerTooManyGroups(groups.length));
-        require(feeBps >= MIN_FEE_BPS && feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
+        // feeBps == PM_BPS (100%) used to be allowed here, making
+        // PortfolioManagerPricing.exactOut's WAD - feeWad divisor zero -- every exact-out swap
+        // against that strategy reverted with an opaque division-by-zero panic (and exact-in
+        // silently returned zero output). Strictly less than PM_BPS closes this at the one place
+        // every real strategy's feeBps is validated, instead of inside the pricing math itself.
+        require(feeBps >= MIN_FEE_BPS && feeBps < PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
 
         args = abi.encodePacked(uint8(groups.length));
 
@@ -265,7 +270,10 @@ library PortfolioManagerArgsCodec {
         offset = afterBridges;
 
         feeBps = uint32(bytes4(args.slice(offset, offset + 4, PortfolioManagerMissingFeeBps.selector)));
-        require(feeBps >= MIN_FEE_BPS && feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
+        // Must match build()'s own bound exactly: parse() is what actually gates a hand-crafted
+        // order that never went through build() at all -- decodeTrustedForSwap trusts whatever
+        // already passed here.
+        require(feeBps >= MIN_FEE_BPS && feeBps < PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
         offset += 4;
 
         maxDeviationBps =

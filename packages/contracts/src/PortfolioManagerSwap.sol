@@ -47,6 +47,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         address tokenRegistry,
         address feedRegistry
     ) Fee(aqua) {
+        require(
+            aqua != address(0) && strategyValidator != address(0) && sequencerUptimeFeed != address(0)
+                && tokenRegistry != address(0) && feedRegistry != address(0),
+            PortfolioManagerSwapZeroAddressDependency()
+        );
         STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
         SEQUENCER_UPTIME_FEED = AggregatorV3Interface(sequencerUptimeFeed);
         TOKEN_REGISTRY = PortfolioManagerTokenRegistry(tokenRegistry);

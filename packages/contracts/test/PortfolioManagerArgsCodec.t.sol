@@ -141,7 +141,9 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_BuildThenParseRoundTrips(uint8 seed, uint32 feeBps) public view {
-        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS));
+        // Upper bound excludes PM_BPS itself (100%) -- that value is rejected by
+        // build() (it made PortfolioManagerPricing.exactOut divide by zero).
+        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS - 1));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -201,7 +203,9 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_DecodeTrustedMatchesParse(uint8 seed, uint32 feeBps, uint32 maxDeviationBps) public view {
-        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS));
+        // Upper bound excludes PM_BPS itself (100%) -- that value is rejected by
+        // build() (it made PortfolioManagerPricing.exactOut divide by zero).
+        feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS - 1));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
 
         PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](n);
@@ -517,6 +521,23 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS + 1));
     }
 
+    /// @notice feeBps == PM_BPS (100%, not just above it) used to be allowed, making
+    /// PortfolioManagerPricing.exactOut's WAD - feeWad divisor zero -- every exact-out swap
+    /// against that strategy reverted with an opaque division-by-zero panic instead of this clear
+    /// error, and exact-in silently returned zero output.
+    function test_BuildRevertsOnFeeBpsExactlyAtHundredPercent() public {
+        PortfolioManagerArgsCodec.Group[] memory groups = new PortfolioManagerArgsCodec.Group[](2);
+        groups[0] = _singleMemberGroup(0.5e18, TOKEN_A, FEED_A);
+        groups[1] = _singleMemberGroup(0.5e18, TOKEN_B, FEED_B);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, PortfolioManagerArgsCodec.PM_BPS
+            )
+        );
+        this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS));
+    }
+
     // ---- parse: hand-crafted args must be independently validated, not just trust build() ----
 
     function test_ParseRevertsWhenHandCraftedWeightsDoNotSumToWad() public {
@@ -664,6 +685,34 @@ contract PortfolioManagerArgsCodecTest is Test {
 
         vm.expectRevert(PortfolioManagerArgsCodec.PortfolioManagerMissingFeeBps.selector);
         this._callParse(malformed);
+    }
+
+    /// @notice A hand-crafted order (bypassing build() entirely) with feeBps == PM_BPS must fail
+    /// parse() too -- build() rejecting it is not enough, since parse() is what actually gates an
+    /// order that never went through build(), and decodeTrustedForSwap (the function the real
+    /// swap path calls) trusts whatever already passed parse() with no bounds-check of its own.
+    function test_ParseRevertsOnHandCraftedFeeBpsExactlyAtHundredPercent() public {
+        bytes memory args = abi.encodePacked(
+            uint8(2),
+            uint32(0.5e9),
+            uint8(1),
+            TOKEN_A,
+            FEED_A,
+            uint32(0.5e9),
+            uint8(1),
+            TOKEN_B,
+            FEED_B,
+            uint8(0), // bridgeCount
+            uint32(PortfolioManagerArgsCodec.PM_BPS),
+            uint32(0)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, PortfolioManagerArgsCodec.PM_BPS
+            )
+        );
+        this._callParse(args);
     }
 
     function test_ParseRevertsOnMissingMaxDeviationBps() public {

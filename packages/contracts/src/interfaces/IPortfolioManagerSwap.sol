@@ -18,4 +18,7 @@ interface IPortfolioManagerSwap {
     error PortfolioManagerSwapExcessivePriceDeviation(uint256 spotPriceWad, uint256 maxDeviationBps);
     /// @dev The validator must attest this order before PM can quote or execute it.
     error PortfolioManagerSwapBuildParametersNotAttested(bytes32 strategyHash);
+    /// @dev A zero-address critical dependency would brick swaps (or fail with an
+    ///      unrelated, unclear revert) and, being immutable, can never be corrected post-deploy.
+    error PortfolioManagerSwapZeroAddressDependency();
 }

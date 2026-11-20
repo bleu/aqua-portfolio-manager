@@ -218,8 +218,24 @@ contract FixedPointMathTest is Test {
         this._scaleUp(1, 0, 78);
         vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathUnsupportedDecimalDifference.selector, 78));
         this._scaleUp(1, 78, 0);
-        vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
+        // A value too large for its decimal factor to fit in uint256 now reverts with
+        // this dedicated error instead of an opaque Panic(0x11).
+        vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathScaleOverflow.selector, 2, 77));
         this._scaleUp(2, 0, 77);
+    }
+
+    /// @notice Pins the exact dedicated-error behavior the test above's last case
+    /// exercises, plus the boundary right below it (the largest value that still fits).
+    function test_ScaleUpRevertsWithDedicatedErrorOnOverflowAndSucceedsJustBelowIt() public {
+        uint256 factor = 10 ** 77;
+        uint256 maxRepresentable = type(uint256).max / factor;
+
+        assertEq(FixedPointMath.scaleUp(maxRepresentable, 0, 77), maxRepresentable * factor);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(FixedPointMath.FixedPointMathScaleOverflow.selector, maxRepresentable + 1, 77)
+        );
+        this._scaleUp(maxRepresentable + 1, 0, 77);
     }
 
     function testFuzz_ScalingBoundsAndRoundTrip(uint128 value, uint8 decimals) public pure {
