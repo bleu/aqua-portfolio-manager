@@ -361,17 +361,21 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return (feed == wethFeed || feed == wbtcFeed) ? MAJOR_MAX_STALENESS : STABLE_MAX_STALENESS;
     }
 
-    /// @dev The real swap path skims the DAO fee off the full native amountIn first, then feeds
-    ///      the remainder into the curve (which applies its own feeWad cut). Reference PoolStates
-    ///      built with feeWad: 0 only capture the curve's cut, so this replicates both stages.
+    /// @dev The real swap path skims the DAO and Trim fees off the full native amountIn first
+    ///      (independently of each other), then feeds the remainder into the curve (which applies
+    ///      its own feeWad cut). Reference PoolStates built with feeWad: 0 only capture the
+    ///      curve's cut, so this replicates all three stages.
     function _expectedAmountOutWithFees(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
         internal
         pure
         returns (uint256)
     {
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
+        uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feePmBps);
+        uint32 trimBps = PortfolioManagerFee.trimFeeBps(feePmBps);
         uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount);
+        uint256 trimAmount = fullAmountIn * trimBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount - trimAmount);
     }
 
     // ===== Tests =====

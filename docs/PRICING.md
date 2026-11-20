@@ -63,21 +63,19 @@ Require `A_o < B_o`. Zero output requires zero input.
 
 ## Protocol fee
 
-The protocol fee goes to the 1inch DAO treasury. It is separate from the LP curve fee.
-[PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) derives its rate from `feeBps`:
+Two fees are skimmed from the LP curve fee (`feeBps`), computed independently of each other, not split from one combined amount.
+[PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) derives both rates:
 
-- At or below `1_225_000`: divide by four.
-- Above `1_225_000`: divide by six.
+- DAO fee: a flat one sixth of `feeBps`, to the 1inch DAO treasury.
+- Bleu/Trim fee: a flat one tenth of `feeBps`, to Bleu's own treasury. Agreed separately between Bleu and 1inch, outside 1IP-103.
 
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
-The threshold implements 0.1225%, the approximate boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979).
-Pending: confirm the exact boundary against 1inch's deployed constant.
-Payment for Bleu's work as operator remains undecided and separate from the DAO fee.
+The DAO's 1/6 rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979).
 
-For exact-in, the curve prices input after the DAO cut.
-For exact-out, the instruction adds the DAO fee after computing the curve's required input.
-The contract attempts the DAO transfer without requiring it to succeed. Failure emits `ProtocolFeeSkipped`, and the swap continues.
-Quotes compute the amounts but skip the transfer.
+For exact-in, the curve prices input after both cuts.
+For exact-out, the instruction adds both fees after computing the curve's required input.
+The contract attempts each transfer independently, without requiring it to succeed. A failed transfer emits `ProtocolFeeSkipped` for that recipient only, and the swap continues.
+Quotes compute the amounts but skip both transfers.
 
 ## Rounding and limits
 
