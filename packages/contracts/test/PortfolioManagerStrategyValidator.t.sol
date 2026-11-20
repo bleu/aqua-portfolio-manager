@@ -165,6 +165,34 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireUniverseMatches(order, shipped);
     }
 
+    /// @notice Membership checks alone don't rule out the same token appearing twice
+    /// in the shipped array -- downstream Aqua accounting and PortfolioManagerSwap's own
+    /// membership resolution both assume one entry per token.
+    function test_RevertsOnDuplicateShippedToken() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        ISwapVM.Order memory order = _order(declared, weights);
+
+        // Both declared tokens are shipped, but A appears twice.
+        address[] memory shipped = new address[](3);
+        shipped[0] = address(tokenA);
+        shipped[1] = address(tokenB);
+        shipped[2] = address(tokenA);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorDuplicateShippedToken.selector,
+                address(tokenA)
+            )
+        );
+        validator.requireUniverseMatches(order, shipped);
+    }
+
     /// @dev Builds an order from an arbitrary program, bypassing _order/_groups so the trailing-
     ///      instruction tests can append raw bytes after a legitimate leading curve.
     function _orderWithProgram(bytes memory program) internal view returns (ISwapVM.Order memory) {
@@ -250,6 +278,27 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         bytes memory kycGate = abi.encodePacked(uint8(1), uint8(20), address(0xC0DE));
         program = abi.encodePacked(program, kycGate);
 
+        validator.requireUniverseMatches(_orderWithProgram(program), declared);
+    }
+
+    /// @notice A trailing instruction byte with no length byte after it (the program
+    /// ends one byte short of a valid instruction) used to read past the program's end with an
+    /// out-of-bounds panic instead of this dedicated, clearer error.
+    function test_RevertsOnMalformedTrailingInstructionMissingLengthByte() public {
+        address[] memory declared = new address[](2);
+        declared[0] = address(tokenA);
+        declared[1] = address(tokenB);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 0.5e18;
+        weights[1] = 0.5e18;
+
+        bytes memory program = PortfolioManagerProgramBuilder.build(_groups(declared, weights), 5e6);
+        // A lone opcode byte, no length byte following it.
+        program = abi.encodePacked(program, uint8(1));
+
+        vm.expectRevert(
+            IPortfolioManagerStrategyValidator.PortfolioManagerStrategyValidatorMalformedTrailingInstruction.selector
+        );
         validator.requireUniverseMatches(_orderWithProgram(program), declared);
     }
 

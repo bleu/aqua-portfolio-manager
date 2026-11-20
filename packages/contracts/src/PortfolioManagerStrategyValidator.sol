@@ -109,6 +109,13 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
                 }
             }
             require(isDeclared, PortfolioManagerStrategyValidatorShippedTokenNotDeclared(tokens[i]));
+
+            // Membership alone doesn't rule out the same token appearing twice in `tokens` --
+            // checked separately so a duplicate gets its own clear error instead of silently
+            // passing membership twice.
+            for (uint256 j = 0; j < i; j++) {
+                require(tokens[i] != tokens[j], PortfolioManagerStrategyValidatorDuplicateShippedToken(tokens[i]));
+            }
         }
     }
 
@@ -250,6 +257,9 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
                 opcode != PortfolioManagerProgramBuilder.CURVE_OPCODE,
                 PortfolioManagerStrategyValidatorTrailingCurveInstruction()
             );
+            // A malformed program can end right after this opcode byte, with no length byte --
+            // reject with a clear error instead of an out-of-bounds panic reading program[pc + 1].
+            require(pc + 2 <= program.length, PortfolioManagerStrategyValidatorMalformedTrailingInstruction());
             uint256 trailingArgsLength = uint8(program[pc + 1]);
             pc += 2 + trailingArgsLength;
         }

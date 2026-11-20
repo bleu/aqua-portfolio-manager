@@ -26,6 +26,11 @@ contract PortfolioManagerTokenRegistry {
 
     error PortfolioManagerTokenRegistryZeroAddress();
     error PortfolioManagerTokenRegistryFull();
+    /// @dev An out-of-range index must never be confused with index 0's own reserved zero entry
+    ///      -- same fix shape as `PortfolioManagerFeedRegistryIndexOutOfRange`: index 0 itself
+    ///      stays a silent zero return (it IS the reserved sentinel, not an error); any other
+    ///      out-of-range index reverts instead.
+    error PortfolioManagerTokenRegistryIndexOutOfRange(uint16 index);
 
     event TokenRegistered(address indexed token, uint16 index);
 
@@ -46,10 +51,11 @@ contract PortfolioManagerTokenRegistry {
         emit TokenRegistered(token, index);
     }
 
-    /// @notice Returns the token at `index`, or the zero address for index 0 or an
-    ///         out-of-range index.
+    /// @notice Returns the token at `index` -- the zero address for index 0 (the reserved
+    ///         sentinel), reverts for any other out-of-range index.
     function tokenAt(uint16 index) external view returns (address) {
-        return index < tokensByIndex.length ? tokensByIndex[index] : address(0);
+        require(index < tokensByIndex.length, PortfolioManagerTokenRegistryIndexOutOfRange(index));
+        return tokensByIndex[index];
     }
 
     function tokenCount() external view returns (uint256) {

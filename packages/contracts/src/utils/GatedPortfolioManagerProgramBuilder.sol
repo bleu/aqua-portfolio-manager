@@ -16,10 +16,22 @@ library GatedPortfolioManagerProgramBuilder {
     ///      regression test that catches a drift between the two.
     uint8 internal constant KYC_GATE_OPCODE = 1;
 
+    /// @dev A zero `resolverKycToken` encodes a gate whose `balanceOf(tx.origin)`
+    ///      call always targets address(0) -- on most chains an empty-code call like that reverts
+    ///      on ABI-decoding the empty returndata, permanently blocking every swap against the
+    ///      resulting program. Caught here, at build time, instead of only discovered the first
+    ///      time someone tries to trade against it.
+    error GatedPortfolioManagerProgramBuilderZeroResolverKycToken();
+
     /// @param groups, feeBps  The LP's own declared groups and curve fee.
     /// @param resolverKycToken  1inch's confirmed per-chain Aqua resolver credential
     ///        (`KycNFT`/`RES`) -- `Controls._onlyTxOriginTokenBalanceNonZero` checks
     ///        `balanceOf(tx.origin)` of this token before the curve swap runs.
+    /// @dev `tx.origin`-based gating also means any contract a credentialed
+    ///      resolver EOA calls can reuse that same credential for an unrelated trade (confused
+    ///      deputy), in addition to the EIP-7702 delegation risk `PortfolioManagerOpcodes._opcodes()`'s
+    ///      own doc comment already documents -- see that comment for why this is an accepted
+    ///      protocol-level tradeoff rather than a local patch.
     function build(PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, address resolverKycToken)
         internal
         pure
@@ -39,6 +51,7 @@ library GatedPortfolioManagerProgramBuilder {
         uint32 maxDeviationBps,
         address resolverKycToken
     ) internal pure returns (bytes memory program) {
+        require(resolverKycToken != address(0), GatedPortfolioManagerProgramBuilderZeroResolverKycToken());
         bytes memory curveProgram = PortfolioManagerProgramBuilder.build(groups, feeBps, maxDeviationBps);
         program = abi.encodePacked(
             curveProgram,

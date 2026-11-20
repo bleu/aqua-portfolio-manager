@@ -16,6 +16,13 @@ interface IPortfolioManagerStrategyValidator {
     error PortfolioManagerStrategyValidatorTrailingCurveInstruction();
     error PortfolioManagerStrategyValidatorDeclaredTokenNotShipped(address token);
     error PortfolioManagerStrategyValidatorShippedTokenNotDeclared(address token);
+    /// @dev A duplicate entry in the shipped `tokens` array -- downstream Aqua accounting and
+    ///      PortfolioManagerSwap's own membership resolution both assume one entry per token.
+    error PortfolioManagerStrategyValidatorDuplicateShippedToken(address token);
+    /// @dev A trailing instruction's opcode byte has no length byte after it (program ends one
+    ///      byte short of a valid instruction) -- malformed, not a second valid instruction to
+    ///      walk past.
+    error PortfolioManagerStrategyValidatorMalformedTrailingInstruction();
     /// @dev A cross-group pair's spot price exceeds the configured deviation from parity --
     ///      the same pairwise check PortfolioManagerSwap applies before every trade between
     ///      these two groups.
