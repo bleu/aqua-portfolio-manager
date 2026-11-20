@@ -9,6 +9,17 @@ import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 
 /// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerRouter`.
 abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
+    /// @dev The indices `PortfolioManagerProgramBuilder.sol` and
+    ///      `GatedPortfolioManagerProgramBuilder.sol` hardcode into their encoded programs, with
+    ///      no compiler-enforced link to `_opcodes()`'s own order below (Solidity has no way to
+    ///      share a constant across a library and an abstract contract without inheritance, and
+    ///      solc's own docs mark internal-function-pointer comparison unreliable under the
+    ///      optimizer). `PortfolioManagerOpcodesLayoutGuard.t.sol` pins opcode byte 0 to the curve
+    ///      swap and byte 1 to the KYC gate through the real program-building path instead, so
+    ///      reordering or extending `_opcodes()` fails CI immediately.
+    uint8 internal constant CURVE_OPCODE = 0;
+    uint8 internal constant KYC_GATE_OPCODE = 1;
+
     constructor(
         address aqua,
         address strategyValidator,

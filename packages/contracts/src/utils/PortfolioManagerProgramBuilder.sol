@@ -13,7 +13,10 @@ import {PortfolioManagerArgsCodec} from "./PortfolioManagerArgsCodec.sol";
 library PortfolioManagerProgramBuilder {
     using SafeCast for uint256;
 
-    /// @dev Must match `PortfolioManagerOpcodes._opcodes()`'s dynamic-array index exactly.
+    /// @dev Must match `PortfolioManagerOpcodes._opcodes()`'s dynamic-array index exactly --
+    ///      see `PortfolioManagerOpcodes.CURVE_OPCODE`'s own doc comment for why this can't be a
+    ///      single shared symbol, and `PortfolioManagerOpcodesLayoutGuard.t.sol` for the
+    ///      regression test that catches a drift between the two.
     uint8 internal constant CURVE_OPCODE = 0;
 
     /// @param groups, feeBps  The LP's own declared groups and curve fee.
