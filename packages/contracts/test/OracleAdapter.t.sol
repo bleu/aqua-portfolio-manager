@@ -286,6 +286,24 @@ contract OracleAdapterTest is Test {
         this._requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
     }
 
+    /// @notice A sequencer-uptime feed reporting `startedAt` in the future (a
+    /// misconfigured or non-Chainlink feed) used to underflow `block.timestamp - startedAt` into
+    /// an opaque Panic(0x11) instead of this dedicated, clearer error.
+    function test_RequireSequencerUpRevertsWithDedicatedErrorWhenStartedAtIsInTheFuture() public {
+        vm.warp(1_000_000);
+        MockAggregatorV3 sequencerFeed = new MockAggregatorV3(0, 0, block.timestamp + 1 hours);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OracleAdapter.OracleAdapterSequencerStartedAtInFuture.selector,
+                address(sequencerFeed),
+                block.timestamp + 1 hours,
+                block.timestamp
+            )
+        );
+        this._requireSequencerUp(AggregatorV3Interface(address(sequencerFeed)));
+    }
+
     function test_GroupValueSumsAcrossDifferentTokenAndFeedDecimals() public {
         vm.warp(1_000_000);
         // USDC-like: 6 token decimals, 8 feed decimals, $1.00 -- 15,000 USDC.

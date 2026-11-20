@@ -14,6 +14,12 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 ///      entries. The owner is intended to be a `TimelockController`, so every addition gets a
 ///      public review delay before it takes effect -- not enforced by this contract itself, just
 ///      by who it's deployed with as owner.
+/// @dev Nothing on-chain enforces timelock ownership, so an EOA or misconfigured owner could
+///      register a malicious feed with no delay. Deliberately not enforced in the constructor
+///      (e.g. requiring `owner_.code.length > 0`): `script/Deploy.s.sol` intentionally owns this
+///      registry with the deploying EOA during a documented bootstrap window, transferring to
+///      the real `TimelockController` afterward -- a hard contract-only check would break that
+///      flow. The timelock requirement stays operational discipline, not on-chain.
 ///      Index 0 is reserved to mean "no feed -- this member is its group's own numeraire"
 ///      (ADR-0017); it is never assigned a real feed.
 ///      `maxStaleness` is set per feed at registration time rather than fixed protocol-wide,
