@@ -20,15 +20,15 @@ import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenR
 import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice BLEUDEV-448's regression test: `PortfolioManagerOpcodes._opcodes()`'s array order has
-/// no compiler-enforced link to the `CURVE_OPCODE`/`KYC_GATE_OPCODE` indices hardcoded into
-/// `PortfolioManagerProgramBuilder.sol` and `GatedPortfolioManagerProgramBuilder.sol` (see
-/// `PortfolioManagerOpcodes.CURVE_OPCODE`'s own doc comment for why a runtime check isn't viable
-/// here). This test is the actual guard: it ships a strategy built by the real
-/// `GatedPortfolioManagerProgramBuilder` and proves opcode byte 0 still settles the curve swap
-/// while opcode byte 1 still enforces the resolver KYC gate. Reordering or extending `_opcodes()`
-/// without updating both builders in lockstep fails this test -- either the swap stops settling,
-/// or the KYC gate stops blocking an uncredentialed resolver.
+/// @notice `PortfolioManagerOpcodes._opcodes()`'s array order has no compiler-enforced link to
+/// the `CURVE_OPCODE`/`KYC_GATE_OPCODE` indices hardcoded into `PortfolioManagerProgramBuilder.sol`
+/// and `GatedPortfolioManagerProgramBuilder.sol` (see `PortfolioManagerOpcodes.CURVE_OPCODE`'s own
+/// doc comment for why a runtime check isn't viable here). This test is the actual guard: it ships
+/// a strategy built by the real `GatedPortfolioManagerProgramBuilder` and proves opcode byte 0
+/// still settles the curve swap while opcode byte 1 still enforces the resolver KYC gate.
+/// Reordering or extending `_opcodes()` without updating both builders in lockstep fails this
+/// test -- either the swap stops settling, or the KYC gate stops blocking an uncredentialed
+/// resolver.
 contract PortfolioManagerOpcodesLayoutGuardTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;

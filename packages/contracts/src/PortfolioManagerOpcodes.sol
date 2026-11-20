@@ -10,18 +10,13 @@ import {PortfolioManagerSwap} from "./PortfolioManagerSwap.sol";
 /// @dev Never deployed on its own -- only ever inherited by `PortfolioManagerRouter`.
 abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
     /// @dev The indices `PortfolioManagerProgramBuilder.sol` and
-    ///      `GatedPortfolioManagerProgramBuilder.sol` hardcode into their encoded programs --
-    ///      Solidity has no way to share these as a single symbol across a library and an
-    ///      abstract contract (no cross-contract access to an internal/public constant without
-    ///      inheritance), and a runtime check comparing `_opcodes()`'s entries against these
-    ///      function references does not reliably compile under this project's `via_ir` pipeline
-    ///      (solc itself warns internal-function-pointer comparison is unreliable with the
-    ///      optimizer and will be removed entirely in a future release -- confirmed by triggering
-    ///      solc error 1284 while prototyping that check here).
-    ///      `PortfolioManagerOpcodesLayoutGuard.t.sol` is the enforcement instead: a dedicated
-    ///      regression test that pins opcode byte 0 to the curve swap and opcode byte 1 to the
-    ///      KYC gate through the real, shippable program-building path, so reordering or
-    ///      extending `_opcodes()` below fails CI immediately rather than silently shipping.
+    ///      `GatedPortfolioManagerProgramBuilder.sol` hardcode into their encoded programs, with
+    ///      no compiler-enforced link to `_opcodes()`'s own order below (Solidity has no way to
+    ///      share a constant across a library and an abstract contract without inheritance, and
+    ///      solc's own docs mark internal-function-pointer comparison unreliable under the
+    ///      optimizer). `PortfolioManagerOpcodesLayoutGuard.t.sol` pins opcode byte 0 to the curve
+    ///      swap and byte 1 to the KYC gate through the real program-building path instead, so
+    ///      reordering or extending `_opcodes()` fails CI immediately.
     uint8 internal constant CURVE_OPCODE = 0;
     uint8 internal constant KYC_GATE_OPCODE = 1;
 
