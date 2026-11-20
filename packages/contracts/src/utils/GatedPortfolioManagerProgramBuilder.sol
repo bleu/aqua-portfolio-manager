@@ -16,7 +16,7 @@ library GatedPortfolioManagerProgramBuilder {
     ///      regression test that catches a drift between the two.
     uint8 internal constant KYC_GATE_OPCODE = 1;
 
-    /// @dev BLEUDEV-452: a zero `resolverKycToken` encodes a gate whose `balanceOf(tx.origin)`
+    /// @dev A zero `resolverKycToken` encodes a gate whose `balanceOf(tx.origin)`
     ///      call always targets address(0) -- on most chains an empty-code call like that reverts
     ///      on ABI-decoding the empty returndata, permanently blocking every swap against the
     ///      resulting program. Caught here, at build time, instead of only discovered the first
@@ -27,11 +27,11 @@ library GatedPortfolioManagerProgramBuilder {
     /// @param resolverKycToken  1inch's confirmed per-chain Aqua resolver credential
     ///        (`KycNFT`/`RES`) -- `Controls._onlyTxOriginTokenBalanceNonZero` checks
     ///        `balanceOf(tx.origin)` of this token before the curve swap runs.
-    /// @dev BLEUDEV-452/449/455: `tx.origin`-based gating also means any contract a credentialed
+    /// @dev `tx.origin`-based gating also means any contract a credentialed
     ///      resolver EOA calls can reuse that same credential for an unrelated trade (confused
-    ///      deputy), in addition to the EIP-7702 delegation risk BLEUDEV-449 already documents at
-    ///      `PortfolioManagerOpcodes._opcodes()`'s own doc comment -- see that comment for why
-    ///      this is an accepted protocol-level tradeoff rather than a local patch.
+    ///      deputy), in addition to the EIP-7702 delegation risk `PortfolioManagerOpcodes._opcodes()`'s
+    ///      own doc comment already documents -- see that comment for why this is an accepted
+    ///      protocol-level tradeoff rather than a local patch.
     function build(PortfolioManagerArgsCodec.Group[] memory groups, uint32 feeBps, address resolverKycToken)
         internal
         pure

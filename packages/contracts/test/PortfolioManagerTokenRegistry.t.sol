@@ -24,10 +24,10 @@ contract PortfolioManagerTokenRegistryTest is Test {
         assertEq(registry.tokenAt(index), tokenA);
     }
 
-    /// @notice BLEUDEV-452: an index that was never registered used to silently resolve to
+    /// @notice An index that was never registered used to silently resolve to
     /// address(0), identical to index 0's legitimate "not registered" sentinel -- a caller that
     /// doesn't defensively check for address(0) could mishandle it as a real token. Must revert
-    /// instead, same fix shape as PortfolioManagerFeedRegistry (BLEUDEV-446).
+    /// instead, same fix shape as PortfolioManagerFeedRegistry.
     function test_TokenAtRevertsForNeverRegisteredIndex() public {
         vm.expectRevert(
             abi.encodeWithSelector(

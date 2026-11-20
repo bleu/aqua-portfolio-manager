@@ -216,7 +216,7 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
         return GatedPortfolioManagerProgramBuilder.build(groups_, feeBps, resolverKycToken);
     }
 
-    /// @notice BLEUDEV-452: a zero resolverKycToken now fails fast at build time instead of
+    /// @notice A zero resolverKycToken now fails fast at build time instead of
     /// silently producing a program that would brick every swap the first time someone tried it.
     function test_BuildRevertsForZeroAddressResolverKycToken() public {
         vm.expectRevert(

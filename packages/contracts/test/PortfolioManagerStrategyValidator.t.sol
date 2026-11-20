@@ -165,7 +165,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireUniverseMatches(order, shipped);
     }
 
-    /// @notice BLEUDEV-452: membership checks alone don't rule out the same token appearing twice
+    /// @notice Membership checks alone don't rule out the same token appearing twice
     /// in the shipped array -- downstream Aqua accounting and PortfolioManagerSwap's own
     /// membership resolution both assume one entry per token.
     function test_RevertsOnDuplicateShippedToken() public {
@@ -281,7 +281,7 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireUniverseMatches(_orderWithProgram(program), declared);
     }
 
-    /// @notice BLEUDEV-452: a trailing instruction byte with no length byte after it (the program
+    /// @notice A trailing instruction byte with no length byte after it (the program
     /// ends one byte short of a valid instruction) used to read past the program's end with an
     /// out-of-bounds panic instead of this dedicated, clearer error.
     function test_RevertsOnMalformedTrailingInstructionMissingLengthByte() public {

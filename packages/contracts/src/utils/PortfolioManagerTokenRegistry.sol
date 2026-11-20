@@ -26,12 +26,10 @@ contract PortfolioManagerTokenRegistry {
 
     error PortfolioManagerTokenRegistryZeroAddress();
     error PortfolioManagerTokenRegistryFull();
-    /// @dev BLEUDEV-452: `tokenAt` used to return the zero address for any out-of-range index,
-    ///      indistinguishable from index 0's own reserved zero entry -- a caller that doesn't
-    ///      defensively check for `address(0)` could mishandle an invalid index as a real token.
-    ///      Same fix shape as PortfolioManagerFeedRegistryIndexOutOfRange (BLEUDEV-446): only
-    ///      index 0 itself stays a silent zero return (it IS the reserved sentinel, not an error);
-    ///      any other out-of-range index now reverts instead.
+    /// @dev An out-of-range index must never be confused with index 0's own reserved zero entry
+    ///      -- same fix shape as `PortfolioManagerFeedRegistryIndexOutOfRange`: index 0 itself
+    ///      stays a silent zero return (it IS the reserved sentinel, not an error); any other
+    ///      out-of-range index reverts instead.
     error PortfolioManagerTokenRegistryIndexOutOfRange(uint16 index);
 
     event TokenRegistered(address indexed token, uint16 index);
