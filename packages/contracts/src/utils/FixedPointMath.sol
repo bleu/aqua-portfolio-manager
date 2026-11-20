@@ -31,6 +31,14 @@ library FixedPointMath {
     /// @dev Reverts when an intermediate reciprocal power exceeds PRBMath's domain, even
     /// if the final value would fit. Exact shortcuts can cause small discontinuities in
     /// the bounds; directed rounding does not promise strict monotonicity across them.
+    /// @dev A sufficiently extreme base/exponent pair can push `_powUpAboveOne`'s
+    ///      intermediate `log2`/`exp2` values outside PRBMath's own domain, reverting instead of
+    ///      returning a bounded result. Accepted as-is rather than clamped here: this library has
+    ///      no way to know a safe input range for every caller, and `PortfolioManagerPricing` (the
+    ///      only production caller) already bounds what reaches this function -- weights are
+    ///      validated to sum to WAD and balances are checked nonzero before any power is computed,
+    ///      so a revert here means a genuinely extreme, already-abnormal pool state, not routine
+    ///      user input. Clamping inside this library would hide that signal instead of surfacing it.
     function powDown(uint256 base, uint256 exponent) internal pure returns (uint256) {
         if (exponent == 0 || base == WAD) return WAD;
         if (base == 0 || exponent == WAD) return base;

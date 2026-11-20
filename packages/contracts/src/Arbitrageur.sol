@@ -25,6 +25,7 @@ contract Arbitrageur is Ownable, IArbitrageur {
     IUniswapV4PoolManager public immutable POOL_MANAGER;
 
     constructor(address router, address poolManager, address owner_) Ownable(owner_) {
+        require(router != address(0) && poolManager != address(0), ArbitrageurZeroAddress());
         ROUTER = ISwapVM(router);
         POOL_MANAGER = IUniswapV4PoolManager(poolManager);
     }
@@ -116,7 +117,9 @@ contract Arbitrageur is Ownable, IArbitrageur {
 
     /// @notice Collects `executeFlashArbitrage`'s profit -- by design left on this contract
     ///         instead of forwarded automatically, same as any token stranded here by mistake.
+    /// @dev `to == address(0)` would otherwise irrecoverably burn whatever is swept.
     function sweep(address token, uint256 amount, address to) external onlyOwner {
+        require(to != address(0), ArbitrageurZeroAddress());
         IERC20(token).safeTransfer(to, amount);
         emit Swept(token, amount, to);
     }
