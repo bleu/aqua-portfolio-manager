@@ -583,15 +583,11 @@ contract PortfolioManagerStrategyValidatorTest is Test {
         validator.requireBalancedWithinTolerance(order, maker);
     }
 
-    /// @dev The actual Almanax finding this guards against (2026-11-18): a member with a nonzero
-    ///      but never-registered feedIndex used to resolve through PortfolioManagerFeedRegistry's
-    ///      own out-of-range fallback to `(address(0), 0)` -- identical to the real numeraire
-    ///      sentinel at index 0 -- so it silently priced as a numeraire (1:1) instead of failing.
-    ///      That bypassed `PortfolioManagerMultipleNumeraireMembers`'s "at most one numeraire per
-    ///      group" check entirely, since this member's feedIndex is nonzero, so it was never
-    ///      counted as a numeraire candidate in the first place. Proves attestation -- which calls
-    ///      groupValueWad, and therefore feedAt, for every member -- now reverts on exactly this
-    ///      shape instead of shipping a mispriced strategy.
+    /// @dev A member with a nonzero but never-registered feedIndex bypasses
+    ///      `PortfolioManagerMultipleNumeraireMembers`'s "at most one numeraire per group" check
+    ///      entirely, since a nonzero feedIndex is never counted as a numeraire candidate. Proves
+    ///      attestation -- which calls groupValueWad, and therefore feedAt, for every member --
+    ///      now reverts on exactly this shape instead of shipping a mispriced strategy.
     function test_ToleranceRevertsWhenMemberFeedIndexIsNeverRegistered() public {
         uint16 neverRegisteredFeedIndex = 9999;
 

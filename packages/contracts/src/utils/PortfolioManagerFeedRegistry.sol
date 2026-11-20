@@ -32,16 +32,9 @@ contract PortfolioManagerFeedRegistry is Ownable2Step {
     error PortfolioManagerFeedRegistryZeroAddress();
     error PortfolioManagerFeedRegistryZeroMaxStaleness();
     error PortfolioManagerFeedRegistryFull();
-    /// @dev Almanax finding (2026-11-18): `feedAt` used to return `(address(0), 0)` for any
-    ///      out-of-range index -- identical to the zero entry at index 0, which OracleAdapter
-    ///      treats as "this member is its group's own numeraire" with no external call at all. A
-    ///      strategy could encode an unregistered, never-vetted `feedIndex != 0` (so
-    ///      PortfolioManagerArgsCodec's "at most one numeraire per group" count never flags it)
-    ///      and it would still resolve to the numeraire sentinel at both attestation and swap
-    ///      time, mispricing that member. Reverting here instead closes it everywhere `feedAt` is
-    ///      called, for free: attestation already calls it for every member via
-    ///      PortfolioManagerArgsCodec.groupValueWad, so a bad index now fails attestation itself
-    ///      instead of silently shipping.
+    /// @dev An out-of-range index must never be confused with index 0's numeraire sentinel --
+    ///      both used to resolve to the same `(address(0), 0)`, letting an unregistered,
+    ///      never-vetted `feedIndex` silently price as a numeraire instead of failing.
     error PortfolioManagerFeedRegistryIndexOutOfRange(uint16 index);
 
     event FeedRegistered(address indexed feed, uint16 index, uint32 maxStaleness);
@@ -63,9 +56,7 @@ contract PortfolioManagerFeedRegistry is Ownable2Step {
     }
 
     /// @notice Returns the feed and its staleness bound at `index` -- both zero for index 0
-    ///         (the reserved numeraire sentinel). Reverts for any other out-of-range index: an
-    ///         unregistered, never-vetted index must never be confused with the numeraire case
-    ///         (see PortfolioManagerFeedRegistryIndexOutOfRange's own doc comment).
+    ///         (the reserved numeraire sentinel). Reverts for any other out-of-range index.
     function feedAt(uint16 index) external view returns (address feed, uint32 maxStaleness) {
         require(index < feedsByIndex.length, PortfolioManagerFeedRegistryIndexOutOfRange(index));
         FeedEntry storage entry = feedsByIndex[index];
