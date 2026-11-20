@@ -311,9 +311,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///      that declare them `view`, so Solidity compiles these two calls as `STATICCALL` --
     ///      and the EVM itself (not just Solidity) propagates that read-only context to every call
     ///      the token's own code makes in turn, with no bypass available to the callee (not even
-    ///      via inline assembly). Confirmed empirically, not assumed: see
+    ///      via inline assembly). Confirmed empirically for `balanceOf()`, not assumed: see
     ///      test/PortfolioManagerSwapReentrancyGuard.t.sol, which has a malicious member token
-    ///      attempt exactly this and shows it revert with `StateChangeDuringStaticCall`.
+    ///      attempt exactly this and shows it revert with `StateChangeDuringStaticCall` -- the
+    ///      same STATICCALL-propagation mechanism protects `decimals()` identically, since both
+    ///      calls go through an interface that declares the function `view`.
     function _groupValueWad(
         PortfolioManagerArgsCodec.Group memory group,
         address maker,

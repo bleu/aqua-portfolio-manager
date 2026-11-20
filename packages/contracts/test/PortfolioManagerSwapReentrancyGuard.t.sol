@@ -82,8 +82,9 @@ contract ReentrantBalanceToken {
                     signature: ""
                 })
             );
-            // Reverts before any transfer logic (PortfolioManagerSwapReentrantCall fires at the
-            // very top of the opcode), so this contract never needs working transfer semantics.
+            // Reverts in the nested swap's own reentrancy lock (a state-changing write, blocked
+            // by the static context this call inherited), so this contract never needs working
+            // transfer semantics.
             ROUTER.swap(reentrantOrder, address(this), reentrantTokenOut, 1, takerData);
         }
         return 1_000_000e18;
