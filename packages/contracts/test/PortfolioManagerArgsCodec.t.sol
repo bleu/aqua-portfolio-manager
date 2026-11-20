@@ -687,6 +687,34 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callParse(malformed);
     }
 
+    /// @notice A hand-crafted order (bypassing build() entirely) with feeBps == PM_BPS must fail
+    /// parse() too -- build() rejecting it is not enough, since parse() is what actually gates an
+    /// order that never went through build(), and decodeTrustedForSwap (the function the real
+    /// swap path calls) trusts whatever already passed parse() with no bounds-check of its own.
+    function test_ParseRevertsOnHandCraftedFeeBpsExactlyAtHundredPercent() public {
+        bytes memory args = abi.encodePacked(
+            uint8(2),
+            uint32(0.5e9),
+            uint8(1),
+            TOKEN_A,
+            FEED_A,
+            uint32(0.5e9),
+            uint8(1),
+            TOKEN_B,
+            FEED_B,
+            uint8(0), // bridgeCount
+            uint32(PortfolioManagerArgsCodec.PM_BPS),
+            uint32(0)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioManagerArgsCodec.PortfolioManagerFeeBpsOutOfRange.selector, PortfolioManagerArgsCodec.PM_BPS
+            )
+        );
+        this._callParse(args);
+    }
+
     function test_ParseRevertsOnMissingMaxDeviationBps() public {
         // Valid 2-group universe, an empty bridge list, plus feeBps, but no trailing
         // maxDeviationBps bytes.

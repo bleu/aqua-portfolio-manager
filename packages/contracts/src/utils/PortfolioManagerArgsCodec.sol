@@ -270,7 +270,10 @@ library PortfolioManagerArgsCodec {
         offset = afterBridges;
 
         feeBps = uint32(bytes4(args.slice(offset, offset + 4, PortfolioManagerMissingFeeBps.selector)));
-        require(feeBps >= MIN_FEE_BPS && feeBps <= PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
+        // Must match build()'s own bound exactly: parse() is what actually gates a hand-crafted
+        // order that never went through build() at all -- decodeTrustedForSwap trusts whatever
+        // already passed here.
+        require(feeBps >= MIN_FEE_BPS && feeBps < PM_BPS, PortfolioManagerFeeBpsOutOfRange(feeBps));
         offset += 4;
 
         maxDeviationBps =
