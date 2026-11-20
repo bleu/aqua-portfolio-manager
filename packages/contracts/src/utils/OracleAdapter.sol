@@ -55,6 +55,12 @@ library OracleAdapter {
     ///        for the ship-time deviation check only; swap pricing never needs them. Nothing
     ///        on-chain checks that a feed actually quotes in the unit its group expects; a
     ///        mismatched feed prices silently, not with a revert.
+    /// @dev This quote-currency invariant is deliberately an off-chain/owner
+    ///      vetting responsibility (PortfolioManagerFeedRegistry's registration step), not an
+    ///      on-chain check -- enforcing it would mean this adapter (or the feed registry) storing
+    ///      and validating each group's expected quote asset against every feed it's handed, a
+    ///      configuration-layer redesign well beyond this struct's own doc comment, which already
+    ///      states the assumption plainly for whoever registers a feed.
     /// @param maxStaleness Maximum permitted price age in seconds. Unused when feed is the zero address.
     struct PriceFeed {
         AggregatorV3Interface feed;

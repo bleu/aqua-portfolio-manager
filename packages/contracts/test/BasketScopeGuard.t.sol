@@ -262,6 +262,43 @@ contract BasketScopeGuardTest is Test {
         );
     }
 
+    /// @notice This Guard's SAFE (set in setUp() to address(this)) is the only
+    /// caller its hooks accept -- a call from anything else must fail closed instead of
+    /// evaluating with that caller's own, different notion of "this Guard's Safe".
+    function test_CheckTransactionRevertsWhenCalledByAnyoneOtherThanItsOwnSafe() public {
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+
+        vm.prank(address(0xBADBAD));
+        vm.expectRevert(abi.encodeWithSelector(IBasketScopeGuard.UnauthorizedCaller.selector, address(0xBADBAD)));
+        guard.checkTransaction(
+            address(aqua),
+            0,
+            _shipCalldata("some other strategy", tokens),
+            Enum.Operation.Call,
+            0,
+            0,
+            0,
+            address(0),
+            payable(address(0)),
+            "",
+            address(0)
+        );
+    }
+
+    function test_CheckModuleTransactionRevertsWhenCalledByAnyoneOtherThanItsOwnSafe() public {
+        address[] memory tokens = new address[](2);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+
+        vm.prank(address(0xBADBAD));
+        vm.expectRevert(abi.encodeWithSelector(IBasketScopeGuard.UnauthorizedCaller.selector, address(0xBADBAD)));
+        guard.checkModuleTransaction(
+            address(aqua), 0, _shipCalldata("some other strategy", tokens), Enum.Operation.Call, address(0)
+        );
+    }
+
     // ---------------------------------------------------------------------
     // Fuzz: cross-strategy invariant under randomized inputs
     // ---------------------------------------------------------------------
@@ -355,6 +392,26 @@ contract BasketScopeGuardTest is Test {
         safe = Safe(payable(address(factory.createProxyWithNonce(address(singleton), setupData, 0))));
     }
 
+    /// @dev The msg.sender == SAFE check means the shared `guard` from setUp() (bound
+    ///      to `address(this)`) can no longer be installed on these freshly-deployed Safes --
+    ///      each integration test needs its own Guard instance bound to its own Safe, with the
+    ///      same token/basket configuration `guard` itself uses.
+    function _deployGuardForSafe(address safe_) internal returns (BasketScopeGuard) {
+        address[] memory tokens = new address[](4);
+        tokens[0] = tokenA;
+        tokens[1] = tokenB;
+        tokens[2] = tokenC;
+        tokens[3] = tokenD;
+
+        uint256[] memory basketIds = new uint256[](4);
+        basketIds[0] = 1;
+        basketIds[1] = 1;
+        basketIds[2] = 2;
+        basketIds[3] = 2;
+
+        return new BasketScopeGuard(address(aqua), safe_, pmStrategyHash, TRUSTED_PM_ROUTER, tokens, basketIds);
+    }
+
     /// @dev Sign before expectRevert so nonce and hash reads do not consume its next-call expectation.
     function _signFor(Safe safe, uint256 ownerPk, address to, bytes memory data)
         internal
@@ -377,9 +434,11 @@ contract BasketScopeGuardTest is Test {
     function test_Integration_SafeBlocksCrossBasketShipViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0001;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
 
-        bool setGuardOk =
-            _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        bool setGuardOk = _execViaOwner(
+            safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard))
+        );
         assertTrue(setGuardOk, "setGuard should succeed");
 
         address[] memory tokens = new address[](2);
@@ -398,8 +457,9 @@ contract BasketScopeGuardTest is Test {
     function test_Integration_SafeAllowsWithinBasketShipViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0002;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
 
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
 
         address[] memory tokens = new address[](2);
         tokens[0] = tokenA;
@@ -413,8 +473,9 @@ contract BasketScopeGuardTest is Test {
     function test_Integration_SafeAllowsPmStrategyAcrossBasketsViaExecTransaction() public {
         uint256 ownerPk = 0xA11CE0003;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
 
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
 
         address[] memory tokens = new address[](4);
         tokens[0] = tokenA;
@@ -429,10 +490,13 @@ contract BasketScopeGuardTest is Test {
     function test_Integration_ModuleGuardBlocksCrossBasketShip() public {
         uint256 ownerPk = 0xA11CE0004;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
         ForwardingModule module = new ForwardingModule();
 
         _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("enableModule(address)", address(module)));
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setModuleGuard(address)", address(guard)));
+        _execViaOwner(
+            safe, ownerPk, address(safe), abi.encodeWithSignature("setModuleGuard(address)", address(scopedGuard))
+        );
 
         address[] memory tokens = new address[](2);
         tokens[0] = tokenA;
@@ -445,10 +509,13 @@ contract BasketScopeGuardTest is Test {
     function test_Integration_ModuleGuardAllowsWithinBasketShip() public {
         uint256 ownerPk = 0xA11CE0005;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
         ForwardingModule module = new ForwardingModule();
 
         _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("enableModule(address)", address(module)));
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setModuleGuard(address)", address(guard)));
+        _execViaOwner(
+            safe, ownerPk, address(safe), abi.encodeWithSignature("setModuleGuard(address)", address(scopedGuard))
+        );
 
         address[] memory tokens = new address[](2);
         tokens[0] = tokenC;
@@ -521,7 +588,8 @@ contract BasketScopeGuardTest is Test {
         _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_CANONICAL);
         uint256 ownerPk = 0xA11CE0006;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
 
         address[] memory tokens = new address[](2);
         tokens[0] = tokenA; // basket 1
@@ -549,7 +617,8 @@ contract BasketScopeGuardTest is Test {
         _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_CANONICAL);
         uint256 ownerPk = 0xA11CE0007;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
 
         address[] memory tokens = new address[](2);
         tokens[0] = tokenA;
@@ -564,7 +633,8 @@ contract BasketScopeGuardTest is Test {
         _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_CANONICAL);
         uint256 ownerPk = 0xA11CE0008;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
 
         address[] memory tokens = new address[](4);
         tokens[0] = tokenA;
@@ -585,7 +655,8 @@ contract BasketScopeGuardTest is Test {
         _etchMultiSendCallOnlyAt(MULTISEND_CALL_ONLY_SAFE_WALLET);
         uint256 ownerPk = 0xA11CE0009;
         (Safe safe,) = _deploySafeWithOwner(ownerPk);
-        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(guard)));
+        BasketScopeGuard scopedGuard = _deployGuardForSafe(address(safe));
+        _execViaOwner(safe, ownerPk, address(safe), abi.encodeWithSignature("setGuard(address)", address(scopedGuard)));
 
         address[] memory tokens = new address[](2);
         tokens[0] = tokenA;
