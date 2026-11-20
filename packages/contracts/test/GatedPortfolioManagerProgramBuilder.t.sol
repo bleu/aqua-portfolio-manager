@@ -206,9 +206,6 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
         taker.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, _exactInTakerData());
     }
 
-    /// @dev `address(0)` has no code, so `IERC20(token).balanceOf(...)` fails ABI-decoding the
-    ///      empty returndata instead of hitting `TxOriginTokenBalanceIsZero` -- still fails safe
-    ///      (no uncredentialed swap goes through), just with a different, less informative revert.
     /// @dev vm.expectRevert needs an external call boundary -- GatedPortfolioManagerProgramBuilder
     ///      is a library, so a direct call from this test would inline it into this same frame.
     function _externalBuild(PortfolioManagerArgsCodec.Group[] memory groups_, uint32 feeBps, address resolverKycToken)
