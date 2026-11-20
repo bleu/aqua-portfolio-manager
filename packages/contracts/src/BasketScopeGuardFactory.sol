@@ -30,6 +30,13 @@ contract BasketScopeGuardFactory {
         address indexed guard, address indexed safe, bytes32 indexed trustedPmStrategyHash, address aqua
     );
 
+    /// @dev Should be unreachable -- CREATE2's address is a pure function of (this factory,
+    ///      `salt`, `BasketScopeGuard`'s creation code), so `deployed` can only ever equal
+    ///      `guard`. Kept as a real, named check instead of `assert` so a future compiler/EVM
+    ///      semantics change that somehow broke this invariant would fail with a clear reason
+    ///      instead of consuming all remaining gas with no diagnostic.
+    error DeployedAddressMismatch(address expected, address actual);
+
     /// @notice Deploys a new BasketScopeGuard for the given configuration, or returns the already-
     ///         deployed one at that address if someone (anyone, with the identical configuration)
     ///         already did -- see `GuardAlreadyDeployed`'s own doc comment for why this matters.
@@ -53,7 +60,7 @@ contract BasketScopeGuardFactory {
         address deployed = address(
             new BasketScopeGuard{salt: salt}(aqua, safe_, trustedPmStrategyHash, trustedPmRouter, tokens, basketIds)
         );
-        assert(deployed == guard);
+        require(deployed == guard, DeployedAddressMismatch(guard, deployed));
         emit GuardDeployed(guard, safe_, trustedPmStrategyHash, aqua);
     }
 
