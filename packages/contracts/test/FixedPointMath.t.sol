@@ -218,13 +218,13 @@ contract FixedPointMathTest is Test {
         this._scaleUp(1, 0, 78);
         vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathUnsupportedDecimalDifference.selector, 78));
         this._scaleUp(1, 78, 0);
-        // BLEUDEV-453: a value too large for its decimal factor to fit in uint256 now reverts with
+        // A value too large for its decimal factor to fit in uint256 now reverts with
         // this dedicated error instead of an opaque Panic(0x11).
         vm.expectRevert(abi.encodeWithSelector(FixedPointMath.FixedPointMathScaleOverflow.selector, 2, 77));
         this._scaleUp(2, 0, 77);
     }
 
-    /// @notice BLEUDEV-453: pins the exact dedicated-error behavior the test above's last case
+    /// @notice Pins the exact dedicated-error behavior the test above's last case
     /// exercises, plus the boundary right below it (the largest value that still fits).
     function test_ScaleUpRevertsWithDedicatedErrorOnOverflowAndSucceedsJustBelowIt() public {
         uint256 factor = 10 ** 77;

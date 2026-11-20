@@ -22,7 +22,7 @@ library FixedPointMath {
     uint256 private constant EXP2_RELATIVE_ERROR = 8;
 
     error FixedPointMathUnsupportedDecimalDifference(uint8 difference);
-    /// @dev BLEUDEV-453: scaling up multiplies by a power of ten and used to overflow into an
+    /// @dev Scaling up multiplies by a power of ten and used to overflow into an
     ///      opaque Panic(0x11) for a large enough `value`/decimal difference, instead of this
     ///      clearer, dedicated error.
     error FixedPointMathScaleOverflow(uint256 value, uint8 difference);

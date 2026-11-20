@@ -141,7 +141,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_BuildThenParseRoundTrips(uint8 seed, uint32 feeBps) public view {
-        // Upper bound excludes PM_BPS itself (100%) -- BLEUDEV-453 made that value rejected by
+        // Upper bound excludes PM_BPS itself (100%) -- that value is rejected by
         // build() (it made PortfolioManagerPricing.exactOut divide by zero).
         feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS - 1));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
@@ -203,7 +203,7 @@ contract PortfolioManagerArgsCodecTest is Test {
     }
 
     function testFuzz_DecodeTrustedMatchesParse(uint8 seed, uint32 feeBps, uint32 maxDeviationBps) public view {
-        // Upper bound excludes PM_BPS itself (100%) -- BLEUDEV-453 made that value rejected by
+        // Upper bound excludes PM_BPS itself (100%) -- that value is rejected by
         // build() (it made PortfolioManagerPricing.exactOut divide by zero).
         feeBps = uint32(bound(feeBps, PortfolioManagerArgsCodec.MIN_FEE_BPS, PortfolioManagerArgsCodec.PM_BPS - 1));
         uint256 n = bound(seed, PortfolioManagerArgsCodec.MIN_GROUPS, PortfolioManagerArgsCodec.MAX_GROUPS);
@@ -521,7 +521,7 @@ contract PortfolioManagerArgsCodecTest is Test {
         this._callBuild(groups, uint32(PortfolioManagerArgsCodec.PM_BPS + 1));
     }
 
-    /// @notice BLEUDEV-453: feeBps == PM_BPS (100%, not just above it) used to be allowed, making
+    /// @notice feeBps == PM_BPS (100%, not just above it) used to be allowed, making
     /// PortfolioManagerPricing.exactOut's WAD - feeWad divisor zero -- every exact-out swap
     /// against that strategy reverted with an opaque division-by-zero panic instead of this clear
     /// error, and exact-in silently returned zero output.

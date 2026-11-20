@@ -11,7 +11,7 @@ import {PortfolioManagerTokenRegistry} from "../src/utils/PortfolioManagerTokenR
 import {PortfolioManagerFeedRegistry} from "../src/utils/PortfolioManagerFeedRegistry.sol";
 import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 
-/// @notice BLEUDEV-453's regression test: a zero-address critical dependency passed to
+/// @notice A zero-address critical dependency passed to
 /// PortfolioManagerSwap's constructor (inherited by every PortfolioManagerRouter deployment) used
 /// to be stored without validation -- bricking swaps (or failing with an unrelated, unclear
 /// revert) in a way that can never be corrected afterward, since these are all immutables.
