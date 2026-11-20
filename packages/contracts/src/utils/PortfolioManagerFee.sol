@@ -13,14 +13,11 @@ library PortfolioManagerFee {
     /// @dev DAO treasury address disclosed in 1IP-103.
     address internal constant DAO_TREASURY_ADDRESS = 0x7951c7ef839e26F63DA87a42C9a87986507f1c07;
 
-    /// @dev Bleu treasury address. Bleu's 50% share of the protocol-fee cut sits outside 1IP-103,
-    /// agreed separately between Bleu and 1inch.
+    /// @dev Bleu/Trim treasury address. This fee is Bleu's own, computed independently of the
+    /// DAO's cut (not split from it) -- agreed separately between Bleu and 1inch, outside 1IP-103.
     address internal constant BLEU_TREASURY_ADDRESS = 0x5958599c16f6138f2B0fb65040ddEb639FCA5B9A;
 
-    /// @dev Implements 1IP-103's approximate 0.1225% tier boundary with a 1e9 scale.
-    uint32 internal constant TIER_THRESHOLD_BPS = 1_225_000;
-
-    /// @notice Returns one quarter of the LP fee at or below the threshold, or one sixth above it.
+    /// @notice Returns the DAO's share of the LP fee: a flat one sixth, per 1IP-103.
     /// @dev Integer division rounds down. Zero LP fee gives zero DAO fee.
     /// @dev `feePmBps` must already be PM_BPS-scaled (1e9 = 100%), not a 1e4-style bps value --
     ///      named to make that explicit. The only production caller (`PortfolioManagerSwap`)
@@ -28,6 +25,13 @@ library PortfolioManagerFee {
     ///      bounded to `[MIN_FEE_BPS, PM_BPS)` by `PortfolioManagerArgsCodec.build` -- this
     ///      function stays unbounded-input `pure` math, not a second place to repeat that check.
     function daoFeeBps(uint32 feePmBps) internal pure returns (uint32) {
-        return feePmBps <= TIER_THRESHOLD_BPS ? feePmBps / 4 : feePmBps / 6;
+        return feePmBps / 6;
+    }
+
+    /// @notice Returns Bleu/Trim's own share of the LP fee: a flat one tenth.
+    /// @dev Pulled independently of the DAO's cut, not split from it. Same unbounded-input,
+    ///      PM_BPS-scaled contract as `daoFeeBps` above.
+    function trimFeeBps(uint32 feePmBps) internal pure returns (uint32) {
+        return feePmBps / 10;
     }
 }

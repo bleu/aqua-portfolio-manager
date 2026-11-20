@@ -32,16 +32,11 @@ contract PortfolioManagerOpcodesTest is Test {
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
     uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
 
-    /// @dev PortfolioManagerArgsCodec.MIN_FEE_BPS's own floor (0.5%) sits above
-    ///      PortfolioManagerFee.TIER_THRESHOLD_BPS (0.1225%), so no strategy built through the
-    ///      real encode/decode path can land in the DAO fee's low (/4) tier anymore -- only the
-    ///      high (/6) tier is reachable. Kept the name (most uses here just need "a baseline
-    ///      valid fee", not the tier math itself) but the value is now the floor, not 2bps.
-    ///      test_DaoFeeBpsLowTierMathStillComputesQuarter below tests the /4 branch directly
-    ///      against the library instead, since no order can reach it here anymore.
+    /// @dev Two distinct valid feeBps values used across tests below (both DAO's 1/6 and Trim's
+    ///      1/10 are flat rates now, no tiering) -- LOW_TIER_FEE_BPS is PortfolioManagerArgsCodec's
+    ///      own MIN_FEE_BPS floor, HIGH_TIER_FEE_BPS a larger value, kept distinct so tests
+    ///      comparing "a larger LP fee" against "a smaller one" have two real values to compare.
     uint32 internal constant LOW_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%, the floor
-    /// @dev Above the threshold — 1/6 tier. Distinct from LOW_TIER_FEE_BPS now that both must
-    ///      clear the 0.5% floor.
     uint32 internal constant HIGH_TIER_FEE_BPS = 1e9 / 100; // 1%
 
     Aqua internal aqua;
@@ -240,8 +235,13 @@ contract PortfolioManagerOpcodesTest is Test {
         return taker.swap(order, address(tokenA), address(tokenB), amountOut, takerData);
     }
 
-    /// @dev Compute expected exact-out fees from the curve input and DAO rate.
-    function _expectedExactOutDaoAmount(uint32 lpFeeBps, uint256 amountOut) internal view returns (uint256) {
+    /// @dev Compute expected exact-out DAO and Trim fees from the curve input, mirroring
+    ///      PortfolioManagerSwap._priceExactOut's own independent two-cut formula.
+    function _expectedExactOutFees(uint32 lpFeeBps, uint256 amountOut)
+        internal
+        view
+        returns (uint256 daoAmount, uint256 trimAmount)
+    {
         PortfolioManagerPricing.PoolState memory quote = PortfolioManagerPricing.PoolState({
             balanceIn: INITIAL_BALANCE,
             balanceOut: INITIAL_BALANCE,
@@ -251,19 +251,13 @@ contract PortfolioManagerOpcodesTest is Test {
         });
         uint256 cleanAmountIn = PortfolioManagerPricing.exactOut(quote, amountOut);
         uint32 daoBps = PortfolioManagerFee.daoFeeBps(lpFeeBps);
-        return cleanAmountIn * daoBps / (FEE_BPS_SCALE - daoBps);
+        uint32 trimBps = PortfolioManagerFee.trimFeeBps(lpFeeBps);
+        uint256 netBps = FEE_BPS_SCALE - daoBps - trimBps;
+        daoAmount = cleanAmountIn * daoBps / netBps;
+        trimAmount = cleanAmountIn * trimBps / netBps;
     }
 
     // ===== Tests =====
-
-    /// @dev PortfolioManagerArgsCodec.MIN_FEE_BPS (0.5%) sits above TIER_THRESHOLD_BPS (0.1225%),
-    ///      so no order built through the real encode/decode path can land in the /4 tier anymore
-    ///      -- tested as a direct library call instead of a full ship+swap, unlike its /6 sibling
-    ///      below, which a real order can still reach.
-    function test_DaoFeeBpsLowTierMathStillComputesQuarter() public pure {
-        uint32 belowThreshold = 0.1e9 / 100; // 0.1%, below TIER_THRESHOLD_BPS
-        assertEq(PortfolioManagerFee.daoFeeBps(belowThreshold), belowThreshold / 4);
-    }
 
     function test_ProtocolFeeLandsInDaoTreasuryAtHighTier() public {
         ISwapVM.Order memory order = _buildOrder(HIGH_TIER_FEE_BPS);
@@ -271,15 +265,14 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactIn(order, SWAP_AMOUNT);
 
-        uint256 expectedTotalFee = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 6) / FEE_BPS_SCALE;
-        uint256 expectedBleuAmount = expectedTotalFee / 2;
-        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
+        uint256 expectedDaoAmount = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 6) / FEE_BPS_SCALE;
+        uint256 expectedBleuAmount = SWAP_AMOUNT * (HIGH_TIER_FEE_BPS / 10) / FEE_BPS_SCALE;
         uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
         uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/6-tier formula");
-        assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/6-tier formula");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the flat 1/6 formula");
+        assertEq(bleuAmount, expectedBleuAmount, "Bleu amount must match the flat 1/10 formula, computed independently of the DAO's cut");
     }
 
     /// @dev A zero LP fee used to be allowed (BLEUDEV-327: "genuinely LP-optional") and this test
@@ -328,16 +321,14 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactOut(order, SWAP_AMOUNT);
 
-        uint256 expectedTotalFee = _expectedExactOutDaoAmount(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
-        uint256 expectedBleuAmount = expectedTotalFee / 2;
-        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
+        (uint256 expectedDaoAmount, uint256 expectedBleuAmount) = _expectedExactOutFees(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
         uint256 daoAmount = tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
         uint256 bleuAmount = tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
-        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match half of the 1/6-tier exact-out formula");
+        assertEq(daoAmount, expectedDaoAmount, "DAO amount must match the flat 1/6 exact-out formula");
         assertEq(
-            bleuAmount, expectedBleuAmount, "Bleu amount must match the other half of the 1/6-tier exact-out formula"
+            bleuAmount, expectedBleuAmount, "Bleu amount must match the flat 1/10 exact-out formula, computed independently of the DAO's cut"
         );
     }
 
@@ -591,18 +582,17 @@ contract PortfolioManagerOpcodesTest is Test {
 
         _swapExactIn(order, SWAP_AMOUNT);
 
-        uint256 expectedTotalFee = SWAP_AMOUNT * PortfolioManagerFee.daoFeeBps(LOW_TIER_FEE_BPS) / FEE_BPS_SCALE;
-        uint256 expectedBleuAmount = expectedTotalFee / 2;
-        uint256 expectedDaoAmount = expectedTotalFee - expectedBleuAmount;
+        uint256 expectedDaoAmount = SWAP_AMOUNT * PortfolioManagerFee.daoFeeBps(LOW_TIER_FEE_BPS) / FEE_BPS_SCALE;
+        uint256 expectedBleuAmount = SWAP_AMOUNT * PortfolioManagerFee.trimFeeBps(LOW_TIER_FEE_BPS) / FEE_BPS_SCALE;
         assertEq(
             tokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS),
             expectedDaoAmount,
-            "the DAO still gets its half even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
+            "the DAO still gets its 1/6 even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
         );
         assertEq(
             tokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS),
             expectedBleuAmount,
-            "Bleu still gets its half even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
+            "Bleu still gets its 1/10 even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
         );
     }
 }

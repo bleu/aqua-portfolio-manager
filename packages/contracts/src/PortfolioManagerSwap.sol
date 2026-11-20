@@ -95,14 +95,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         ) = _buildQuote(groups[groupInIdx], memberInIdx, groups[groupOutIdx], memberOutIdx, ctx.query.maker, feeBps);
 
         uint256 daoAmount;
+        uint256 trimAmount;
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, PortfolioManagerSwapRecomputeDetected());
-            (ctx.swap.amountOut, daoAmount) = _priceExactIn(
+            (ctx.swap.amountOut, daoAmount, trimAmount) = _priceExactIn(
                 quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountIn, feeBps, maxDeviationBps
             );
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
-            (ctx.swap.amountIn, daoAmount) = _priceExactOut(
+            (ctx.swap.amountIn, daoAmount, trimAmount) = _priceExactOut(
                 quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountOut, feeBps, maxDeviationBps
             );
         }
@@ -123,27 +124,25 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         );
 
         // Preserve swap availability when fee collection fails, matching Fee.sol (OpenZeppelin M-09, Theori #10).
-        // Quotes skip the transfer. The protocol-fee cut splits 50/50 between the DAO and Bleu
-        // (agreed separately between Bleu and 1inch, outside 1IP-103); each half is pulled
-        // independently so one recipient's failure never blocks the other or the swap. The DAO
-        // gets the extra unit on an odd split.
-        if (daoAmount != 0 && !ctx.vm.isStaticContext) {
-            uint256 bleuAmount = daoAmount / 2;
-            uint256 daoShare = daoAmount - bleuAmount;
-
-            address daoRecipient = PortfolioManagerFee.DAO_TREASURY_ADDRESS;
-            try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoShare, daoRecipient) {
-                ctx.swap.amountNetPulled += daoShare;
-            } catch {
-                emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, daoRecipient, daoShare);
+        // Quotes skip the transfer. The DAO's 1/6 cut and Bleu/Trim's own 1/10 cut are computed
+        // independently of each other (not split from one combined amount) and pulled
+        // independently, so one recipient's failure never blocks the other or the swap.
+        if (!ctx.vm.isStaticContext) {
+            if (daoAmount != 0) {
+                address daoRecipient = PortfolioManagerFee.DAO_TREASURY_ADDRESS;
+                try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoAmount, daoRecipient) {
+                    ctx.swap.amountNetPulled += daoAmount;
+                } catch {
+                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, daoRecipient, daoAmount);
+                }
             }
 
-            if (bleuAmount != 0) {
-                address bleuRecipient = PortfolioManagerFee.BLEU_TREASURY_ADDRESS;
-                try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, bleuAmount, bleuRecipient) {
-                    ctx.swap.amountNetPulled += bleuAmount;
+            if (trimAmount != 0) {
+                address trimRecipient = PortfolioManagerFee.BLEU_TREASURY_ADDRESS;
+                try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, trimAmount, trimRecipient) {
+                    ctx.swap.amountNetPulled += trimAmount;
                 } catch {
-                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, bleuRecipient, bleuAmount);
+                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, trimRecipient, trimAmount);
                 }
             }
         }
@@ -202,16 +201,18 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 fullAmountIn,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private pure returns (uint256 amountOut, uint256 daoAmount) {
+    ) private pure returns (uint256 amountOut, uint256 daoAmount, uint256 trimAmount) {
         uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
         uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
-        // Price after the DAO cut; the caller keeps the full input for SwapVM settlement.
+        // Price after both cuts; the caller keeps the full input for SwapVM settlement.
         uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
+        uint32 trimBps = PortfolioManagerFee.trimFeeBps(feeBps);
         daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
-        uint256 netAmountIn = fullAmountIn - daoAmount;
+        trimAmount = FixedPointMath.mulDivDown(fullAmountIn, trimBps, FEE_BPS);
+        uint256 netAmountIn = fullAmountIn - daoAmount - trimAmount;
 
         uint256 curveAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
         uint256 curveAmountOutValueWad = PortfolioManagerPricing.exactIn(quote, curveAmountInValueWad);
@@ -233,13 +234,13 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 amountOut,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private pure returns (uint256 amountIn, uint256 daoAmount) {
+    ) private pure returns (uint256 amountIn, uint256 daoAmount, uint256 trimAmount) {
         uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
         uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
-        // The curve includes the LP fee. Add the DAO fee to its required input.
+        // The curve includes the LP fee. Add both independent cuts to its required input.
         uint256 curveAmountOutValueWad = FixedPointMath.mulDivUp(amountOut, tokenOutPriceWad, tokenOutUnit);
         uint256 curveAmountInValueWad = PortfolioManagerPricing.exactOut(quote, curveAmountOutValueWad);
         if (maxDeviationBps != 0) {
@@ -247,8 +248,11 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         }
         uint256 cleanAmountIn = FixedPointMath.mulDivUp(curveAmountInValueWad, tokenInUnit, tokenInPriceWad);
         uint32 daoBps = PortfolioManagerFee.daoFeeBps(feeBps);
-        daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, FEE_BPS - daoBps);
-        amountIn = cleanAmountIn + daoAmount;
+        uint32 trimBps = PortfolioManagerFee.trimFeeBps(feeBps);
+        uint256 netBps = FEE_BPS - daoBps - trimBps;
+        daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, netBps);
+        trimAmount = FixedPointMath.mulDivDown(cleanAmountIn, trimBps, netBps);
+        amountIn = cleanAmountIn + daoAmount + trimAmount;
     }
 
     /// @dev ADR-0016: caps how far this trade itself moves the pair, not the pair's starting

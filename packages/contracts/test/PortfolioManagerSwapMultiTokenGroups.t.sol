@@ -127,9 +127,12 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         pure
         returns (uint256)
     {
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
+        uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feePmBps);
+        uint32 trimBps = PortfolioManagerFee.trimFeeBps(feePmBps);
         uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount);
+        uint256 trimAmount = fullAmountIn * trimBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount - trimAmount);
     }
 
     /// @dev Mirrors _requireWithinDeviationStep's own post-trade spotPrice computation, including
@@ -141,9 +144,12 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         pure
         returns (uint256)
     {
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
+        uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
+        uint32 daoBps = PortfolioManagerFee.daoFeeBps(feePmBps);
+        uint32 trimBps = PortfolioManagerFee.trimFeeBps(feePmBps);
         uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        uint256 netAmountIn = fullAmountIn - daoAmount;
+        uint256 trimAmount = fullAmountIn * trimBps / 1e9;
+        uint256 netAmountIn = fullAmountIn - daoAmount - trimAmount;
         uint256 curveAmountOut = PortfolioManagerPricing.exactIn(quote, netAmountIn);
         PortfolioManagerPricing.PoolState memory postQuote = PortfolioManagerPricing.PoolState({
             balanceIn: quote.balanceIn + netAmountIn,
