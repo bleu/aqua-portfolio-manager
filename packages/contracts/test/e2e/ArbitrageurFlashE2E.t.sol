@@ -61,6 +61,12 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     /// @dev USDC on Base — https://basescan.org/token/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913
     address internal constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
+    /// @dev Both DAO and Trim launch at the same rate, 1/6 (~16.67%), per the business decision
+    ///      recorded on BLEUDEV-457.
+    uint32 internal constant FEE_RATE_BPS = 166_666_667;
+    address internal constant DAO_TREASURY_TEST = address(0xDA0);
+    address internal constant TRIM_TREASURY_TEST = address(0x7121);
+
     /// @dev Chainlink ETH/USD on Base — https://basescan.org/address/0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70
     address internal constant ETH_USD_FEED_BASE = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
     /// @dev Chainlink BTC/USD on Base — https://basescan.org/address/0x64c911996d3c6ac71f9b455b1e8e7266bcbd848f
@@ -130,7 +136,11 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             address(strategyValidator),
             SEQUENCER_UPTIME_FEED_MAINNET,
             address(tokenRegistry),
-            address(feedRegistry)
+            address(feedRegistry),
+            DAO_TREASURY_TEST,
+            TRIM_TREASURY_TEST,
+            FEE_RATE_BPS,
+            FEE_RATE_BPS
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(3); // distinct salt nonce from the other E2E fixtures' Safes

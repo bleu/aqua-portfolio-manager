@@ -30,12 +30,17 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             address(new PortfolioManagerStrategyValidator(sequencerUptimeFeed, tokenRegistry, feedRegistry));
     }
 
+    address internal daoTreasury = address(0xDA0);
+    address internal trimTreasury = address(0x7121);
+
     function _deploy(
         address aqua_,
         address strategyValidator_,
         address sequencerUptimeFeed_,
         address tokenRegistry_,
-        address feedRegistry_
+        address feedRegistry_,
+        address daoTreasury_,
+        address trimTreasury_
     ) internal returns (PortfolioManagerRouter) {
         return new PortfolioManagerRouter(
             aqua_,
@@ -46,36 +51,52 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             strategyValidator_,
             sequencerUptimeFeed_,
             tokenRegistry_,
-            feedRegistry_
+            feedRegistry_,
+            daoTreasury_,
+            trimTreasury_,
+            166_666_667,
+            166_666_667
         );
     }
 
     function test_DeploysSuccessfullyWithAllRealDependencies() public {
-        _deploy(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry);
+        _deploy(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry, daoTreasury, trimTreasury);
     }
 
     function test_RevertsOnZeroAddressAqua() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        _deploy(address(0), strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry);
+        _deploy(
+            address(0), strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry, daoTreasury, trimTreasury
+        );
     }
 
     function test_RevertsOnZeroAddressStrategyValidator() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        _deploy(aqua, address(0), sequencerUptimeFeed, tokenRegistry, feedRegistry);
+        _deploy(aqua, address(0), sequencerUptimeFeed, tokenRegistry, feedRegistry, daoTreasury, trimTreasury);
     }
 
     function test_RevertsOnZeroAddressSequencerUptimeFeed() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        _deploy(aqua, strategyValidator, address(0), tokenRegistry, feedRegistry);
+        _deploy(aqua, strategyValidator, address(0), tokenRegistry, feedRegistry, daoTreasury, trimTreasury);
     }
 
     function test_RevertsOnZeroAddressTokenRegistry() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        _deploy(aqua, strategyValidator, sequencerUptimeFeed, address(0), feedRegistry);
+        _deploy(aqua, strategyValidator, sequencerUptimeFeed, address(0), feedRegistry, daoTreasury, trimTreasury);
     }
 
     function test_RevertsOnZeroAddressFeedRegistry() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        _deploy(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, address(0));
+        _deploy(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, address(0), daoTreasury, trimTreasury);
+    }
+
+    function test_RevertsOnZeroAddressDaoTreasury() public {
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
+        _deploy(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry, address(0), trimTreasury);
+    }
+
+    function test_RevertsOnZeroAddressTrimTreasury() public {
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
+        _deploy(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry, daoTreasury, address(0));
     }
 }

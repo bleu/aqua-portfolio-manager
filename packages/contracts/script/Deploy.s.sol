@@ -38,6 +38,10 @@ contract Deploy is Script {
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
         address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
         address sequencerUptimeFeed = vm.parseJsonAddress(addresses, ".sequencerUptimeFeed");
+        address daoTreasury = vm.parseJsonAddress(addresses, ".daoTreasury");
+        address trimTreasury = vm.parseJsonAddress(addresses, ".trimTreasury");
+        uint32 daoFeeRateBps = uint32(vm.parseJsonUint(addresses, ".daoFeeRateBps"));
+        uint32 trimFeeRateBps = uint32(vm.parseJsonUint(addresses, ".trimFeeRateBps"));
 
         // Every verified Chainlink push feed on Base, read separately from base-mainnet.json --
         // see base-mainnet-feeds.json's own top comment for why these two files stay apart.
@@ -75,7 +79,11 @@ contract Deploy is Script {
             address(validator),
             sequencerUptimeFeed,
             address(tokenRegistry),
-            address(feedRegistry)
+            address(feedRegistry),
+            daoTreasury,
+            trimTreasury,
+            daoFeeRateBps,
+            trimFeeRateBps
         );
 
         vm.stopBroadcast();

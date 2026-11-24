@@ -6,7 +6,6 @@ pragma solidity 0.8.30;
 import {Vm} from "forge-std/Vm.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {Fee} from "swap-vm/instructions/Fee.sol";
-import {PortfolioManagerFee} from "../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice Insufficient fee authorization skips both the DAO and Bleu transfers independently,
@@ -22,20 +21,20 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
         // Fund the wallet but give neither the DAO nor the Bleu pull any tokenA ledger authorization.
         _fundAndShip(order, 0);
 
-        uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
-        uint256 bleuBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
+        uint256 daoBalanceBefore = pmTokenA.balanceOf(router.DAO_TREASURY());
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.TRIM_TREASURY());
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "swap still completes even though both fee pulls were skipped");
 
         assertEq(
-            pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS),
+            pmTokenA.balanceOf(router.DAO_TREASURY()),
             daoBalanceBefore,
             "DAO Treasury balance must be unchanged when its pull is skipped"
         );
         assertEq(
-            pmTokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS),
+            pmTokenA.balanceOf(router.TRIM_TREASURY()),
             bleuBalanceBefore,
             "Bleu Treasury balance must be unchanged when its pull is skipped"
         );
@@ -49,9 +48,9 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 assertEq(token, address(pmTokenA));
                 assertGt(skippedAmount, 0);
-                if (to == PortfolioManagerFee.DAO_TREASURY_ADDRESS) {
+                if (to == router.DAO_TREASURY()) {
                     daoSkipped++;
-                } else if (to == PortfolioManagerFee.BLEU_TREASURY_ADDRESS) {
+                } else if (to == router.TRIM_TREASURY()) {
                     bleuSkipped++;
                 }
             }

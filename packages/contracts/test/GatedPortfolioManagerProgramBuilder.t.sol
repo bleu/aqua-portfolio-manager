@@ -29,6 +29,9 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint256 internal constant SWAP_AMOUNT = 1_000e18;
     uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
+    address internal constant DAO_TREASURY_TEST = address(0xDA0);
+    address internal constant TRIM_TREASURY_TEST = address(0x7121);
+    uint32 internal constant FEE_RATE_BPS = 166_666_667;
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
@@ -68,7 +71,11 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
             address(strategyValidator),
             address(sequencerFeed),
             address(tokenRegistry),
-            address(feedRegistry)
+            address(feedRegistry),
+            DAO_TREASURY_TEST,
+            TRIM_TREASURY_TEST,
+            FEE_RATE_BPS,
+            FEE_RATE_BPS
         );
 
         tokenA = new TokenMock("Token A", "TKA");

@@ -19,10 +19,24 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
         address strategyValidator,
         address sequencerUptimeFeed,
         address tokenRegistry,
-        address feedRegistry
+        address feedRegistry,
+        address daoTreasury,
+        address trimTreasury,
+        uint32 daoFeeRateBps,
+        uint32 trimFeeRateBps
     )
         SwapVM(aqua, weth, owner, name, version)
-        PortfolioManagerOpcodes(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry)
+        PortfolioManagerOpcodes(
+            aqua,
+            strategyValidator,
+            sequencerUptimeFeed,
+            tokenRegistry,
+            feedRegistry,
+            daoTreasury,
+            trimTreasury,
+            daoFeeRateBps,
+            trimFeeRateBps
+        )
     {}
 
     function _instructions()

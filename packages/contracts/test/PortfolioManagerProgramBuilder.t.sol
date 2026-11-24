@@ -39,13 +39,9 @@ contract PortfolioManagerProgramBuilderTest is Test {
         assertEq(actualArgs, expectedArgs, "args bytes must match PortfolioManagerArgsCodec's own output exactly");
     }
 
-    function test_DaoFeeBpsFlatRate() public pure {
-        assertEq(PortfolioManagerFee.daoFeeBps(0), 0, "zero LP fee yields zero protocol fee");
-        assertEq(PortfolioManagerFee.daoFeeBps(600_000), 100_000, "flat 1/6 of the LP fee");
-    }
-
-    function test_TrimFeeBpsFlatRate() public pure {
-        assertEq(PortfolioManagerFee.trimFeeBps(0), 0, "zero LP fee yields zero Trim fee");
-        assertEq(PortfolioManagerFee.trimFeeBps(1_000_000), 100_000, "flat 1/10 of the LP fee");
+    function test_ShareBpsAppliesTheGivenRate() public pure {
+        assertEq(PortfolioManagerFee.shareBps(0, 166_666_667), 0, "zero LP fee yields zero share");
+        assertEq(PortfolioManagerFee.shareBps(600_000, 166_666_667), 100_000, "~1/6 of the LP fee, rounded down");
+        assertEq(PortfolioManagerFee.shareBps(1_000_000, 0), 0, "zero rate yields zero share, e.g. an unlaunched fee");
     }
 }

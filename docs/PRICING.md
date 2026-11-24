@@ -64,13 +64,14 @@ Require `A_o < B_o`. Zero output requires zero input.
 ## Protocol fee
 
 Two fees are skimmed from the LP curve fee (`feeBps`), computed independently of each other, not split from one combined amount.
-[PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) derives both rates:
+Each fee's rate and recipient are set in `PortfolioManagerRouter`'s constructor and stored as `immutable`s -- not compiled constants -- so they can differ per deployment (including launching at 0% and raising it later via a new Router) and per chain (treasury addresses aren't assumed to match across chains).
+[PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) holds only the pure rate-application math; `PortfolioManagerSwap` holds the configured rates and recipients.
 
-- DAO fee: a flat one sixth of `feeBps`, to the 1inch DAO treasury.
-- Bleu/Trim fee: a flat one tenth of `feeBps`, to Bleu's own treasury. Agreed separately between Bleu and 1inch, outside 1IP-103.
+- DAO fee: to the 1inch DAO treasury. Launches at a flat one sixth of `feeBps`.
+- Bleu/Trim fee: to Bleu's own treasury, agreed separately between Bleu and 1inch outside 1IP-103. Launches at a flat one sixth of `feeBps` too, per the business decision recorded on BLEUDEV-457 (superseding an earlier 50/50-split arrangement and an earlier one-tenth figure).
 
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
-The DAO's 1/6 rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979).
+The DAO's launch rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979); 1/6 isn't exactly representable at `PM_BPS` scale, so the deployed rate (`166_666_667`) is rounded to the nearest unit, not an exact 1/6.
 
 For exact-in, the curve prices input after both cuts.
 For exact-out, the instruction adds both fees after computing the curve's required input.

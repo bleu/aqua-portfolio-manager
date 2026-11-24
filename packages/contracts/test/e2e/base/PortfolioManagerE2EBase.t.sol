@@ -35,9 +35,15 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     uint32 internal constant STABLE_MAX_STALENESS = 86400;
 
     /// @dev PortfolioManagerArgsCodec.MIN_FEE_BPS's own floor -- used here as "a baseline valid
-    ///      fee", not to exercise any tier math (the DAO's 1/6 and Bleu/Trim's 1/10 are both flat
-    ///      rates now, no tiering).
+    ///      fee", not to exercise any tier math (the DAO's and Bleu/Trim's rates are each a flat
+    ///      share of feeBps, configured at construction, no tiering).
     uint32 internal constant LOW_TIER_FEE_BPS = 0.5e9 / 100; // 0.5%, the floor
+
+    /// @dev Both DAO and Trim launch at the same rate, 1/6 (~16.67%), per the business decision
+    ///      recorded on BLEUDEV-457.
+    uint32 internal constant FEE_RATE_BPS = 166_666_667;
+    address internal constant DAO_TREASURY_TEST = address(0xDA0);
+    address internal constant TRIM_TREASURY_TEST = address(0x7121);
 
     /// @dev WETH predeploy address, standard across every OP-stack chain (Base included).
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
@@ -77,7 +83,11 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
             address(strategyValidator),
             SEQUENCER_UPTIME_FEED_MAINNET,
             address(tokenRegistry),
-            address(feedRegistry)
+            address(feedRegistry),
+            DAO_TREASURY_TEST,
+            TRIM_TREASURY_TEST,
+            FEE_RATE_BPS,
+            FEE_RATE_BPS
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(1); // distinct salt nonce from BasketScopeGuardE2E's/the multi-token fixture's Safes
