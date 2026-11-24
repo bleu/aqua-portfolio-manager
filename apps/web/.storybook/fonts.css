@@ -2,8 +2,10 @@
  * --font-unbounded CSS variable it injects onto <html> in app/layout.tsx) never exists here --
  * every font-display element silently fell back to the default sans stack in every story. Same
  * family/weights as app/layout.tsx's next/font config (400, 500), loaded the plain way instead. */
-@import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600&family=Inter:wght@400;500;600&family=Geist+Mono:wght@500&display=swap");
 
 :root {
   --font-unbounded: "Unbounded", sans-serif;
+  --font-inter: "Inter", sans-serif;
+  --font-geist-mono: "Geist Mono", monospace;
 }

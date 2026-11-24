@@ -46,6 +46,8 @@ const config: Config = {
         // everything else stays on the default sans stack (SF Pro where available via
         // -apple-system, already first in Tailwind's own default sans stack).
         display: ["var(--font-unbounded)"],
+        inter: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
+        "geist-mono": ["var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
     },
   },
