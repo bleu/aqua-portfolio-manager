@@ -20,8 +20,8 @@ export const SEQUENCER_UPTIME_FEED: string = raw.sequencerUptimeFeed;
 
 export const TOKENS: Token[] = Object.entries(raw.tokens).map(([symbol, t]) => ({ symbol, ...t }));
 
-/// Each proxy's `aggregator()` result as of 2026-09-28 (see apps/indexer/config.yaml's
-/// ChainlinkAggregator seed comment) -- covers EventHandlers.ts's AnswerUpdated handler for the
+/// Each proxy's `aggregator()` result as of 2026-09-28 (see apps/indexer/ponder.config.ts's
+/// CHAINLINK_SEED_AGGREGATORS comment) -- covers the indexer's own AnswerUpdated handler for the
 /// case where an aggregator's very first indexed event predates any ChainlinkAggregatorFeed row
 /// for it (nothing has ever pointed an AggregatorConfirmed at it yet, because it was already the
 /// live one at indexer setup).
