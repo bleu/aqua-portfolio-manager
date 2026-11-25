@@ -3,6 +3,8 @@ pragma solidity 0.8.30;
 
 /// @custom:license-url https://github.com/1inch/aqua/blob/main/LICENSES/Aqua-Source-1.1.txt
 
+import {FixedPointMath} from "./FixedPointMath.sol";
+
 /// @title PortfolioManagerFee
 /// @notice Pure math for applying a PM_BPS-scaled rate to the LP fee. Rates and recipients
 ///         themselves are no longer compiled into this library -- they're constructor-set
@@ -21,6 +23,6 @@ library PortfolioManagerFee {
     ///      `[MIN_FEE_BPS, PM_BPS)` by `PortfolioManagerArgsCodec.build` -- this function stays
     ///      unbounded-input `pure` math, not a second place to repeat that check.
     function shareBps(uint32 feePmBps, uint32 rateBps) internal pure returns (uint32) {
-        return uint32(uint256(feePmBps) * rateBps / PM_BPS);
+        return uint32(FixedPointMath.mulDivDown(feePmBps, rateBps, PM_BPS));
     }
 }
