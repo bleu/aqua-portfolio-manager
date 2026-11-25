@@ -44,6 +44,7 @@ contract PortfolioManagerOpcodesTest is Test {
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
     address internal constant DAO_TREASURY_TEST = address(0xDA0);
     address internal constant TRIM_TREASURY_TEST = address(0x7121);
+    address internal constant TRIM_OWNER_TEST = address(0x7120);
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
@@ -84,6 +85,7 @@ contract PortfolioManagerOpcodesTest is Test {
             address(feedRegistry),
             DAO_TREASURY_TEST,
             TRIM_TREASURY_TEST,
+            TRIM_OWNER_TEST,
             FEE_RATE_BPS,
             FEE_RATE_BPS
         );
@@ -279,7 +281,7 @@ contract PortfolioManagerOpcodesTest is Test {
             SWAP_AMOUNT * PortfolioManagerFee.shareBps(HIGH_TIER_FEE_BPS, FEE_RATE_BPS) / FEE_BPS_SCALE;
         uint256 expectedBleuAmount = expectedDaoAmount;
         uint256 daoAmount = tokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuAmount = tokenA.balanceOf(router.TRIM_TREASURY());
+        uint256 bleuAmount = tokenA.balanceOf(router.trimTreasury());
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
         assertEq(daoAmount, expectedDaoAmount, "DAO amount must match its configured rate");
@@ -308,7 +310,7 @@ contract PortfolioManagerOpcodesTest is Test {
         (uint256 amountIn,) = _swapExactIn(order, SWAP_AMOUNT);
         assertEq(amountIn, SWAP_AMOUNT, "swap still completes even though both fee pulls were skipped");
         assertEq(tokenA.balanceOf(router.DAO_TREASURY()), 0, "DAO gets nothing");
-        assertEq(tokenA.balanceOf(router.TRIM_TREASURY()), 0, "Bleu gets nothing");
+        assertEq(tokenA.balanceOf(router.trimTreasury()), 0, "Bleu gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 daoSkipped = 0;
@@ -321,7 +323,7 @@ contract PortfolioManagerOpcodesTest is Test {
                 assertGt(skippedAmount, 0);
                 if (to == router.DAO_TREASURY()) {
                     daoSkipped++;
-                } else if (to == router.TRIM_TREASURY()) {
+                } else if (to == router.trimTreasury()) {
                     bleuSkipped++;
                 }
             }
@@ -338,7 +340,7 @@ contract PortfolioManagerOpcodesTest is Test {
 
         (uint256 expectedDaoAmount, uint256 expectedBleuAmount) = _expectedExactOutFees(HIGH_TIER_FEE_BPS, SWAP_AMOUNT);
         uint256 daoAmount = tokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuAmount = tokenA.balanceOf(router.TRIM_TREASURY());
+        uint256 bleuAmount = tokenA.balanceOf(router.trimTreasury());
 
         assertGt(daoAmount, 0, "DAO must actually receive a fee");
         assertEq(daoAmount, expectedDaoAmount, "DAO amount must match its configured exact-out formula");
@@ -463,7 +465,7 @@ contract PortfolioManagerOpcodesTest is Test {
         (, uint256 amountOut) = _swapExactOut(order, SWAP_AMOUNT);
         assertEq(amountOut, SWAP_AMOUNT, "swap still completes even though both fee pulls were skipped");
         assertEq(tokenA.balanceOf(router.DAO_TREASURY()), 0, "DAO gets nothing");
-        assertEq(tokenA.balanceOf(router.TRIM_TREASURY()), 0, "Bleu gets nothing");
+        assertEq(tokenA.balanceOf(router.trimTreasury()), 0, "Bleu gets nothing");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 skippedEvents = 0;
@@ -608,7 +610,7 @@ contract PortfolioManagerOpcodesTest is Test {
             "the DAO still gets its cut even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
         );
         assertEq(
-            tokenA.balanceOf(router.TRIM_TREASURY()),
+            tokenA.balanceOf(router.trimTreasury()),
             expectedBleuAmount,
             "Bleu still gets its cut even though this order's program bytes were hand-packed, never built by PortfolioManagerProgramBuilder"
         );

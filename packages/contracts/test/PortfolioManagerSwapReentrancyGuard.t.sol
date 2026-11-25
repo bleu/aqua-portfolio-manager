@@ -98,6 +98,7 @@ contract PortfolioManagerSwapReentrancyGuardTest is Test {
     uint32 internal constant FEE_BPS = 1e9 / 100; // 1%
     address internal constant DAO_TREASURY_TEST = address(0xDA0);
     address internal constant TRIM_TREASURY_TEST = address(0x7121);
+    address internal constant TRIM_OWNER_TEST = address(0x7120);
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
 
     Aqua internal aqua;
@@ -137,6 +138,7 @@ contract PortfolioManagerSwapReentrancyGuardTest is Test {
             address(feedRegistry),
             DAO_TREASURY_TEST,
             TRIM_TREASURY_TEST,
+            TRIM_OWNER_TEST,
             FEE_RATE_BPS,
             FEE_RATE_BPS
         );

@@ -22,6 +22,7 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
         address feedRegistry,
         address daoTreasury,
         address trimTreasury,
+        address trimOwner,
         uint32 daoFeeRateBps,
         uint32 trimFeeRateBps
     )
@@ -34,6 +35,7 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
             feedRegistry,
             daoTreasury,
             trimTreasury,
+            trimOwner,
             daoFeeRateBps,
             trimFeeRateBps
         )

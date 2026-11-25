@@ -64,11 +64,12 @@ Require `A_o < B_o`. Zero output requires zero input.
 ## Protocol fee
 
 Two fees are skimmed from the LP curve fee (`feeBps`), computed independently of each other, not split from one combined amount.
-Each fee's rate and recipient are set in `PortfolioManagerRouter`'s constructor and stored as `immutable`s -- not compiled constants -- so they can differ per deployment (including launching at 0% and raising it later via a new Router) and per chain (treasury addresses aren't assumed to match across chains).
 [PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) holds only the pure rate-application math; `PortfolioManagerSwap` holds the configured rates and recipients.
 
-- DAO fee: to the 1inch DAO treasury. Launches at a flat one sixth of `feeBps`.
-- Bleu/Trim fee: to Bleu's own treasury, agreed separately between Bleu and 1inch outside 1IP-103. Launches at a flat one sixth of `feeBps` too, per the business decision recorded on BLEUDEV-457 (superseding an earlier 50/50-split arrangement and an earlier one-tenth figure).
+- **DAO fee**: to `DAO_TREASURY`, at `DAO_FEE_RATE_BPS`. Both set once in `PortfolioManagerRouter`'s constructor and stored `immutable` -- changing either needs a new Router deployment. No setter exists for either, matching 1inch Operations' own request that their fee stay outside Bleu's control. Launches at a flat one sixth of `feeBps`.
+- **Bleu/Trim fee**: to `trimTreasury`, at `trimFeeRateBps`. Both are ordinary mutable state, settable at any time by `TRIM_OWNER` (an address fixed at construction) via `setTrimTreasury`/`setTrimFeeRateBps` -- no new Router deployment needed. `setTrimFeeRateBps` rejects a rate at or above 100% as a sanity check. Launches at a flat one sixth of `feeBps` too, per the business decision recorded on BLEUDEV-457 (superseding an earlier 50/50-split arrangement and an earlier one-tenth figure).
+
+Both treasury addresses and both rates differ per deployment, not compiled constants -- including launching the DAO's side at 0% (a new Router) or Bleu/Trim's side at 0% (a `TRIM_OWNER` call), and treasury addresses that aren't assumed to match across chains.
 
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
 The DAO's launch rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979); 1/6 isn't exactly representable at `PM_BPS` scale, so the deployed rate (`166_666_667`) is rounded to the nearest unit, not an exact 1/6.

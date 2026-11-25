@@ -28,6 +28,7 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
         address feedRegistry,
         address daoTreasury,
         address trimTreasury,
+        address trimOwner,
         uint32 daoFeeRateBps,
         uint32 trimFeeRateBps
     )
@@ -39,6 +40,7 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
             feedRegistry,
             daoTreasury,
             trimTreasury,
+            trimOwner,
             daoFeeRateBps,
             trimFeeRateBps
         )

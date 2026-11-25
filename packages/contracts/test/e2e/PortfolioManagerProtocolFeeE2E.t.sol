@@ -21,7 +21,7 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
         _fundAndShip(order, INITIAL_BALANCE);
 
         uint256 daoBalanceBefore = pmTokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.TRIM_TREASURY());
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.trimTreasury());
 
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "taker pays the exact amount they specified");
@@ -31,7 +31,7 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
         uint256 expectedBleuAmount = expectedDaoAmount;
 
         uint256 daoBalanceAfter = pmTokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuBalanceAfter = pmTokenA.balanceOf(router.TRIM_TREASURY());
+        uint256 bleuBalanceAfter = pmTokenA.balanceOf(router.trimTreasury());
 
         assertGt(expectedDaoAmount, 0, "sanity: this fee/amount must produce a nonzero DAO fee");
         assertEq(

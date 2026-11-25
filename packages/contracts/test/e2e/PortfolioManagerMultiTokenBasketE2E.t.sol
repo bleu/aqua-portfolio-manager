@@ -40,6 +40,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
     address internal constant DAO_TREASURY_TEST = address(0xDA0);
     address internal constant TRIM_TREASURY_TEST = address(0x7121);
+    address internal constant TRIM_OWNER_TEST = address(0x7120);
     /// @dev WBTC on Base — https://basescan.org/token/0x1cea84203673764244e05693e42e6ace62be9ba5
     address internal constant WBTC_BASE = 0x1ceA84203673764244E05693e42E6Ace62bE9BA5;
     /// @dev DAI on Base — https://basescan.org/token/0x50c5725949a6f0c72e6c4a641f24049a917db0cb
@@ -118,6 +119,7 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             address(feedRegistry),
             DAO_TREASURY_TEST,
             TRIM_TREASURY_TEST,
+            TRIM_OWNER_TEST,
             FEE_RATE_BPS,
             FEE_RATE_BPS
         );

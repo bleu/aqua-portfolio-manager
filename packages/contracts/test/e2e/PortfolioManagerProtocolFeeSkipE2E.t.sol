@@ -22,7 +22,7 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
         _fundAndShip(order, 0);
 
         uint256 daoBalanceBefore = pmTokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.TRIM_TREASURY());
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.trimTreasury());
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
@@ -34,7 +34,7 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
             "DAO Treasury balance must be unchanged when its pull is skipped"
         );
         assertEq(
-            pmTokenA.balanceOf(router.TRIM_TREASURY()),
+            pmTokenA.balanceOf(router.trimTreasury()),
             bleuBalanceBefore,
             "Bleu Treasury balance must be unchanged when its pull is skipped"
         );
@@ -50,7 +50,7 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
                 assertGt(skippedAmount, 0);
                 if (to == router.DAO_TREASURY()) {
                     daoSkipped++;
-                } else if (to == router.TRIM_TREASURY()) {
+                } else if (to == router.trimTreasury()) {
                     bleuSkipped++;
                 }
             }

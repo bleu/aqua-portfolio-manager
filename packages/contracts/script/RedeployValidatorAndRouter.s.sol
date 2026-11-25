@@ -25,6 +25,7 @@ contract RedeployValidatorAndRouter is Script {
         address sequencerUptimeFeed = vm.parseJsonAddress(addresses, ".sequencerUptimeFeed");
         address daoTreasury = vm.parseJsonAddress(addresses, ".daoTreasury");
         address trimTreasury = vm.parseJsonAddress(addresses, ".trimTreasury");
+        address trimOwner = vm.parseJsonAddress(addresses, ".trimOwner");
         uint32 daoFeeRateBps = uint32(vm.parseJsonUint(addresses, ".daoFeeRateBps"));
         uint32 trimFeeRateBps = uint32(vm.parseJsonUint(addresses, ".trimFeeRateBps"));
 
@@ -52,6 +53,7 @@ contract RedeployValidatorAndRouter is Script {
             feedRegistry,
             daoTreasury,
             trimTreasury,
+            trimOwner,
             daoFeeRateBps,
             trimFeeRateBps
         );
