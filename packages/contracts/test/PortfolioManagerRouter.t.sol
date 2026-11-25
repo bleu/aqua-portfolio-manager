@@ -17,11 +17,11 @@ contract PortfolioManagerRouterTest is Test {
     address internal sequencerUptimeFeed = address(0x5EC000000000000000000000000000000000AD);
     address internal tokenRegistry = address(0x7071E000000000000000000000000000000000);
     address internal feedRegistry = address(0xFEEDBEEF00000000000000000000000000000);
-    address internal daoTreasury = address(0xDA00000000000000000000000000000000000);
-    address internal trimTreasury = address(0x7121000000000000000000000000000000000);
-    address internal trimOwner = address(0x7120000000000000000000000000000000000);
-    uint32 internal daoFeeRateBps = 166_666_667;
-    uint32 internal trimFeeRateBps = 166_666_667;
+    address internal protocolTreasury = address(0xDA00000000000000000000000000000000000);
+    address internal operatorTreasury = address(0x7121000000000000000000000000000000000);
+    address internal operator = address(0x7120000000000000000000000000000000000);
+    uint32 internal protocolFeeRateBps = 166_666_667;
+    uint32 internal operatorFeeRateBps = 166_666_667;
 
     function _deploy() internal returns (PortfolioManagerRouter) {
         return new PortfolioManagerRouter(
@@ -34,11 +34,11 @@ contract PortfolioManagerRouterTest is Test {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
-            trimOwner,
-            daoFeeRateBps,
-            trimFeeRateBps
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            protocolFeeRateBps,
+            operatorFeeRateBps
         );
     }
 
@@ -47,69 +47,83 @@ contract PortfolioManagerRouterTest is Test {
 
         assertEq(address(router.AQUA()), aqua, "AQUA must be the address passed to the constructor");
         assertEq(router.owner(), owner, "owner (Rescuable/Ownable) must be the address passed to the constructor");
-        assertEq(router.DAO_TREASURY(), daoTreasury, "DAO_TREASURY must be the address passed to the constructor");
-        assertEq(router.trimTreasury(), trimTreasury, "trimTreasury must be the address passed to the constructor");
-        assertEq(router.TRIM_OWNER(), trimOwner, "TRIM_OWNER must be the address passed to the constructor");
         assertEq(
-            router.DAO_FEE_RATE_BPS(), daoFeeRateBps, "DAO_FEE_RATE_BPS must be the rate passed to the constructor"
+            router.PROTOCOL_TREASURY(),
+            protocolTreasury,
+            "PROTOCOL_TREASURY must be the address passed to the constructor"
         );
-        assertEq(router.trimFeeRateBps(), trimFeeRateBps, "trimFeeRateBps must be the rate passed to the constructor");
+        assertEq(
+            router.operatorTreasury(),
+            operatorTreasury,
+            "operatorTreasury must be the address passed to the constructor"
+        );
+        assertEq(router.OPERATOR(), operator, "OPERATOR must be the address passed to the constructor");
+        assertEq(
+            router.PROTOCOL_FEE_RATE_BPS(),
+            protocolFeeRateBps,
+            "PROTOCOL_FEE_RATE_BPS must be the rate passed to the constructor"
+        );
+        assertEq(
+            router.operatorFeeRateBps(),
+            operatorFeeRateBps,
+            "operatorFeeRateBps must be the rate passed to the constructor"
+        );
     }
 
-    function test_TrimOwnerCanUpdateTrimTreasury() public {
+    function test_OperatorCanUpdateOperatorTreasury() public {
         PortfolioManagerRouter router = _deploy();
-        address newTrimTreasury = address(0xBEEF);
+        address newOperatorTreasury = address(0xBEEF);
 
-        vm.prank(trimOwner);
-        router.setTrimTreasury(newTrimTreasury);
+        vm.prank(operator);
+        router.setOperatorTreasury(newOperatorTreasury);
 
-        assertEq(router.trimTreasury(), newTrimTreasury);
+        assertEq(router.operatorTreasury(), newOperatorTreasury);
     }
 
-    function test_TrimOwnerCanUpdateTrimFeeRateBps() public {
+    function test_OperatorCanUpdateOperatorFeeRateBps() public {
         PortfolioManagerRouter router = _deploy();
 
-        vm.prank(trimOwner);
-        router.setTrimFeeRateBps(0);
+        vm.prank(operator);
+        router.setOperatorFeeRateBps(0);
 
-        assertEq(router.trimFeeRateBps(), 0, "TRIM_OWNER can lower its own rate, including to zero");
+        assertEq(router.operatorFeeRateBps(), 0, "OPERATOR can lower its own rate, including to zero");
     }
 
-    function test_NonTrimOwnerCannotUpdateTrimTreasury() public {
+    function test_NonOperatorCannotUpdateOperatorTreasury() public {
         PortfolioManagerRouter router = _deploy();
 
-        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyTrimOwner.selector);
-        router.setTrimTreasury(address(0xBEEF));
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyOperator.selector);
+        router.setOperatorTreasury(address(0xBEEF));
     }
 
-    function test_NonTrimOwnerCannotUpdateTrimFeeRateBps() public {
+    function test_NonOperatorCannotUpdateOperatorFeeRateBps() public {
         PortfolioManagerRouter router = _deploy();
 
-        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyTrimOwner.selector);
-        router.setTrimFeeRateBps(0);
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyOperator.selector);
+        router.setOperatorFeeRateBps(0);
     }
 
-    function test_NotEvenDaoCanUpdateTrimConfig() public {
+    function test_NotEvenProtocolCanUpdateOperatorConfig() public {
         PortfolioManagerRouter router = _deploy();
 
-        vm.prank(daoTreasury);
-        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyTrimOwner.selector);
-        router.setTrimFeeRateBps(0);
+        vm.prank(protocolTreasury);
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyOperator.selector);
+        router.setOperatorFeeRateBps(0);
     }
 
-    function test_SetTrimTreasuryRevertsOnZeroAddress() public {
+    function test_SetOperatorTreasuryRevertsOnZeroAddress() public {
         PortfolioManagerRouter router = _deploy();
 
-        vm.prank(trimOwner);
+        vm.prank(operator);
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        router.setTrimTreasury(address(0));
+        router.setOperatorTreasury(address(0));
     }
 
-    function test_SetTrimFeeRateBpsRevertsAtOrAboveOneHundredPercent() public {
+    function test_SetOperatorFeeRateBpsRevertsAtOrAboveOneHundredPercent() public {
         PortfolioManagerRouter router = _deploy();
 
-        vm.prank(trimOwner);
+        vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapFeeRateTooHigh.selector, 1e9));
-        router.setTrimFeeRateBps(1e9);
+        router.setOperatorFeeRateBps(1e9);
     }
 }

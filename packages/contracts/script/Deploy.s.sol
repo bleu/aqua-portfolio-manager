@@ -38,11 +38,11 @@ contract Deploy is Script {
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
         address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
         address sequencerUptimeFeed = vm.parseJsonAddress(addresses, ".sequencerUptimeFeed");
-        address daoTreasury = vm.parseJsonAddress(addresses, ".daoTreasury");
-        address trimTreasury = vm.parseJsonAddress(addresses, ".trimTreasury");
-        address trimOwner = vm.parseJsonAddress(addresses, ".trimOwner");
-        uint32 daoFeeRateBps = uint32(vm.parseJsonUint(addresses, ".daoFeeRateBps"));
-        uint32 trimFeeRateBps = uint32(vm.parseJsonUint(addresses, ".trimFeeRateBps"));
+        address protocolTreasury = vm.parseJsonAddress(addresses, ".protocolTreasury");
+        address operatorTreasury = vm.parseJsonAddress(addresses, ".operatorTreasury");
+        address operator = vm.parseJsonAddress(addresses, ".operator");
+        uint32 protocolFeeRateBps = uint32(vm.parseJsonUint(addresses, ".protocolFeeRateBps"));
+        uint32 operatorFeeRateBps = uint32(vm.parseJsonUint(addresses, ".operatorFeeRateBps"));
 
         // Every verified Chainlink push feed on Base, read separately from base-mainnet.json --
         // see base-mainnet-feeds.json's own top comment for why these two files stay apart.
@@ -81,11 +81,11 @@ contract Deploy is Script {
             sequencerUptimeFeed,
             address(tokenRegistry),
             address(feedRegistry),
-            daoTreasury,
-            trimTreasury,
-            trimOwner,
-            daoFeeRateBps,
-            trimFeeRateBps
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            protocolFeeRateBps,
+            operatorFeeRateBps
         );
 
         vm.stopBroadcast();

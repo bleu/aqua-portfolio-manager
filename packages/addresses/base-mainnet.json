@@ -4,11 +4,11 @@
   "multiSendCallOnly": "0x9641d764fc13c8B624c04430C7356C1C7C8102e2",
   "maxStalenessSeconds": 43200,
   "sequencerUptimeFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
-  "daoTreasury": "0x7951c7ef839e26F63DA87a42C9a87986507f1c07",
-  "trimTreasury": "0x5958599c16f6138f2B0fb65040ddEb639FCA5B9A",
-  "trimOwner": "0x5958599c16f6138f2B0fb65040ddEb639FCA5B9A",
-  "daoFeeRateBps": 166666667,
-  "trimFeeRateBps": 166666667,
+  "protocolTreasury": "0x7951c7ef839e26F63DA87a42C9a87986507f1c07",
+  "operatorTreasury": "0x5958599c16f6138f2B0fb65040ddEb639FCA5B9A",
+  "operator": "0x5958599c16f6138f2B0fb65040ddEb639FCA5B9A",
+  "protocolFeeRateBps": 166666667,
+  "operatorFeeRateBps": 166666667,
   "tokens": {
     "WETH": {
       "address": "0x4200000000000000000000000000000000000006",

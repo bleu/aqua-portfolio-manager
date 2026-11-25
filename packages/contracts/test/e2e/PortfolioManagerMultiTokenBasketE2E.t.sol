@@ -38,9 +38,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     /// @dev Both DAO and Trim launch at the same rate, 1/6 (~16.67%), per the business decision
     ///      recorded on BLEUDEV-457.
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
-    address internal constant DAO_TREASURY_TEST = address(0xDA0);
-    address internal constant TRIM_TREASURY_TEST = address(0x7121);
-    address internal constant TRIM_OWNER_TEST = address(0x7120);
+    address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
+    address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
+    address internal constant OPERATOR_TEST = address(0x7120);
     /// @dev WBTC on Base — https://basescan.org/token/0x1cea84203673764244e05693e42e6ace62be9ba5
     address internal constant WBTC_BASE = 0x1ceA84203673764244E05693e42E6Ace62bE9BA5;
     /// @dev DAI on Base — https://basescan.org/token/0x50c5725949a6f0c72e6c4a641f24049a917db0cb
@@ -117,9 +117,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             SEQUENCER_UPTIME_FEED_MAINNET,
             address(tokenRegistry),
             address(feedRegistry),
-            DAO_TREASURY_TEST,
-            TRIM_TREASURY_TEST,
-            TRIM_OWNER_TEST,
+            PROTOCOL_TREASURY_TEST,
+            OPERATOR_TREASURY_TEST,
+            OPERATOR_TEST,
             FEE_RATE_BPS,
             FEE_RATE_BPS
         );
@@ -382,11 +382,11 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         returns (uint256)
     {
         uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
-        uint32 daoBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
-        uint32 trimBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
-        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        uint256 trimAmount = fullAmountIn * trimBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount - trimAmount);
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
+        uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount);
     }
 
     // ===== Tests =====

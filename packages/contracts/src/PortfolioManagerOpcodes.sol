@@ -26,11 +26,11 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
         address sequencerUptimeFeed,
         address tokenRegistry,
         address feedRegistry,
-        address daoTreasury,
-        address trimTreasury,
-        address trimOwner,
-        uint32 daoFeeRateBps,
-        uint32 trimFeeRateBps
+        address protocolTreasury,
+        address operatorTreasury,
+        address operator,
+        uint32 protocolFeeRateBps,
+        uint32 operatorFeeRateBps
     )
         PortfolioManagerSwap(
             aqua,
@@ -38,11 +38,11 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
-            trimOwner,
-            daoFeeRateBps,
-            trimFeeRateBps
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            protocolFeeRateBps,
+            operatorFeeRateBps
         )
     {}
 

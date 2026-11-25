@@ -64,9 +64,9 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     /// @dev Both DAO and Trim launch at the same rate, 1/6 (~16.67%), per the business decision
     ///      recorded on BLEUDEV-457.
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
-    address internal constant DAO_TREASURY_TEST = address(0xDA0);
-    address internal constant TRIM_TREASURY_TEST = address(0x7121);
-    address internal constant TRIM_OWNER_TEST = address(0x7120);
+    address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
+    address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
+    address internal constant OPERATOR_TEST = address(0x7120);
 
     /// @dev Chainlink ETH/USD on Base — https://basescan.org/address/0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70
     address internal constant ETH_USD_FEED_BASE = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
@@ -138,9 +138,9 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             SEQUENCER_UPTIME_FEED_MAINNET,
             address(tokenRegistry),
             address(feedRegistry),
-            DAO_TREASURY_TEST,
-            TRIM_TREASURY_TEST,
-            TRIM_OWNER_TEST,
+            PROTOCOL_TREASURY_TEST,
+            OPERATOR_TREASURY_TEST,
+            OPERATOR_TEST,
             FEE_RATE_BPS,
             FEE_RATE_BPS
         );

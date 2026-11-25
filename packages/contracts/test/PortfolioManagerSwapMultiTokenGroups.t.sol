@@ -28,9 +28,9 @@ import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
-    address internal constant DAO_TREASURY_TEST = address(0xDA0);
-    address internal constant TRIM_TREASURY_TEST = address(0x7121);
-    address internal constant TRIM_OWNER_TEST = address(0x7120);
+    address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
+    address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
+    address internal constant OPERATOR_TEST = address(0x7120);
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
 
     Aqua internal aqua;
@@ -74,9 +74,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             address(sequencerFeed),
             address(tokenRegistry),
             address(feedRegistry),
-            DAO_TREASURY_TEST,
-            TRIM_TREASURY_TEST,
-            TRIM_OWNER_TEST,
+            PROTOCOL_TREASURY_TEST,
+            OPERATOR_TREASURY_TEST,
+            OPERATOR_TEST,
             FEE_RATE_BPS,
             FEE_RATE_BPS
         );
@@ -137,11 +137,11 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         returns (uint256)
     {
         uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
-        uint32 daoBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
-        uint32 trimBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
-        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        uint256 trimAmount = fullAmountIn * trimBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount - trimAmount);
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
+        uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount);
     }
 
     /// @dev Mirrors _requireWithinDeviationStep's own post-trade spotPrice computation, including
@@ -154,11 +154,11 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         returns (uint256)
     {
         uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
-        uint32 daoBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
-        uint32 trimBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
-        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        uint256 trimAmount = fullAmountIn * trimBps / 1e9;
-        uint256 netAmountIn = fullAmountIn - daoAmount - trimAmount;
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
+        uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
+        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount;
         uint256 curveAmountOut = PortfolioManagerPricing.exactIn(quote, netAmountIn);
         PortfolioManagerPricing.PoolState memory postQuote = PortfolioManagerPricing.PoolState({
             balanceIn: quote.balanceIn + netAmountIn,

@@ -23,11 +23,11 @@ contract RedeployValidatorAndRouter is Script {
         address aqua = vm.parseJsonAddress(addresses, ".aqua");
         address weth = vm.parseJsonAddress(addresses, ".tokens.WETH.address");
         address sequencerUptimeFeed = vm.parseJsonAddress(addresses, ".sequencerUptimeFeed");
-        address daoTreasury = vm.parseJsonAddress(addresses, ".daoTreasury");
-        address trimTreasury = vm.parseJsonAddress(addresses, ".trimTreasury");
-        address trimOwner = vm.parseJsonAddress(addresses, ".trimOwner");
-        uint32 daoFeeRateBps = uint32(vm.parseJsonUint(addresses, ".daoFeeRateBps"));
-        uint32 trimFeeRateBps = uint32(vm.parseJsonUint(addresses, ".trimFeeRateBps"));
+        address protocolTreasury = vm.parseJsonAddress(addresses, ".protocolTreasury");
+        address operatorTreasury = vm.parseJsonAddress(addresses, ".operatorTreasury");
+        address operator = vm.parseJsonAddress(addresses, ".operator");
+        uint32 protocolFeeRateBps = uint32(vm.parseJsonUint(addresses, ".protocolFeeRateBps"));
+        uint32 operatorFeeRateBps = uint32(vm.parseJsonUint(addresses, ".operatorFeeRateBps"));
 
         // The already-deployed, already-populated registries from the original Deploy.s.sol run --
         // not read from a file, since nothing in this repo persists them outside the frontend's
@@ -51,11 +51,11 @@ contract RedeployValidatorAndRouter is Script {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
-            trimOwner,
-            daoFeeRateBps,
-            trimFeeRateBps
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            protocolFeeRateBps,
+            operatorFeeRateBps
         );
 
         vm.stopBroadcast();

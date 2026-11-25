@@ -20,11 +20,11 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
         address sequencerUptimeFeed,
         address tokenRegistry,
         address feedRegistry,
-        address daoTreasury,
-        address trimTreasury,
-        address trimOwner,
-        uint32 daoFeeRateBps,
-        uint32 trimFeeRateBps
+        address protocolTreasury,
+        address operatorTreasury,
+        address operator,
+        uint32 protocolFeeRateBps,
+        uint32 operatorFeeRateBps
     )
         SwapVM(aqua, weth, owner, name, version)
         PortfolioManagerOpcodes(
@@ -33,11 +33,11 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
-            trimOwner,
-            daoFeeRateBps,
-            trimFeeRateBps
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            protocolFeeRateBps,
+            operatorFeeRateBps
         )
     {}
 

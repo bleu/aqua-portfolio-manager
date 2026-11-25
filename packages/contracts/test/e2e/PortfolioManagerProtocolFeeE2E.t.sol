@@ -20,8 +20,8 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
         ISwapVM.Order memory order = _buildOrder(FEE_TEST_BPS);
         _fundAndShip(order, INITIAL_BALANCE);
 
-        uint256 daoBalanceBefore = pmTokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.trimTreasury());
+        uint256 protocolBalanceBefore = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.operatorTreasury());
 
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "taker pays the exact amount they specified");
@@ -30,12 +30,12 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
             TRADE_AMOUNT * PortfolioManagerFee.shareBps(FEE_TEST_BPS, FEE_RATE_BPS) / FEE_BPS_SCALE;
         uint256 expectedBleuAmount = expectedDaoAmount;
 
-        uint256 daoBalanceAfter = pmTokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuBalanceAfter = pmTokenA.balanceOf(router.trimTreasury());
+        uint256 protocolBalanceAfter = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
+        uint256 bleuBalanceAfter = pmTokenA.balanceOf(router.operatorTreasury());
 
         assertGt(expectedDaoAmount, 0, "sanity: this fee/amount must produce a nonzero DAO fee");
         assertEq(
-            daoBalanceAfter - daoBalanceBefore,
+            protocolBalanceAfter - protocolBalanceBefore,
             expectedDaoAmount,
             "the real DAO Treasury address must receive exactly its configured rate"
         );

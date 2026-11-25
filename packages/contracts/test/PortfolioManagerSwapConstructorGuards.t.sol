@@ -30,9 +30,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             address(new PortfolioManagerStrategyValidator(sequencerUptimeFeed, tokenRegistry, feedRegistry));
     }
 
-    address internal daoTreasury = address(0xDA0);
-    address internal trimTreasury = address(0x7121);
-    address internal trimOwner = address(0x7120);
+    address internal protocolTreasury = address(0xDA0);
+    address internal operatorTreasury = address(0x7121);
+    address internal operator = address(0x7120);
 
     function _deploy(
         address aqua_,
@@ -40,9 +40,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
         address sequencerUptimeFeed_,
         address tokenRegistry_,
         address feedRegistry_,
-        address daoTreasury_,
-        address trimTreasury_,
-        address trimOwner_
+        address protocolTreasury_,
+        address operatorTreasury_,
+        address operator_
     ) internal returns (PortfolioManagerRouter) {
         return new PortfolioManagerRouter(
             aqua_,
@@ -54,9 +54,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             sequencerUptimeFeed_,
             tokenRegistry_,
             feedRegistry_,
-            daoTreasury_,
-            trimTreasury_,
-            trimOwner_,
+            protocolTreasury_,
+            operatorTreasury_,
+            operator_,
             166_666_667,
             166_666_667
         );
@@ -69,9 +69,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
-            trimOwner
+            protocolTreasury,
+            operatorTreasury,
+            operator
         );
     }
 
@@ -83,28 +83,51 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
-            trimOwner
+            protocolTreasury,
+            operatorTreasury,
+            operator
         );
     }
 
     function test_RevertsOnZeroAddressStrategyValidator() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
         _deploy(
-            aqua, address(0), sequencerUptimeFeed, tokenRegistry, feedRegistry, daoTreasury, trimTreasury, trimOwner
+            aqua,
+            address(0),
+            sequencerUptimeFeed,
+            tokenRegistry,
+            feedRegistry,
+            protocolTreasury,
+            operatorTreasury,
+            operator
         );
     }
 
     function test_RevertsOnZeroAddressSequencerUptimeFeed() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
-        _deploy(aqua, strategyValidator, address(0), tokenRegistry, feedRegistry, daoTreasury, trimTreasury, trimOwner);
+        _deploy(
+            aqua,
+            strategyValidator,
+            address(0),
+            tokenRegistry,
+            feedRegistry,
+            protocolTreasury,
+            operatorTreasury,
+            operator
+        );
     }
 
     function test_RevertsOnZeroAddressTokenRegistry() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
         _deploy(
-            aqua, strategyValidator, sequencerUptimeFeed, address(0), feedRegistry, daoTreasury, trimTreasury, trimOwner
+            aqua,
+            strategyValidator,
+            sequencerUptimeFeed,
+            address(0),
+            feedRegistry,
+            protocolTreasury,
+            operatorTreasury,
+            operator
         );
     }
 
@@ -116,9 +139,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             sequencerUptimeFeed,
             tokenRegistry,
             address(0),
-            daoTreasury,
-            trimTreasury,
-            trimOwner
+            protocolTreasury,
+            operatorTreasury,
+            operator
         );
     }
 
@@ -131,12 +154,12 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             tokenRegistry,
             feedRegistry,
             address(0),
-            trimTreasury,
-            trimOwner
+            operatorTreasury,
+            operator
         );
     }
 
-    function test_RevertsOnZeroAddressTrimTreasury() public {
+    function test_RevertsOnZeroAddressOperatorTreasury() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
         _deploy(
             aqua,
@@ -144,13 +167,13 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
+            protocolTreasury,
             address(0),
-            trimOwner
+            operator
         );
     }
 
-    function test_RevertsOnZeroAddressTrimOwner() public {
+    function test_RevertsOnZeroAddressOperator() public {
         vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
         _deploy(
             aqua,
@@ -158,8 +181,8 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             sequencerUptimeFeed,
             tokenRegistry,
             feedRegistry,
-            daoTreasury,
-            trimTreasury,
+            protocolTreasury,
+            operatorTreasury,
             address(0)
         );
     }

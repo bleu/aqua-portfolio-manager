@@ -44,19 +44,19 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///         can differ per chain, and a key rotation needs a new Router either way. Only
     ///         1inch's governance can change this today, by deploying a new Router -- there is no
     ///         setter, matching Kene's ask that 1inch's own fee stay outside Bleu's control.
-    address public immutable DAO_TREASURY;
-    /// @notice DAO's share of the LP fee, PM_BPS-scaled (1e9 = 100%). Same reasoning as DAO_TREASURY.
-    uint32 public immutable DAO_FEE_RATE_BPS;
+    address public immutable PROTOCOL_TREASURY;
+    /// @notice DAO's share of the LP fee, PM_BPS-scaled (1e9 = 100%). Same reasoning as PROTOCOL_TREASURY.
+    uint32 public immutable PROTOCOL_FEE_RATE_BPS;
 
-    /// @notice The only address that may call `setTrimTreasury`/`setTrimFeeRateBps` below.
+    /// @notice The only address that may call `setOperatorTreasury`/`setOperatorFeeRateBps` below.
     ///         Set at construction; Bleu/Trim's own operational key.
-    address public immutable TRIM_OWNER;
-    /// @notice Bleu/Trim's own treasury for this deployment. Mutable by TRIM_OWNER, unlike
-    ///         DAO_TREASURY -- this is Bleu's own fee, independent of 1inch's.
-    address public trimTreasury;
-    /// @notice Bleu/Trim's own share of the LP fee, PM_BPS-scaled. Mutable by TRIM_OWNER, unlike
-    ///         DAO_FEE_RATE_BPS.
-    uint32 public trimFeeRateBps;
+    address public immutable OPERATOR;
+    /// @notice Bleu/Trim's own treasury for this deployment. Mutable by OPERATOR, unlike
+    ///         PROTOCOL_TREASURY -- this is Bleu's own fee, independent of 1inch's.
+    address public operatorTreasury;
+    /// @notice Bleu/Trim's own share of the LP fee, PM_BPS-scaled. Mutable by OPERATOR, unlike
+    ///         PROTOCOL_FEE_RATE_BPS.
+    uint32 public operatorFeeRateBps;
 
     constructor(
         address aqua,
@@ -64,50 +64,51 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         address sequencerUptimeFeed,
         address tokenRegistry,
         address feedRegistry,
-        address daoTreasury,
-        address trimTreasury_,
-        address trimOwner,
-        uint32 daoFeeRateBps,
-        uint32 trimFeeRateBps_
+        address protocolTreasury,
+        address operatorTreasury_,
+        address operator,
+        uint32 protocolFeeRateBps,
+        uint32 operatorFeeRateBps_
     ) Fee(aqua) {
         require(
             aqua != address(0) && strategyValidator != address(0) && sequencerUptimeFeed != address(0)
-                && tokenRegistry != address(0) && feedRegistry != address(0) && daoTreasury != address(0)
-                && trimTreasury_ != address(0) && trimOwner != address(0),
+                && tokenRegistry != address(0) && feedRegistry != address(0) && protocolTreasury != address(0)
+                && operatorTreasury_ != address(0) && operator != address(0),
             PortfolioManagerSwapZeroAddressDependency()
         );
         STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
         SEQUENCER_UPTIME_FEED = AggregatorV3Interface(sequencerUptimeFeed);
         TOKEN_REGISTRY = PortfolioManagerTokenRegistry(tokenRegistry);
         FEED_REGISTRY = PortfolioManagerFeedRegistry(feedRegistry);
-        DAO_TREASURY = daoTreasury;
-        DAO_FEE_RATE_BPS = daoFeeRateBps;
-        TRIM_OWNER = trimOwner;
-        trimTreasury = trimTreasury_;
-        trimFeeRateBps = trimFeeRateBps_;
+        PROTOCOL_TREASURY = protocolTreasury;
+        PROTOCOL_FEE_RATE_BPS = protocolFeeRateBps;
+        OPERATOR = operator;
+        operatorTreasury = operatorTreasury_;
+        operatorFeeRateBps = operatorFeeRateBps_;
     }
 
-    /// @notice Lets TRIM_OWNER redirect Bleu/Trim's own fee to a new treasury, without a new
-    ///         Router deployment. Does not affect DAO_TREASURY.
-    function setTrimTreasury(address newTrimTreasury) external {
-        require(msg.sender == TRIM_OWNER, PortfolioManagerSwapOnlyTrimOwner());
-        require(newTrimTreasury != address(0), PortfolioManagerSwapZeroAddressDependency());
-        emit TrimTreasuryUpdated(trimTreasury, newTrimTreasury);
-        trimTreasury = newTrimTreasury;
+    /// @notice Lets OPERATOR redirect Bleu/Trim's own fee to a new treasury, without a new
+    ///         Router deployment. Does not affect PROTOCOL_TREASURY.
+    function setOperatorTreasury(address newOperatorTreasury) external {
+        require(msg.sender == OPERATOR, PortfolioManagerSwapOnlyOperator());
+        require(newOperatorTreasury != address(0), PortfolioManagerSwapZeroAddressDependency());
+        emit OperatorTreasuryUpdated(operatorTreasury, newOperatorTreasury);
+        operatorTreasury = newOperatorTreasury;
     }
 
-    /// @notice Lets TRIM_OWNER change Bleu/Trim's own fee rate, without a new Router deployment.
-    ///         Does not affect DAO_FEE_RATE_BPS.
+    /// @notice Lets OPERATOR change Bleu/Trim's own fee rate, without a new Router deployment.
+    ///         Does not affect PROTOCOL_FEE_RATE_BPS.
     /// @dev Bounded below 100% as a sanity check against a fat-fingered rate -- does not by
-    ///      itself guarantee daoBps + trimBps stays below feeBps for every swap, since that also
+    ///      itself guarantee protocolBps + operatorBps stays below feeBps for every swap, since that also
     ///      depends on the DAO's independently-set rate and each swap's own feeBps.
-    function setTrimFeeRateBps(uint32 newTrimFeeRateBps) external {
-        require(msg.sender == TRIM_OWNER, PortfolioManagerSwapOnlyTrimOwner());
+    function setOperatorFeeRateBps(uint32 newOperatorFeeRateBps) external {
+        require(msg.sender == OPERATOR, PortfolioManagerSwapOnlyOperator());
         require(
-            newTrimFeeRateBps < PortfolioManagerArgsCodec.PM_BPS, PortfolioManagerSwapFeeRateTooHigh(newTrimFeeRateBps)
+            newOperatorFeeRateBps < PortfolioManagerArgsCodec.PM_BPS,
+            PortfolioManagerSwapFeeRateTooHigh(newOperatorFeeRateBps)
         );
-        emit TrimFeeRateUpdated(trimFeeRateBps, newTrimFeeRateBps);
-        trimFeeRateBps = newTrimFeeRateBps;
+        emit OperatorFeeRateUpdated(operatorFeeRateBps, newOperatorFeeRateBps);
+        operatorFeeRateBps = newOperatorFeeRateBps;
     }
 
     /// @param args Group configuration, LP fee, and deviation limit encoded by PortfolioManagerArgsCodec.
@@ -146,16 +147,16 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             uint256 tokenOutWalletBalance
         ) = _buildQuote(groups[groupInIdx], memberInIdx, groups[groupOutIdx], memberOutIdx, ctx.query.maker, feeBps);
 
-        uint256 daoAmount;
-        uint256 trimAmount;
+        uint256 protocolAmount;
+        uint256 operatorAmount;
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, PortfolioManagerSwapRecomputeDetected());
-            (ctx.swap.amountOut, daoAmount, trimAmount) = _priceExactIn(
+            (ctx.swap.amountOut, protocolAmount, operatorAmount) = _priceExactIn(
                 quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountIn, feeBps, maxDeviationBps
             );
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
-            (ctx.swap.amountIn, daoAmount, trimAmount) = _priceExactOut(
+            (ctx.swap.amountIn, protocolAmount, operatorAmount) = _priceExactOut(
                 quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountOut, feeBps, maxDeviationBps
             );
         }
@@ -180,19 +181,23 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         // independently of each other (not split from one combined amount) and pulled
         // independently, so one recipient's failure never blocks the other or the swap.
         if (!ctx.vm.isStaticContext) {
-            if (daoAmount != 0) {
-                try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, daoAmount, DAO_TREASURY) {
-                    ctx.swap.amountNetPulled += daoAmount;
+            if (protocolAmount != 0) {
+                try _AQUA.pull(
+                    ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, protocolAmount, PROTOCOL_TREASURY
+                ) {
+                    ctx.swap.amountNetPulled += protocolAmount;
                 } catch {
-                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, DAO_TREASURY, daoAmount);
+                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, PROTOCOL_TREASURY, protocolAmount);
                 }
             }
 
-            if (trimAmount != 0) {
-                try _AQUA.pull(ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, trimAmount, trimTreasury) {
-                    ctx.swap.amountNetPulled += trimAmount;
+            if (operatorAmount != 0) {
+                try _AQUA.pull(
+                    ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, operatorAmount, operatorTreasury
+                ) {
+                    ctx.swap.amountNetPulled += operatorAmount;
                 } catch {
-                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, trimTreasury, trimAmount);
+                    emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, operatorTreasury, operatorAmount);
                 }
             }
         }
@@ -251,18 +256,18 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 fullAmountIn,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private view returns (uint256 amountOut, uint256 daoAmount, uint256 trimAmount) {
+    ) private view returns (uint256 amountOut, uint256 protocolAmount, uint256 operatorAmount) {
         uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
         uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
         // Price after both cuts; the caller keeps the full input for SwapVM settlement.
-        uint32 daoBps = PortfolioManagerFee.shareBps(feeBps, DAO_FEE_RATE_BPS);
-        uint32 trimBps = PortfolioManagerFee.shareBps(feeBps, trimFeeRateBps);
-        daoAmount = FixedPointMath.mulDivDown(fullAmountIn, daoBps, FEE_BPS);
-        trimAmount = FixedPointMath.mulDivDown(fullAmountIn, trimBps, FEE_BPS);
-        uint256 netAmountIn = fullAmountIn - daoAmount - trimAmount;
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feeBps, PROTOCOL_FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feeBps, operatorFeeRateBps);
+        protocolAmount = FixedPointMath.mulDivDown(fullAmountIn, protocolBps, FEE_BPS);
+        operatorAmount = FixedPointMath.mulDivDown(fullAmountIn, operatorBps, FEE_BPS);
+        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount;
 
         uint256 curveAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
         uint256 curveAmountOutValueWad = PortfolioManagerPricing.exactIn(quote, curveAmountInValueWad);
@@ -284,7 +289,7 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 amountOut,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private view returns (uint256 amountIn, uint256 daoAmount, uint256 trimAmount) {
+    ) private view returns (uint256 amountIn, uint256 protocolAmount, uint256 operatorAmount) {
         uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
         uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
@@ -297,12 +302,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             _requireWithinDeviationStep(quote, curveAmountInValueWad, curveAmountOutValueWad, maxDeviationBps);
         }
         uint256 cleanAmountIn = FixedPointMath.mulDivUp(curveAmountInValueWad, tokenInUnit, tokenInPriceWad);
-        uint32 daoBps = PortfolioManagerFee.shareBps(feeBps, DAO_FEE_RATE_BPS);
-        uint32 trimBps = PortfolioManagerFee.shareBps(feeBps, trimFeeRateBps);
-        uint256 netBps = FEE_BPS - daoBps - trimBps;
-        daoAmount = FixedPointMath.mulDivDown(cleanAmountIn, daoBps, netBps);
-        trimAmount = FixedPointMath.mulDivDown(cleanAmountIn, trimBps, netBps);
-        amountIn = cleanAmountIn + daoAmount + trimAmount;
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feeBps, PROTOCOL_FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feeBps, operatorFeeRateBps);
+        uint256 netBps = FEE_BPS - protocolBps - operatorBps;
+        protocolAmount = FixedPointMath.mulDivDown(cleanAmountIn, protocolBps, netBps);
+        operatorAmount = FixedPointMath.mulDivDown(cleanAmountIn, operatorBps, netBps);
+        amountIn = cleanAmountIn + protocolAmount + operatorAmount;
     }
 
     /// @dev ADR-0016: caps how far this trade itself moves the pair, not the pair's starting

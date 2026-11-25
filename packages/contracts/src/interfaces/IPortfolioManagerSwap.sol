@@ -21,12 +21,12 @@ interface IPortfolioManagerSwap {
     /// @dev A zero-address critical dependency would brick swaps (or fail with an
     ///      unrelated, unclear revert) and, being immutable, can never be corrected post-deploy.
     error PortfolioManagerSwapZeroAddressDependency();
-    /// @dev Only TRIM_OWNER may update Bleu/Trim's own fee rate or treasury.
-    error PortfolioManagerSwapOnlyTrimOwner();
+    /// @dev Only OPERATOR may update Bleu/Trim's own fee rate or treasury.
+    error PortfolioManagerSwapOnlyOperator();
     /// @dev A fee rate at or above 100% (PM_BPS) is nonsensical regardless of how it combines
     ///      with the DAO's own rate.
     error PortfolioManagerSwapFeeRateTooHigh(uint32 rateBps);
 
-    event TrimTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
-    event TrimFeeRateUpdated(uint32 oldRateBps, uint32 newRateBps);
+    event OperatorTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event OperatorFeeRateUpdated(uint32 oldRateBps, uint32 newRateBps);
 }

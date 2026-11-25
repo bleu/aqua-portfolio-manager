@@ -21,26 +21,26 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
         // Fund the wallet but give neither the DAO nor the Bleu pull any tokenA ledger authorization.
         _fundAndShip(order, 0);
 
-        uint256 daoBalanceBefore = pmTokenA.balanceOf(router.DAO_TREASURY());
-        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.trimTreasury());
+        uint256 protocolBalanceBefore = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.operatorTreasury());
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "swap still completes even though both fee pulls were skipped");
 
         assertEq(
-            pmTokenA.balanceOf(router.DAO_TREASURY()),
-            daoBalanceBefore,
+            pmTokenA.balanceOf(router.PROTOCOL_TREASURY()),
+            protocolBalanceBefore,
             "DAO Treasury balance must be unchanged when its pull is skipped"
         );
         assertEq(
-            pmTokenA.balanceOf(router.trimTreasury()),
+            pmTokenA.balanceOf(router.operatorTreasury()),
             bleuBalanceBefore,
             "Bleu Treasury balance must be unchanged when its pull is skipped"
         );
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256 daoSkipped = 0;
+        uint256 protocolSkipped = 0;
         uint256 bleuSkipped = 0;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0 && logs[i].topics[0] == Fee.ProtocolFeeSkipped.selector) {
@@ -48,14 +48,14 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 assertEq(token, address(pmTokenA));
                 assertGt(skippedAmount, 0);
-                if (to == router.DAO_TREASURY()) {
-                    daoSkipped++;
-                } else if (to == router.trimTreasury()) {
+                if (to == router.PROTOCOL_TREASURY()) {
+                    protocolSkipped++;
+                } else if (to == router.operatorTreasury()) {
                     bleuSkipped++;
                 }
             }
         }
-        assertEq(daoSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's half");
+        assertEq(protocolSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's half");
         assertEq(bleuSkipped, 1, "exactly one ProtocolFeeSkipped for Bleu's half");
     }
 }
