@@ -3,7 +3,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AQUA, TOKENS } from "../src/index.js";
 
-// config.yaml and .env.example stay hand-maintained -- this only checks that every address
+// ponder.config.ts and .env.example stay hand-maintained -- this only checks that every address
 // base-mainnet.json knows about still appears somewhere in each file, catching drift without
 // owning their structure.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -21,7 +21,7 @@ function checkFile(relPath: string): string[] {
 
 let failed = false;
 for (const [relPath, expectAll] of [
-  ["apps/indexer/config.yaml", true],
+  ["apps/indexer/ponder.config.ts", true],
   ["apps/arbitrageur/.env.example", false], // only token/feed addresses -- not AQUA, multiSendCallOnly, or aggregators
 ] as const) {
   const missing = checkFile(relPath).filter((addr) =>
@@ -38,4 +38,4 @@ if (failed) {
   console.error("Update the file by hand to match, or update base-mainnet.json if the source itself is stale.");
   process.exit(1);
 }
-console.log("config.yaml and .env.example match packages/addresses/base-mainnet.json.");
+console.log("ponder.config.ts and .env.example match packages/addresses/base-mainnet.json.");
