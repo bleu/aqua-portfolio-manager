@@ -1,8 +1,8 @@
 # addresses
 
 Single source of truth for the Base mainnet addresses this repo used to hardcode independently in
-`packages/contracts/script/ShipTestStrategy.s.sol`, `apps/indexer/config.yaml`,
-`apps/indexer/src/EventHandlers.ts`, and `apps/arbitrageur/.env.example`.
+`packages/contracts/script/ShipTestStrategy.s.sol`, `apps/indexer/ponder.config.ts`,
+and `apps/arbitrageur/.env.example`.
 
 `base-mainnet.json` is the data. Nothing generates it, and nothing generates from it:
 
@@ -14,16 +14,16 @@ Single source of truth for the Base mainnet addresses this repo used to hardcode
   `vm.parseJsonAddress`, at script-run time. No Solidity file is generated or committed; editing
   `base-mainnet.json` is immediately reflected the next time either script runs. This needed one
   `fs_permissions` entry in `packages/contracts/foundry.toml` for the sibling directory.
-- `apps/indexer/config.yaml` and `apps/arbitrageur/.env.example` stay hand-maintained -- they're
-  Envio's own config format and a plain env file, not something worth owning the structure of for
-  ~15 addresses. `scripts/check-config-drift.ts` checks every address in `base-mainnet.json` still
-  appears in both files, and CI (`check-generated-addresses` in `.github/workflows/test.yml`) runs
-  it on every push.
+- `apps/indexer/ponder.config.ts` and `apps/arbitrageur/.env.example` stay hand-maintained -- a
+  Ponder config and a plain env file, not something worth owning the structure of for ~15
+  addresses. `scripts/check-config-drift.ts` checks every address in `base-mainnet.json` still
+  appears in both files, and CI (`check-addresses` in `.github/workflows/test.yml`) runs it on
+  every push.
 
 ## Updating an address
 
 1. Edit `base-mainnet.json`.
-2. Update the same address by hand in `apps/indexer/config.yaml` and, if it's a token or feed
+2. Update the same address by hand in `apps/indexer/ponder.config.ts` and, if it's a token or feed
    address, `apps/arbitrageur/.env.example`'s `ALLOWED_TOKENS`/`ALLOWED_FEEDS`.
 3. Run `pnpm --filter @aqua-portfolio-manager/addresses check-config-drift` to confirm.
 
