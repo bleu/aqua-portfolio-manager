@@ -77,9 +77,9 @@ jobs:
         run: pnpm --filter @aqua-portfolio-manager/addresses typecheck
 
       # Solidity reads base-mainnet.json live via vm.readFile -- nothing to regenerate there.
-      # config.yaml and .env.example stay hand-maintained; this only checks their addresses still
-      # match base-mainnet.json.
-      - name: Check config.yaml / .env.example address drift
+      # ponder.config.ts and .env.example stay hand-maintained; this only checks their addresses
+      # still match base-mainnet.json.
+      - name: Check ponder.config.ts / .env.example address drift
         run: pnpm --filter @aqua-portfolio-manager/addresses check-config-drift
 
   check-arbitrageur:
