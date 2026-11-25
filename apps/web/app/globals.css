@@ -11,3 +11,23 @@ body {
   background-attachment: fixed;
   color: #f3f4f6;
 }
+
+/* Landing page: the "How it works" card fades in when the step changes. */
+@keyframes landing-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.landing-fade {
+  animation: landing-fade 300ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-fade {
+    animation: none;
+  }
+}
