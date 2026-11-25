@@ -190,7 +190,8 @@ contract PortfolioManagerStrategyValidator is IPortfolioManagerStrategyValidator
                     feeWad: 0
                 });
                 uint256 sp = PortfolioManagerPricing.spotPrice(quote);
-                uint256 deviationBps = (sp > WAD ? sp - WAD : WAD - sp) * PortfolioManagerArgsCodec.PM_BPS / WAD;
+                uint256 deviationBps =
+                    FixedPointMath.mulDivDown(sp > WAD ? sp - WAD : WAD - sp, PortfolioManagerArgsCodec.PM_BPS, WAD);
                 require(
                     deviationBps <= maxDeviationBps,
                     PortfolioManagerStrategyValidatorExcessivePriceDeviation(i, j, sp, maxDeviationBps)

@@ -331,8 +331,9 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
             feeWad: quote.feeWad
         });
         uint256 spAfter = PortfolioManagerPricing.spotPrice(postQuote);
-        uint256 stepBps =
-            (spAfter > spBefore ? spAfter - spBefore : spBefore - spAfter) * PortfolioManagerArgsCodec.PM_BPS / WAD;
+        uint256 stepBps = FixedPointMath.mulDivDown(
+            spAfter > spBefore ? spAfter - spBefore : spBefore - spAfter, PortfolioManagerArgsCodec.PM_BPS, WAD
+        );
         require(stepBps <= maxDeviationBps, PortfolioManagerSwapExcessivePriceDeviation(spAfter, maxDeviationBps));
     }
 
