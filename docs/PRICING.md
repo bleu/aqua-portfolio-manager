@@ -63,21 +63,21 @@ Require `A_o < B_o`. Zero output requires zero input.
 
 ## Protocol fee
 
-The protocol fee goes to the 1inch DAO treasury. It is separate from the LP curve fee.
-[PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) derives its rate from `feeBps`:
+Two fees are skimmed from the LP curve fee (`feeBps`), computed independently of each other, not split from one combined amount.
+[PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) holds only the pure rate-application math; `PortfolioManagerSwap` holds the configured rates and recipients.
 
-- At or below `1_225_000`: divide by four.
-- Above `1_225_000`: divide by six.
+- **DAO fee**: to `PROTOCOL_TREASURY`, at `PROTOCOL_FEE_RATE_BPS`. Both set once in `PortfolioManagerRouter`'s constructor and stored `immutable` -- changing either needs a new Router deployment. No setter exists for either, matching 1inch Operations' own request that their fee stay outside Bleu's control. Launches at a flat one sixth of `feeBps`.
+- **Bleu/Trim fee**: to `operatorTreasury`, at `operatorFeeRateBps`. Both are ordinary mutable state, settable at any time by `OPERATOR` (an address fixed at construction) via `setOperatorTreasury`/`setOperatorFeeRateBps` -- no new Router deployment needed. `setOperatorFeeRateBps` rejects a rate at or above 100% as a sanity check. Launches at a flat one sixth of `feeBps` too, per the business decision recorded on BLEUDEV-457 (superseding an earlier 50/50-split arrangement and an earlier one-tenth figure).
+
+Both treasury addresses and both rates differ per deployment, not compiled constants -- including launching the DAO's side at 0% (a new Router) or Bleu/Trim's side at 0% (an `OPERATOR` call), and treasury addresses that aren't assumed to match across chains.
 
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
-The threshold implements 0.1225%, the approximate boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979).
-Pending: confirm the exact boundary against 1inch's deployed constant.
-Payment for Bleu's work as operator remains undecided and separate from the DAO fee.
+The DAO's launch rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979); 1/6 isn't exactly representable at `PM_BPS` scale, so the deployed rate (`166_666_667`) is rounded to the nearest unit, not an exact 1/6.
 
-For exact-in, the curve prices input after the DAO cut.
-For exact-out, the instruction adds the DAO fee after computing the curve's required input.
-The contract attempts the DAO transfer without requiring it to succeed. Failure emits `ProtocolFeeSkipped`, and the swap continues.
-Quotes compute the amounts but skip the transfer.
+For exact-in, the curve prices input after both cuts.
+For exact-out, the instruction adds both fees after computing the curve's required input.
+The contract attempts each transfer independently, without requiring it to succeed. A failed transfer emits `ProtocolFeeSkipped` for that recipient only, and the swap continues.
+Quotes compute the amounts but skip both transfers.
 
 ## Rounding and limits
 

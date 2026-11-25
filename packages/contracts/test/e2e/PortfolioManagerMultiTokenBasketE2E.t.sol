@@ -35,6 +35,12 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     uint256 internal constant STABLES_WEIGHT = 0.5e18;
 
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
+    /// @dev Both DAO and Trim launch at the same rate, 1/6 (~16.67%), per the business decision
+    ///      recorded on BLEUDEV-457.
+    uint32 internal constant FEE_RATE_BPS = 166_666_667;
+    address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
+    address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
+    address internal constant OPERATOR_TEST = address(0x7120);
     /// @dev WBTC on Base — https://basescan.org/token/0x1cea84203673764244e05693e42e6ace62be9ba5
     address internal constant WBTC_BASE = 0x1ceA84203673764244E05693e42E6Ace62bE9BA5;
     /// @dev DAI on Base — https://basescan.org/token/0x50c5725949a6f0c72e6c4a641f24049a917db0cb
@@ -110,7 +116,12 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             address(strategyValidator),
             SEQUENCER_UPTIME_FEED_MAINNET,
             address(tokenRegistry),
-            address(feedRegistry)
+            address(feedRegistry),
+            PROTOCOL_TREASURY_TEST,
+            OPERATOR_TREASURY_TEST,
+            OPERATOR_TEST,
+            FEE_RATE_BPS,
+            FEE_RATE_BPS
         );
         multiSendCallOnly = new MultiSendCallOnly();
         multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
@@ -361,17 +372,21 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return (feed == wethFeed || feed == wbtcFeed) ? MAJOR_MAX_STALENESS : STABLE_MAX_STALENESS;
     }
 
-    /// @dev The real swap path skims the DAO fee off the full native amountIn first, then feeds
-    ///      the remainder into the curve (which applies its own feeWad cut). Reference PoolStates
-    ///      built with feeWad: 0 only capture the curve's cut, so this replicates both stages.
+    /// @dev The real swap path skims the DAO and Trim fees off the full native amountIn first
+    ///      (independently of each other), then feeds the remainder into the curve (which applies
+    ///      its own feeWad cut). Reference PoolStates built with feeWad: 0 only capture the
+    ///      curve's cut, so this replicates all three stages.
     function _expectedAmountOutWithFees(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
         internal
         pure
         returns (uint256)
     {
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
-        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount);
+        uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
+        uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount);
     }
 
     // ===== Tests =====

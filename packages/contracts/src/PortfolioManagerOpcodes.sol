@@ -25,8 +25,26 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
         address strategyValidator,
         address sequencerUptimeFeed,
         address tokenRegistry,
-        address feedRegistry
-    ) PortfolioManagerSwap(aqua, strategyValidator, sequencerUptimeFeed, tokenRegistry, feedRegistry) {}
+        address feedRegistry,
+        address protocolTreasury,
+        address operatorTreasury,
+        address operator,
+        uint32 protocolFeeRateBps,
+        uint32 operatorFeeRateBps
+    )
+        PortfolioManagerSwap(
+            aqua,
+            strategyValidator,
+            sequencerUptimeFeed,
+            tokenRegistry,
+            feedRegistry,
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            protocolFeeRateBps,
+            operatorFeeRateBps
+        )
+    {}
 
     /// @dev Opcode 1 = resolver KYC gate (1inch Aqua access-control -- see
     ///      https://business.1inch.com/portal/documentation/aqua/liquidity-layer/access-resolvers-and-pathfinder),

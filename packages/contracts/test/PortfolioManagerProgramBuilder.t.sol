@@ -39,18 +39,9 @@ contract PortfolioManagerProgramBuilderTest is Test {
         assertEq(actualArgs, expectedArgs, "args bytes must match PortfolioManagerArgsCodec's own output exactly");
     }
 
-    function test_DaoFeeBpsTiering() public pure {
-        assertEq(PortfolioManagerFee.daoFeeBps(0), 0, "zero LP fee yields zero protocol fee");
-        assertEq(PortfolioManagerFee.daoFeeBps(200_000), 50_000, "1/4 of 2 bps, well under the threshold");
-        assertEq(
-            PortfolioManagerFee.daoFeeBps(PortfolioManagerFee.TIER_THRESHOLD_BPS),
-            PortfolioManagerFee.TIER_THRESHOLD_BPS / 4,
-            "the threshold itself is still low-tier (<=), per 1IP-103's own wording"
-        );
-        assertEq(
-            PortfolioManagerFee.daoFeeBps(PortfolioManagerFee.TIER_THRESHOLD_BPS + 1),
-            (PortfolioManagerFee.TIER_THRESHOLD_BPS + 1) / 6,
-            "one wei above the threshold is high-tier"
-        );
+    function test_ShareBpsAppliesTheGivenRate() public pure {
+        assertEq(PortfolioManagerFee.shareBps(0, 166_666_667), 0, "zero LP fee yields zero share");
+        assertEq(PortfolioManagerFee.shareBps(600_000, 166_666_667), 100_000, "~1/6 of the LP fee, rounded down");
+        assertEq(PortfolioManagerFee.shareBps(1_000_000, 0), 0, "zero rate yields zero share, e.g. an unlaunched fee");
     }
 }

@@ -6,7 +6,6 @@ pragma solidity 0.8.30;
 import {Vm} from "forge-std/Vm.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
 import {Fee} from "swap-vm/instructions/Fee.sol";
-import {PortfolioManagerFee} from "../../src/utils/PortfolioManagerFee.sol";
 import {PortfolioManagerE2EBase} from "./base/PortfolioManagerE2EBase.t.sol";
 
 /// @notice Insufficient fee authorization skips both the DAO and Bleu transfers independently,
@@ -22,26 +21,26 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
         // Fund the wallet but give neither the DAO nor the Bleu pull any tokenA ledger authorization.
         _fundAndShip(order, 0);
 
-        uint256 daoBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS);
-        uint256 bleuBalanceBefore = pmTokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS);
+        uint256 protocolBalanceBefore = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
+        uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.operatorTreasury());
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "swap still completes even though both fee pulls were skipped");
 
         assertEq(
-            pmTokenA.balanceOf(PortfolioManagerFee.DAO_TREASURY_ADDRESS),
-            daoBalanceBefore,
+            pmTokenA.balanceOf(router.PROTOCOL_TREASURY()),
+            protocolBalanceBefore,
             "DAO Treasury balance must be unchanged when its pull is skipped"
         );
         assertEq(
-            pmTokenA.balanceOf(PortfolioManagerFee.BLEU_TREASURY_ADDRESS),
+            pmTokenA.balanceOf(router.operatorTreasury()),
             bleuBalanceBefore,
             "Bleu Treasury balance must be unchanged when its pull is skipped"
         );
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        uint256 daoSkipped = 0;
+        uint256 protocolSkipped = 0;
         uint256 bleuSkipped = 0;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0 && logs[i].topics[0] == Fee.ProtocolFeeSkipped.selector) {
@@ -49,14 +48,14 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
                     abi.decode(logs[i].data, (bytes32, address, address, uint256));
                 assertEq(token, address(pmTokenA));
                 assertGt(skippedAmount, 0);
-                if (to == PortfolioManagerFee.DAO_TREASURY_ADDRESS) {
-                    daoSkipped++;
-                } else if (to == PortfolioManagerFee.BLEU_TREASURY_ADDRESS) {
+                if (to == router.PROTOCOL_TREASURY()) {
+                    protocolSkipped++;
+                } else if (to == router.operatorTreasury()) {
                     bleuSkipped++;
                 }
             }
         }
-        assertEq(daoSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's half");
+        assertEq(protocolSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's half");
         assertEq(bleuSkipped, 1, "exactly one ProtocolFeeSkipped for Bleu's half");
     }
 }

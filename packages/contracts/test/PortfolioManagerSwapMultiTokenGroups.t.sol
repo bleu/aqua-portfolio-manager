@@ -28,6 +28,10 @@ import {MockAggregatorV3} from "./OracleAdapter.t.sol";
 contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     uint256 internal constant INITIAL_BALANCE = 100_000e18;
     uint32 internal constant DEFAULT_MAX_STALENESS = 1 hours;
+    address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
+    address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
+    address internal constant OPERATOR_TEST = address(0x7120);
+    uint32 internal constant FEE_RATE_BPS = 166_666_667;
 
     Aqua internal aqua;
     PortfolioManagerRouter internal router;
@@ -69,7 +73,12 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             address(strategyValidator),
             address(sequencerFeed),
             address(tokenRegistry),
-            address(feedRegistry)
+            address(feedRegistry),
+            PROTOCOL_TREASURY_TEST,
+            OPERATOR_TREASURY_TEST,
+            OPERATOR_TEST,
+            FEE_RATE_BPS,
+            FEE_RATE_BPS
         );
 
         tokenA = new TokenMock("Token A", "TKA");
@@ -127,9 +136,12 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         pure
         returns (uint256)
     {
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
-        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - daoAmount);
+        uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
+        uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
+        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount);
     }
 
     /// @dev Mirrors _requireWithinDeviationStep's own post-trade spotPrice computation, including
@@ -141,9 +153,12 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         pure
         returns (uint256)
     {
-        uint32 daoBps = PortfolioManagerFee.daoFeeBps(uint32(quote.feeWad * 1e9 / 1e18));
-        uint256 daoAmount = fullAmountIn * daoBps / 1e9;
-        uint256 netAmountIn = fullAmountIn - daoAmount;
+        uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
+        uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
+        uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
+        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount;
         uint256 curveAmountOut = PortfolioManagerPricing.exactIn(quote, netAmountIn);
         PortfolioManagerPricing.PoolState memory postQuote = PortfolioManagerPricing.PoolState({
             balanceIn: quote.balanceIn + netAmountIn,
