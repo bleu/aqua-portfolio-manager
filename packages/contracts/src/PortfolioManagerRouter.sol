@@ -24,7 +24,10 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
         address operatorTreasury,
         address operator,
         uint32 protocolFeeRateBps,
-        uint32 operatorFeeRateBps
+        uint32 operatorFeeRateBps,
+        address revenueShareAdmin,
+        address revenueShareTreasury,
+        uint32 revenueShareRateBps
     )
         SwapVM(aqua, weth, owner, name, version)
         PortfolioManagerOpcodes(
@@ -37,7 +40,10 @@ contract PortfolioManagerRouter is Simulator, SwapVM, PortfolioManagerOpcodes {
             operatorTreasury,
             operator,
             protocolFeeRateBps,
-            operatorFeeRateBps
+            operatorFeeRateBps,
+            revenueShareAdmin,
+            revenueShareTreasury,
+            revenueShareRateBps
         )
     {}
 

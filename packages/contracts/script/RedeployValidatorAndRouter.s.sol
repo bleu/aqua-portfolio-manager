@@ -28,6 +28,9 @@ contract RedeployValidatorAndRouter is Script {
         address operator = vm.parseJsonAddress(addresses, ".operator");
         uint32 protocolFeeRateBps = uint32(vm.parseJsonUint(addresses, ".protocolFeeRateBps"));
         uint32 operatorFeeRateBps = uint32(vm.parseJsonUint(addresses, ".operatorFeeRateBps"));
+        address revenueShareAdmin = vm.parseJsonAddress(addresses, ".revenueShareAdmin");
+        address revenueShareTreasury = vm.parseJsonAddress(addresses, ".revenueShareTreasury");
+        uint32 revenueShareRateBps = uint32(vm.parseJsonUint(addresses, ".revenueShareRateBps"));
 
         // The already-deployed, already-populated registries from the original Deploy.s.sol run --
         // not read from a file, since nothing in this repo persists them outside the frontend's
@@ -55,7 +58,10 @@ contract RedeployValidatorAndRouter is Script {
             operatorTreasury,
             operator,
             protocolFeeRateBps,
-            operatorFeeRateBps
+            operatorFeeRateBps,
+            revenueShareAdmin,
+            revenueShareTreasury,
+            revenueShareRateBps
         );
 
         vm.stopBroadcast();

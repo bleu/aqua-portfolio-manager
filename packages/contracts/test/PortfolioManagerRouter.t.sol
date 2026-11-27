@@ -22,6 +22,9 @@ contract PortfolioManagerRouterTest is Test {
     address internal operator = address(0x7120000000000000000000000000000000000);
     uint32 internal protocolFeeRateBps = 166_666_667;
     uint32 internal operatorFeeRateBps = 166_666_667;
+    address internal revenueShareAdmin = address(0x7122000000000000000000000000000000000);
+    address internal revenueShareTreasury = address(0xDA20000000000000000000000000000000000);
+    uint32 internal revenueShareRateBps = 16_666_667;
 
     function _deploy() internal returns (PortfolioManagerRouter) {
         return new PortfolioManagerRouter(
@@ -38,7 +41,10 @@ contract PortfolioManagerRouterTest is Test {
             operatorTreasury,
             operator,
             protocolFeeRateBps,
-            operatorFeeRateBps
+            operatorFeeRateBps,
+            revenueShareAdmin,
+            revenueShareTreasury,
+            revenueShareRateBps
         );
     }
 
@@ -67,6 +73,21 @@ contract PortfolioManagerRouterTest is Test {
             router.operatorFeeRateBps(),
             operatorFeeRateBps,
             "operatorFeeRateBps must be the rate passed to the constructor"
+        );
+        assertEq(
+            router.REVENUE_SHARE_ADMIN(),
+            revenueShareAdmin,
+            "REVENUE_SHARE_ADMIN must be the address passed to the constructor"
+        );
+        assertEq(
+            router.revenueShareTreasury(),
+            revenueShareTreasury,
+            "revenueShareTreasury must be the address passed to the constructor"
+        );
+        assertEq(
+            router.revenueShareRateBps(),
+            revenueShareRateBps,
+            "revenueShareRateBps must be the rate passed to the constructor"
         );
     }
 
@@ -125,5 +146,81 @@ contract PortfolioManagerRouterTest is Test {
         vm.prank(operator);
         vm.expectRevert(abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapFeeRateTooHigh.selector, 1e9));
         router.setOperatorFeeRateBps(1e9);
+    }
+
+    function test_RevenueShareAdminCanUpdateRevenueShareTreasury() public {
+        PortfolioManagerRouter router = _deploy();
+        address newRevenueShareTreasury = address(0xBEEF);
+
+        vm.prank(revenueShareAdmin);
+        router.setRevenueShareTreasury(newRevenueShareTreasury);
+
+        assertEq(router.revenueShareTreasury(), newRevenueShareTreasury);
+    }
+
+    function test_RevenueShareAdminCanUpdateRevenueShareRateBps() public {
+        PortfolioManagerRouter router = _deploy();
+
+        vm.prank(revenueShareAdmin);
+        router.setRevenueShareRateBps(0);
+
+        assertEq(router.revenueShareRateBps(), 0, "REVENUE_SHARE_ADMIN can lower its own rate, including to zero");
+    }
+
+    function test_NonRevenueShareAdminCannotUpdateRevenueShareTreasury() public {
+        PortfolioManagerRouter router = _deploy();
+
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyRevenueShareAdmin.selector);
+        router.setRevenueShareTreasury(address(0xBEEF));
+    }
+
+    function test_NonRevenueShareAdminCannotUpdateRevenueShareRateBps() public {
+        PortfolioManagerRouter router = _deploy();
+
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyRevenueShareAdmin.selector);
+        router.setRevenueShareRateBps(0);
+    }
+
+    function test_NotEvenOperatorCanUpdateRevenueShareConfig() public {
+        PortfolioManagerRouter router = _deploy();
+
+        vm.prank(operator);
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapOnlyRevenueShareAdmin.selector);
+        router.setRevenueShareRateBps(0);
+    }
+
+    function test_SetRevenueShareRateBpsRevertsAtOrAboveOneHundredPercent() public {
+        PortfolioManagerRouter router = _deploy();
+
+        vm.prank(revenueShareAdmin);
+        vm.expectRevert(abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapFeeRateTooHigh.selector, 1e9));
+        router.setRevenueShareRateBps(1e9);
+    }
+
+    /// @dev protocolFeeRateBps (166_666_667) + operatorFeeRateBps (166_666_667) already sum to
+    ///      333_333_334; raising operatorFeeRateBps alone to anything at or above
+    ///      666_666_667 - revenueShareRateBps (16_666_667) pushes the three-way combined total to
+    ///      or past PM_BPS (1e9), even though 650_000_000 alone is well under the single-rate cap.
+    function test_SetOperatorFeeRateBpsRevertsWhenCombinedWithOtherRatesReachesOneHundredPercent() public {
+        PortfolioManagerRouter router = _deploy();
+        uint32 tooHighCombined = 1e9 - protocolFeeRateBps - revenueShareRateBps;
+
+        vm.prank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapCombinedFeeRateTooHigh.selector, 1e9)
+        );
+        router.setOperatorFeeRateBps(tooHighCombined);
+    }
+
+    /// @dev Same combined-cap check, from the revenue-share side instead of the operator side.
+    function test_SetRevenueShareRateBpsRevertsWhenCombinedWithOtherRatesReachesOneHundredPercent() public {
+        PortfolioManagerRouter router = _deploy();
+        uint32 tooHighCombined = 1e9 - protocolFeeRateBps - operatorFeeRateBps;
+
+        vm.prank(revenueShareAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPortfolioManagerSwap.PortfolioManagerSwapCombinedFeeRateTooHigh.selector, 1e9)
+        );
+        router.setRevenueShareRateBps(tooHighCombined);
     }
 }

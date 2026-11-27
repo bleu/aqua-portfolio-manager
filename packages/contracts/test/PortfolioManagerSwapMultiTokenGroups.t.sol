@@ -31,6 +31,9 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
     address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
     address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
     address internal constant OPERATOR_TEST = address(0x7120);
+    address internal constant REVENUE_SHARE_ADMIN_TEST = address(0x7122);
+    address internal constant REVENUE_SHARE_TREASURY_TEST = address(0xDA2);
+    uint32 internal constant REVENUE_SHARE_RATE_BPS_TEST = 16_666_667;
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
 
     Aqua internal aqua;
@@ -78,7 +81,10 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
             OPERATOR_TREASURY_TEST,
             OPERATOR_TEST,
             FEE_RATE_BPS,
-            FEE_RATE_BPS
+            FEE_RATE_BPS,
+            REVENUE_SHARE_ADMIN_TEST,
+            REVENUE_SHARE_TREASURY_TEST,
+            REVENUE_SHARE_RATE_BPS_TEST
         );
 
         tokenA = new TokenMock("Token A", "TKA");
@@ -124,13 +130,14 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
 
     /// @dev Lets a test use a custom group set (e.g. a numeraire member) instead of the fixture's
     ///      own `groups`.
-    /// @dev Replicates _priceExactIn's full fee pipeline (DAO skim off the raw input, then the
-    ///      curve's own feeWad) so expected-value computations below match the real swap path now
-    ///      that PortfolioManagerArgsCodec.MIN_FEE_BPS makes a nonzero fee mandatory -- a bare
-    ///      PortfolioManagerPricing.exactIn call with feeWad set only accounts for the curve's own
-    ///      cut, not the DAO's. Valid only under this file's unit-price fixtures (every feed priced
-    ///      at 1e18), where native amountIn and WAD-value amountIn are numerically identical, so
-    ///      the real contract's native-then-WAD conversion step can be skipped here.
+    /// @dev Replicates _priceExactIn's full fee pipeline (all three protocol/operator/revenue-share
+    ///      skims off the raw input, then the curve's own feeWad) so expected-value computations
+    ///      below match the real swap path now that PortfolioManagerArgsCodec.MIN_FEE_BPS makes a
+    ///      nonzero fee mandatory -- a bare PortfolioManagerPricing.exactIn call with feeWad set
+    ///      only accounts for the curve's own cut, not the other three. Valid only under this
+    ///      file's unit-price fixtures (every feed priced at 1e18), where native amountIn and
+    ///      WAD-value amountIn are numerically identical, so the real contract's native-then-WAD
+    ///      conversion step can be skipped here.
     function _expectedAmountOutWithFees(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
         internal
         pure
@@ -139,9 +146,12 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
         uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
         uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 revenueShareBps = PortfolioManagerFee.shareBps(feePmBps, REVENUE_SHARE_RATE_BPS_TEST);
         uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
         uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount);
+        uint256 revenueShareAmount = fullAmountIn * revenueShareBps / 1e9;
+        return
+            PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount - revenueShareAmount);
     }
 
     /// @dev Mirrors _requireWithinDeviationStep's own post-trade spotPrice computation, including
@@ -156,9 +166,11 @@ contract PortfolioManagerSwapMultiTokenGroupsTest is Test {
         uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
         uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
         uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 revenueShareBps = PortfolioManagerFee.shareBps(feePmBps, REVENUE_SHARE_RATE_BPS_TEST);
         uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
         uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
-        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount;
+        uint256 revenueShareAmount = fullAmountIn * revenueShareBps / 1e9;
+        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount - revenueShareAmount;
         uint256 curveAmountOut = PortfolioManagerPricing.exactIn(quote, netAmountIn);
         PortfolioManagerPricing.PoolState memory postQuote = PortfolioManagerPricing.PoolState({
             balanceIn: quote.balanceIn + netAmountIn,

@@ -32,6 +32,9 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
     address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
     address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
     address internal constant OPERATOR_TEST = address(0x7120);
+    address internal constant REVENUE_SHARE_ADMIN_TEST = address(0x7122);
+    address internal constant REVENUE_SHARE_TREASURY_TEST = address(0xDA2);
+    uint32 internal constant REVENUE_SHARE_RATE_BPS_TEST = 16_666_667;
     uint32 internal constant FEE_RATE_BPS = 166_666_667;
 
     Aqua internal aqua;
@@ -77,7 +80,10 @@ contract GatedPortfolioManagerProgramBuilderTest is Test {
             OPERATOR_TREASURY_TEST,
             OPERATOR_TEST,
             FEE_RATE_BPS,
-            FEE_RATE_BPS
+            FEE_RATE_BPS,
+            REVENUE_SHARE_ADMIN_TEST,
+            REVENUE_SHARE_TREASURY_TEST,
+            REVENUE_SHARE_RATE_BPS_TEST
         );
 
         tokenA = new TokenMock("Token A", "TKA");

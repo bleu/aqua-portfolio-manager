@@ -23,10 +23,21 @@ interface IPortfolioManagerSwap {
     error PortfolioManagerSwapZeroAddressDependency();
     /// @dev Only OPERATOR may update Bleu/Trim's own fee rate or treasury.
     error PortfolioManagerSwapOnlyOperator();
+    /// @dev Only REVENUE_SHARE_ADMIN may update 1inch's revenue-share rate or treasury.
+    error PortfolioManagerSwapOnlyRevenueShareAdmin();
     /// @dev A fee rate at or above 100% (PM_BPS) is nonsensical regardless of how it combines
-    ///      with the DAO's own rate.
+    ///      with the other two rates.
     error PortfolioManagerSwapFeeRateTooHigh(uint32 rateBps);
+    /// @dev The protocol, operator, and revenue-share rates together would reach or exceed
+    ///      feeBps's own 100% (PM_BPS) budget -- this would underflow netBps in the exact-out
+    ///      path and revert every exact-out swap for the strategy. uint256, not uint32 like the
+    ///      individual rates -- PROTOCOL_FEE_RATE_BPS has no upper bound enforced anywhere, so
+    ///      the sum of all three could itself exceed uint32's range in a pathological deployment,
+    ///      and this value is for display only, never re-fed into fee math.
+    error PortfolioManagerSwapCombinedFeeRateTooHigh(uint256 combinedBps);
 
     event OperatorTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event OperatorFeeRateUpdated(uint32 oldRateBps, uint32 newRateBps);
+    event RevenueShareTreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event RevenueShareRateUpdated(uint32 oldRateBps, uint32 newRateBps);
 }

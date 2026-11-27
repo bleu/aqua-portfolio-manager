@@ -43,6 +43,9 @@ contract Deploy is Script {
         address operator = vm.parseJsonAddress(addresses, ".operator");
         uint32 protocolFeeRateBps = uint32(vm.parseJsonUint(addresses, ".protocolFeeRateBps"));
         uint32 operatorFeeRateBps = uint32(vm.parseJsonUint(addresses, ".operatorFeeRateBps"));
+        address revenueShareAdmin = vm.parseJsonAddress(addresses, ".revenueShareAdmin");
+        address revenueShareTreasury = vm.parseJsonAddress(addresses, ".revenueShareTreasury");
+        uint32 revenueShareRateBps = uint32(vm.parseJsonUint(addresses, ".revenueShareRateBps"));
 
         // Every verified Chainlink push feed on Base, read separately from base-mainnet.json --
         // see base-mainnet-feeds.json's own top comment for why these two files stay apart.
@@ -85,7 +88,10 @@ contract Deploy is Script {
             operatorTreasury,
             operator,
             protocolFeeRateBps,
-            operatorFeeRateBps
+            operatorFeeRateBps,
+            revenueShareAdmin,
+            revenueShareTreasury,
+            revenueShareRateBps
         );
 
         vm.stopBroadcast();

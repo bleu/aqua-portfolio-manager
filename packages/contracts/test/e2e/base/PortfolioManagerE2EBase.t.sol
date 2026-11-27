@@ -45,6 +45,10 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
     address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
     address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
     address internal constant OPERATOR_TEST = address(0x7120);
+    /// @dev 1/60 of the LP fee -- 1inch's revenue share, on top of FEE_RATE_BPS's own 1/6 protocol cut.
+    uint32 internal constant REVENUE_SHARE_RATE_BPS = 16_666_667;
+    address internal constant REVENUE_SHARE_ADMIN_TEST = address(0x7122);
+    address internal constant REVENUE_SHARE_TREASURY_TEST = address(0xDA2);
 
     /// @dev WETH predeploy address, standard across every OP-stack chain (Base included).
     address internal constant WETH_BASE = 0x4200000000000000000000000000000000000006;
@@ -89,7 +93,10 @@ abstract contract PortfolioManagerE2EBase is AquaE2EBase {
             OPERATOR_TREASURY_TEST,
             OPERATOR_TEST,
             FEE_RATE_BPS,
-            FEE_RATE_BPS
+            FEE_RATE_BPS,
+            REVENUE_SHARE_ADMIN_TEST,
+            REVENUE_SHARE_TREASURY_TEST,
+            REVENUE_SHARE_RATE_BPS
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(1); // distinct salt nonce from BasketScopeGuardE2E's/the multi-token fixture's Safes

@@ -33,6 +33,8 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
     address internal protocolTreasury = address(0xDA0);
     address internal operatorTreasury = address(0x7121);
     address internal operator = address(0x7120);
+    address internal revenueShareAdmin = address(0x7122);
+    address internal revenueShareTreasury = address(0xDA2);
 
     function _deploy(
         address aqua_,
@@ -42,7 +44,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
         address feedRegistry_,
         address protocolTreasury_,
         address operatorTreasury_,
-        address operator_
+        address operator_,
+        address revenueShareAdmin_,
+        address revenueShareTreasury_
     ) internal returns (PortfolioManagerRouter) {
         return new PortfolioManagerRouter(
             aqua_,
@@ -58,7 +62,10 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             operatorTreasury_,
             operator_,
             166_666_667,
-            166_666_667
+            166_666_667,
+            revenueShareAdmin_,
+            revenueShareTreasury_,
+            16_666_667
         );
     }
 
@@ -71,7 +78,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -85,7 +94,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -99,7 +110,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -113,7 +126,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -127,7 +142,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -141,7 +158,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             address(0),
             protocolTreasury,
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -155,7 +174,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             address(0),
             operatorTreasury,
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -169,7 +190,9 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             address(0),
-            operator
+            operator,
+            revenueShareAdmin,
+            revenueShareTreasury
         );
     }
 
@@ -183,6 +206,40 @@ contract PortfolioManagerSwapConstructorGuardsTest is Test {
             feedRegistry,
             protocolTreasury,
             operatorTreasury,
+            address(0),
+            revenueShareAdmin,
+            revenueShareTreasury
+        );
+    }
+
+    function test_RevertsOnZeroAddressRevenueShareAdmin() public {
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
+        _deploy(
+            aqua,
+            strategyValidator,
+            sequencerUptimeFeed,
+            tokenRegistry,
+            feedRegistry,
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            address(0),
+            revenueShareTreasury
+        );
+    }
+
+    function test_RevertsOnZeroAddressRevenueShareTreasury() public {
+        vm.expectRevert(IPortfolioManagerSwap.PortfolioManagerSwapZeroAddressDependency.selector);
+        _deploy(
+            aqua,
+            strategyValidator,
+            sequencerUptimeFeed,
+            tokenRegistry,
+            feedRegistry,
+            protocolTreasury,
+            operatorTreasury,
+            operator,
+            revenueShareAdmin,
             address(0)
         );
     }

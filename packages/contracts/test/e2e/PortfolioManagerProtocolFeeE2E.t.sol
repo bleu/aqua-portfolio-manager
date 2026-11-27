@@ -22,6 +22,7 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
 
         uint256 protocolBalanceBefore = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
         uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.operatorTreasury());
+        uint256 revenueShareBalanceBefore = pmTokenA.balanceOf(router.revenueShareTreasury());
 
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
         assertEq(amountIn, TRADE_AMOUNT, "taker pays the exact amount they specified");
@@ -29,9 +30,12 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
         uint256 expectedDaoAmount =
             TRADE_AMOUNT * PortfolioManagerFee.shareBps(FEE_TEST_BPS, FEE_RATE_BPS) / FEE_BPS_SCALE;
         uint256 expectedBleuAmount = expectedDaoAmount;
+        uint256 expectedRevenueShareAmount =
+            TRADE_AMOUNT * PortfolioManagerFee.shareBps(FEE_TEST_BPS, REVENUE_SHARE_RATE_BPS) / FEE_BPS_SCALE;
 
         uint256 protocolBalanceAfter = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
         uint256 bleuBalanceAfter = pmTokenA.balanceOf(router.operatorTreasury());
+        uint256 revenueShareBalanceAfter = pmTokenA.balanceOf(router.revenueShareTreasury());
 
         assertGt(expectedDaoAmount, 0, "sanity: this fee/amount must produce a nonzero DAO fee");
         assertEq(
@@ -43,6 +47,11 @@ contract PortfolioManagerProtocolFeeE2ETest is PortfolioManagerE2EBase {
             bleuBalanceAfter - bleuBalanceBefore,
             expectedBleuAmount,
             "the real Bleu Treasury address must receive exactly its own configured rate, independently of the DAO's cut"
+        );
+        assertEq(
+            revenueShareBalanceAfter - revenueShareBalanceBefore,
+            expectedRevenueShareAmount,
+            "1inch's revenue-share treasury must receive exactly its own configured rate, independently of the other two cuts"
         );
     }
 }
