@@ -1,0 +1,1 @@
+DROP TABLE "strategy_wallet_balances" CASCADE;

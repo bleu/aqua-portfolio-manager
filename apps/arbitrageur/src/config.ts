@@ -127,7 +127,7 @@ export function loadConfig(): Config {
 
     confirmationDepth: optionalInt("CONFIRMATION_DEPTH", 5),
     maxRetries: optionalInt("MAX_RETRIES", 3), // ADR-0014: "allows three retries for one Strategy State"
-    syncIntervalMs: optionalInt("SYNC_INTERVAL_MS", 5_000),
+    syncIntervalMs: optionalInt("SYNC_INTERVAL_MS", 120_000),
     recoveryIntervalMs: optionalInt("RECOVERY_INTERVAL_MS", 60_000),
 
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL,

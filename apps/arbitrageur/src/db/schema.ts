@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, bigint, numeric, integer, jsonb, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, bigint, numeric, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 
 /// Postgres `bigint` is a signed int64 (max ~9.22e18) -- too small for an 18-decimal WAD value
 /// representing anything above ~$9.22 (e.g. one ETH's WAD price, ~2.69e21, overflows it outright).
@@ -39,21 +39,6 @@ export const strategies = pgTable(
   (table) => [index("strategies_is_active_ineligibility_reason_idx").on(table.isActive, table.ineligibilityReason)],
 );
 
-/// Materialized current balance per (wallet, token) -- ADR-0014's Balance State domain. Not a
-/// history table: seeded by a one-time multicall at Strategy discovery, then kept current by
-/// applying each new indexed `WalletBalanceChange` delta as `sync-indexer` pulls it in. See that
-/// job for why a materialized total, not stored deltas, is the right shape here.
-export const strategyWalletBalances = pgTable(
-  "strategy_wallet_balances",
-  {
-    wallet: text("wallet").notNull(),
-    token: text("token").notNull(),
-    balance: bigint("balance", { mode: "bigint" }).notNull(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  (table) => [primaryKey({ columns: [table.wallet, table.token] })],
-);
-
 /// Latest usable price per feed -- ADR-0014's Price State domain. Not a history table: Candidate
 /// Evaluation only ever wants "the newest usable Price Snapshot" (ADR-0014's own Price and
 /// slippage rules section), so this holds exactly that, one row per feed, overwritten on every
@@ -68,7 +53,7 @@ export const feedPrices = pgTable("feed_prices", {
 /// Durable cursor for `sync-indexer` -- one row per synced Envio entity type, so a restart
 /// resumes each independently instead of re-pulling everything or blocking on the slowest one.
 export const syncCursors = pgTable("sync_cursors", {
-  entity: text("entity").primaryKey(), // "Strategy" | "WalletBalanceChange" | "PriceSnapshot"
+  entity: text("entity").primaryKey(), // "Strategy" | "PriceSnapshot"
   cursor: text("cursor").notNull(), // opaque: the last-synced row's own id, used as a `> cursor` filter
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -135,7 +120,6 @@ export const executionAttempts = pgTable("execution_attempts", {
 });
 
 export type StrategyRow = typeof strategies.$inferSelect;
-export type StrategyWalletBalanceRow = typeof strategyWalletBalances.$inferSelect;
 export type FeedPriceRow = typeof feedPrices.$inferSelect;
 export type CandidateRow = typeof candidates.$inferSelect;
 export type ExecutionAttemptRow = typeof executionAttempts.$inferSelect;

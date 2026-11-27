@@ -1,12 +1,8 @@
 import type { GraphQLClient } from "graphql-request";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { strategies, strategyWalletBalances, feedPrices, syncCursors } from "../db/schema.js";
-import {
-  fetchAllStrategies,
-  fetchWalletBalanceChangesAfter,
-  fetchPriceSnapshotsAfter,
-} from "./indexerClient.js";
+import { strategies, feedPrices, syncCursors } from "../db/schema.js";
+import { fetchAllStrategies, fetchPriceSnapshotsAfter } from "./indexerClient.js";
 
 /// All four feeds this service currently watches (see apps/indexer/ponder.config.ts's
 /// CHAINLINK_PROXIES comment) are 8-decimal, USD-quoted -- verified via each feed's own decimals()
@@ -75,52 +71,9 @@ export function formatCursor(block: bigint, logIndex: number): string {
   return `${block}:${logIndex}`;
 }
 
-/// Balance State sync: applies each new `WalletBalanceChange` delta to the materialized balance
-/// in one transaction per batch, cursor advance included -- a crash mid-batch rolls back
-/// everything (delta application and cursor alike), so a retry re-fetches the same batch from
-/// the indexer instead of silently double-applying half of it. `fetchWalletBalanceChangesAfter`'s
-/// composite `(blockNumber, logIndex)` cursor is what makes "the same batch" well-defined even
-/// across ties within one block.
-export async function syncWalletBalanceChanges(db: Db, indexerClient: GraphQLClient): Promise<number> {
-  const cursorRow = await db.query.syncCursors.findFirst({ where: eq(syncCursors.entity, "WalletBalanceChange") });
-  const { block, logIndex } = parseCursor(cursorRow?.cursor);
-
-  const rows = await fetchWalletBalanceChangesAfter(indexerClient, block, logIndex);
-  if (rows.length === 0) return 0;
-
-  await db.transaction(async (tx) => {
-    for (const row of rows) {
-      await tx
-        .insert(strategyWalletBalances)
-        .values({ wallet: row.wallet, token: row.token, balance: BigInt(row.change), updatedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [strategyWalletBalances.wallet, strategyWalletBalances.token],
-          set: {
-            balance: sql`${strategyWalletBalances.balance} + ${BigInt(row.change)}`,
-            updatedAt: new Date(),
-          },
-        });
-    }
-
-    const last = rows[rows.length - 1]!;
-    await tx
-      .insert(syncCursors)
-      .values({
-        entity: "WalletBalanceChange",
-        cursor: formatCursor(BigInt(last.blockNumber), last.logIndex),
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: syncCursors.entity,
-        set: { cursor: formatCursor(BigInt(last.blockNumber), last.logIndex), updatedAt: new Date() },
-      });
-  });
-
-  return rows.length;
-}
-
-/// Price State sync: same transactional-batch, composite-cursor shape as balance changes, but
-/// each row *replaces* `feed_prices`' one row per feed rather than accumulating -- Candidate
+/// Price State sync: one transaction per batch, cursor advance included -- a crash mid-batch
+/// rolls back everything, so a retry re-fetches the same batch instead of silently skipping it.
+/// Each row *replaces* `feed_prices`' one row per feed rather than accumulating -- Candidate
 /// Evaluation only ever wants the newest usable Price Snapshot (ADR-0014's Price and slippage
 /// rules), so there is nothing to sum here. A batch can carry several updates for the same feed;
 /// applying them in fetched (block, logIndex) order means the last write for a feed in a batch is
@@ -166,13 +119,12 @@ export async function syncPriceSnapshots(db: Db, indexerClient: GraphQLClient): 
   return rows.length;
 }
 
-/// The `sync-indexer` queue job (ADR-0014's Queue rules): pulls all three synced record types
-/// once. Each sync function pages internally, so one call here can apply more than one batch.
+/// The `sync-indexer` queue job (ADR-0014's Queue rules): pulls both synced record types once.
+/// Each sync function pages internally, so one call here can apply more than one batch.
 export async function runIndexerSync(db: Db, indexerClient: GraphQLClient) {
-  const [strategyCount, balanceChangeCount, priceCount] = await Promise.all([
+  const [strategyCount, priceCount] = await Promise.all([
     syncStrategies(db, indexerClient),
-    syncWalletBalanceChanges(db, indexerClient),
     syncPriceSnapshots(db, indexerClient),
   ]);
-  return { strategyCount, balanceChangeCount, priceCount };
+  return { strategyCount, priceCount };
 }

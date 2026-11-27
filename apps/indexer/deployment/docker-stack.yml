@@ -12,9 +12,10 @@ services:
         limits:
           cpus: "0.8"
           # 1.5G, not the previous 800M: a real deploy crashed with "JavaScript heap out of
-          # memory" parsing one eth_getLogs response for Base's busiest tokens (see
-          # ponder.config.ts's ethGetLogsBlockRange comment, which bounds request size going
-          # forward) -- this raises the ceiling as a second line of defense, not the primary fix.
+          # memory" parsing one eth_getLogs response for Base's busiest tokens, back when this
+          # indexer watched Transfer on 4 of them directly. That contract is gone now (see
+          # README.md's "Limits" section), so the original cause can't recur, but the extra
+          # headroom is harmless to keep.
           memory: 1.5G
     restart: always
     environment:
