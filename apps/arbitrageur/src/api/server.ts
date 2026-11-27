@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { desc } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { strategies, strategyWalletBalances, candidates, executionAttempts } from "../db/schema.js";
+import { strategies, candidates, executionAttempts } from "../db/schema.js";
 import type { Config } from "../config.js";
 
 export interface ApiDeps {
@@ -45,13 +45,6 @@ export function makeApiServer(deps: ApiDeps): Hono {
   app.get("/v1/strategies", async (c) => {
     const rows = await deps.db.query.strategies.findMany({ orderBy: desc(strategies.shippedAt) });
     return c.json(toJsonSafe({ strategies: rows }));
-  });
-
-  app.get("/v1/strategy-wallets", async (c) => {
-    const rows = await deps.db.query.strategyWalletBalances.findMany({
-      orderBy: desc(strategyWalletBalances.updatedAt),
-    });
-    return c.json(toJsonSafe({ balances: rows }));
   });
 
   app.get("/v1/candidates", async (c) => {

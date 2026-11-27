@@ -7,7 +7,6 @@ import { createConfig, factory } from "ponder";
 import { AquaAbi } from "./abis/AquaAbi";
 import { ChainlinkAggregatorAbi } from "./abis/ChainlinkAggregatorAbi";
 import { ChainlinkProxyAbi } from "./abis/ChainlinkProxyAbi";
-import { Erc20Abi } from "./abis/Erc20Abi";
 import { PortfolioManagerValidatorAbi } from "./abis/PortfolioManagerValidatorAbi";
 
 // Aqua's own deployment block on Base is 38281777 (verified directly: eth_getCode is empty at
@@ -26,10 +25,8 @@ import { PortfolioManagerValidatorAbi } from "./abis/PortfolioManagerValidatorAb
 const AQUA_GENESIS_BLOCK = 52_500_000;
 
 // This deployment's own real contracts (packages/contracts/broadcast/Deploy.s.sol/8453/
-// run-latest.json) -- the ERC20/Chainlink side of this schema (Wallet Balance Change / Oracle
-// Price, ADR-0014) only exists to serve apps/arbitrageur, which has no use for history predating
-// this deployment. Scoping these to it, not Aqua's genesis, avoids an enormous, pointless scan of
-// every Transfer ever emitted by four of Base's most active tokens.
+// run-latest.json) -- the Chainlink side of this schema (Oracle Price, ADR-0014) only exists to
+// serve apps/arbitrageur, which has no use for history predating this deployment.
 const DEPLOYMENT_BLOCK = 52827562;
 
 const CHAINLINK_PROXIES = {
@@ -59,12 +56,6 @@ export default createConfig({
       // at a reasonable pace (confirmed: the Envio free tier hit an equivalent wall from the
       // other direction, HyperSync's own rate limit).
       rpc: process.env.BASE_RPC_URL!,
-      // Without this, Ponder sizes each eth_getLogs request by block count alone, not response
-      // size -- USDC/USDT/WETH/cbBTC's Transfer volume on Base packs thousands of logs into a
-      // span of a few dozen blocks, and the resulting single JSON.parse of that response crashed
-      // the indexer with "JavaScript heap out of memory" on a real deploy. A fixed, small range
-      // bounds response size directly, independent of how dense any one window turns out to be.
-      ethGetLogsBlockRange: 50,
     },
   },
   contracts: {
@@ -83,22 +74,6 @@ export default createConfig({
       // validator attested it.
       address: "0xf554918152B8a4543E41e6eA381eD425A03A93cE",
       startBlock: AQUA_GENESIS_BLOCK,
-    },
-    // ADR-0014's token allow list (USDC, USDT, WETH, cbBTC) -- one contract definition since
-    // every ERC20 shares the same Transfer event, listed once per address below. The handler
-    // filters to Transfers touching a known Strategy Wallet; every other Transfer on these
-    // tokens (the vast majority) is indexed too and discarded in-handler, not filtered at the
-    // source, since the wallet set is only known from already-indexed strategy data.
-    ERC20: {
-      abi: Erc20Abi,
-      chain: "base",
-      address: [
-        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC
-        "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", // USDT
-        "0x4200000000000000000000000000000000000006", // WETH
-        "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", // cbBTC
-      ],
-      startBlock: DEPLOYMENT_BLOCK,
     },
     // ADR-0014's Oracle Price record. Each feed's well-known address is an `EACAggregatorProxy`
     // that never emits `AnswerUpdated` itself -- only its current underlying aggregator does,

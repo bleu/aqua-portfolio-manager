@@ -60,65 +60,6 @@ export async function fetchAllStrategies(client: GraphQLClient, pageSize = 500):
   return all;
 }
 
-export interface IndexedWalletBalanceChange {
-  id: string;
-  wallet: string;
-  token: string;
-  change: string; // signed BigInt as a string
-  blockNumber: string;
-  logIndex: number;
-}
-
-const WALLET_BALANCE_CHANGES_QUERY = gql`
-  query WalletBalanceChanges($afterBlock: BigInt!, $afterLogIndex: Int!, $limit: Int!) {
-    walletBalanceChanges(
-      where: {
-        OR: [
-          { blockNumber_gt: $afterBlock }
-          { AND: [{ blockNumber: $afterBlock }, { logIndex_gt: $afterLogIndex }] }
-        ]
-      }
-      orderBy: "blockNumber"
-      orderDirection: "asc"
-      limit: $limit
-    ) {
-      items {
-        id
-        wallet
-        token
-        change
-        blockNumber
-        logIndex
-      }
-    }
-  }
-`;
-
-/// One page of `walletBalanceChange` rows strictly after the given `(blockNumber, logIndex)`
-/// position -- the composite cursor `syncWalletBalanceChanges` (src/sync/indexer.ts) advances
-/// after each transactionally-applied batch. Never re-fetches a row already applied, so applying
-/// a returned batch is safe to do without a separate idempotency check.
-///
-/// Ponder's GraphQL only orders by one field (`orderBy`), unlike Hasura's multi-column
-/// `order_by` list -- rows sharing a `blockNumber` come back in whatever order Postgres returns
-/// them, so a single page can still mix logIndex order within one block. Harmless here: the
-/// caller applies a whole page inside one transaction before advancing the cursor, and the next
-/// page's `OR` condition is still anchored on the true max `(blockNumber, logIndex)` seen.
-export async function fetchWalletBalanceChangesAfter(
-  client: GraphQLClient,
-  afterBlock: bigint,
-  afterLogIndex: number,
-  limit = 500,
-): Promise<IndexedWalletBalanceChange[]> {
-  const {
-    walletBalanceChanges: { items },
-  } = await client.request<{ walletBalanceChanges: { items: IndexedWalletBalanceChange[] } }>(
-    WALLET_BALANCE_CHANGES_QUERY,
-    { afterBlock: afterBlock.toString(), afterLogIndex, limit },
-  );
-  return items;
-}
-
 export interface IndexedPriceSnapshot {
   id: string;
   feedProxy: string;
@@ -155,8 +96,10 @@ const PRICE_SNAPSHOTS_QUERY = gql`
   }
 `;
 
-/// Same composite-cursor shape and same single-column-orderBy caveat as
-/// `fetchWalletBalanceChangesAfter`, for `priceSnapshot`.
+/// Composite cursor on `(blockNumber, logIndex)`, strictly-after. Ponder's GraphQL only orders by
+/// one field, so rows sharing a `blockNumber` can come back in any order within one page --
+/// harmless here since the caller applies a whole page in one transaction before advancing past
+/// the true max `(blockNumber, logIndex)` seen.
 export async function fetchPriceSnapshotsAfter(
   client: GraphQLClient,
   afterBlock: bigint,

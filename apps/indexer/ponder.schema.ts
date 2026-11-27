@@ -56,40 +56,6 @@ export const strategyAttestation = onchainTable(
   (table) => ({ pk: primaryKey({ columns: [table.strategyHash] }) }),
 );
 
-// Marks an address as a known Strategy Wallet (a maker with at least one indexed strategy), set
-// alongside every strategy row so the Transfer handler can check membership in O(1) instead of
-// scanning every indexed strategy by its composite id.
-export const strategyWallet = onchainTable(
-  "strategy_wallet",
-  (t) => ({ address: t.hex().notNull() }), // lowercase, the maker address
-  (table) => ({ pk: primaryKey({ columns: [table.address] }) }),
-);
-
-// One row per allow-listed-token Transfer touching a known Strategy Wallet -- ADR-0014's "Wallet
-// Balance Change" record. `change` is signed: negative when the wallet is the Transfer's `from`,
-// positive when it's the `to`. A wallet's current balance for a token is the sum of its `change`
-// rows plus the one-time balance read taken at Strategy discovery (see the ADR's Indexed state
-// section) -- this table only ever stores deltas, never a running total, so re-processing never
-// double-counts.
-export const walletBalanceChange = onchainTable(
-  "wallet_balance_change",
-  (t) => ({
-    id: t.text().notNull(), // `${transactionHash}-${logIndex}`
-    wallet: t.hex().notNull(),
-    token: t.hex().notNull(),
-    change: t.bigint().notNull(),
-    blockNumber: t.bigint().notNull(),
-    blockTimestamp: t.bigint().notNull(),
-    transactionHash: t.hex().notNull(),
-    logIndex: t.integer().notNull(),
-  }),
-  (table) => ({
-    pk: primaryKey({ columns: [table.id] }),
-    walletIdx: index().on(table.wallet),
-    tokenIdx: index().on(table.token),
-  }),
-);
-
 // Maps a live Chainlink aggregator address to the feed proxy it currently backs. The well-known
 // feed addresses (the ones this repo's contracts and tests use) are `EACAggregatorProxy`
 // contracts that never emit `AnswerUpdated` themselves -- only their current underlying

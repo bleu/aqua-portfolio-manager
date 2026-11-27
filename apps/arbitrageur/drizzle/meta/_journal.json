@@ -22,6 +22,13 @@
       "when": 1790893516596,
       "tag": "0002_past_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795731823562,
+      "tag": "0003_wise_captain_flint",
+      "breakpoints": true
     }
   ]
 }

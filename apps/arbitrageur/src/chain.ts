@@ -1,4 +1,5 @@
 import { createPublicClient, createWalletClient, http, type Address, type Hex, type PublicClient } from "viem";
+import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrageurAbi, erc20Abi } from "./abi.js";
 import type { Config } from "./config.js";
@@ -14,17 +15,45 @@ export function makeClients(config: Config) {
   return { account, publicClient, walletClient };
 }
 
-export async function tokenDecimals(client: PublicClient, token: Address): Promise<number> {
-  return withRateLimitRetry(() => client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }));
+export interface TokenState {
+  balance: bigint;
+  decimals: number;
 }
 
-/// Live balance, not the indexer's synced copy -- the curve itself prices off `balanceOf` at
-/// quote time (PortfolioManagerSwap._groupValueWad), so a group-value computation meant to match
-/// it reads the same real-time source, not a snapshot that can lag by a sync interval.
-export async function tokenBalance(client: PublicClient, token: Address, owner: Address): Promise<bigint> {
-  return withRateLimitRetry(() =>
-    client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [owner] }),
+/// Live balance and decimals, not the indexer's synced copy -- the curve itself prices off
+/// `balanceOf` at quote time (PortfolioManagerSwap._groupValueWad), so a group-value computation
+/// meant to match it reads the same real-time source, not a snapshot that can lag by a sync
+/// interval. One multicall for every token a Strategy's groups reference, not one `eth_call` per
+/// token -- evaluateStrategy calls this once, up front, and every group/leg in that evaluation
+/// reads from the returned map instead of hitting the RPC again.
+export async function fetchTokenStates(
+  client: PublicClient,
+  tokens: Address[],
+  owner: Address,
+): Promise<Map<Address, TokenState>> {
+  if (tokens.length === 0) return new Map();
+  const results = await withRateLimitRetry(() =>
+    client.multicall({
+      // Explicit, not read from `client.chain` -- this client is created with no `chain` (see
+      // makeClients), since typing it with one makes its `PublicClient` type incompatible with
+      // every other function in this file that takes the bare `PublicClient` type. Base's
+      // Multicall3 is the same canonical address every chain deployed it at deterministically.
+      multicallAddress: base.contracts.multicall3.address,
+      contracts: tokens.flatMap(
+        (token) =>
+          [
+            { address: token, abi: erc20Abi, functionName: "balanceOf", args: [owner] },
+            { address: token, abi: erc20Abi, functionName: "decimals" },
+          ] as const,
+      ),
+      allowFailure: false,
+    }),
   );
+  const states = new Map<Address, TokenState>();
+  tokens.forEach((token, i) => {
+    states.set(token, { balance: results[i * 2] as bigint, decimals: results[i * 2 + 1] as number });
+  });
+  return states;
 }
 
 /// Base's public RPC returns a non-standard JSON-RPC error code (-32016, "over rate limit") for

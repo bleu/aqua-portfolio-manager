@@ -6,7 +6,7 @@ import { strategies, feedPrices, candidates } from "../db/schema.js";
 import { decodeProgram, type DecodedGroup, decodeOrder, extractProgram } from "@aqua-portfolio-manager/decoding";
 import { inGivenPriceValueWad, fairAmountOut, profitBps, profitUsdWad, amountForUsdWad, valueWad, WAD } from "../pricing.js";
 import { getFyndSwapCalldata, type FyndClient } from "../fynd.js";
-import { quoteExactIn, tokenDecimals, tokenBalance } from "../chain.js";
+import { quoteExactIn, fetchTokenStates, type TokenState } from "../chain.js";
 
 export interface Leg {
   tokenIn: Address;
@@ -66,24 +66,21 @@ export async function readUsablePrice(
 /// curve itself reads `balanceOf` at quote time and this needs to agree with it. Undefined if any
 /// single member's price is stale or missing, the same way the on-chain oracle read would fail --
 /// one bad feed makes the whole group's value (and so every leg touching it) unusable, not just
-/// that one member.
+/// that one member. `tokenStates` is evaluateStrategy's one multicall result for this Strategy --
+/// every member here is already in it (see buildLegs), so this never calls out to the RPC itself.
 async function groupValueWad(
   db: Db,
-  publicClient: PublicClient,
-  maker: Address,
+  tokenStates: Map<Address, TokenState>,
   group: DecodedGroup,
   nowSeconds: bigint,
   maxPriceStalenessSeconds: bigint,
 ): Promise<bigint | undefined> {
   let total = 0n;
   for (const member of group.members) {
-    const [price, decimals, balance] = await Promise.all([
-      readUsablePrice(db, member.feed, nowSeconds, maxPriceStalenessSeconds),
-      tokenDecimals(publicClient, member.token),
-      tokenBalance(publicClient, member.token, maker),
-    ]);
+    const price = await readUsablePrice(db, member.feed, nowSeconds, maxPriceStalenessSeconds);
     if (!price) return undefined;
-    total += valueWad(balance, price.priceWad, decimals);
+    const state = tokenStates.get(member.token)!;
+    total += valueWad(state.balance, price.priceWad, state.decimals);
   }
   return total;
 }
@@ -143,6 +140,12 @@ export async function evaluateStrategy(
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
   const maker = order.maker;
 
+  // Every token this Strategy's groups reference, deduplicated, in one multicall -- every
+  // decimals/balance lookup below (groupValueWad, the leg loop, the profit-floor conversion)
+  // reads from this map instead of making its own RPC call.
+  const allTokens = Array.from(new Set(decoded.groups.flatMap((g) => g.members.map((m) => m.token))));
+  const tokenStates = await fetchTokenStates(publicClient, allTokens, maker);
+
   // The curve's own fee, on the same WAD scale as the formula -- feeBps is PM's own PM_BPS (1e9)
   // convention (see PortfolioManagerArgsCodec.sol's PM_BPS), matching
   // PortfolioManagerSwap.sol's `feeWad: FixedPointMath.divDown(feeBps, PM_BPS)` exactly.
@@ -155,7 +158,7 @@ export async function evaluateStrategy(
     if (!groupValueCache.has(groupIdx)) {
       groupValueCache.set(
         groupIdx,
-        await groupValueWad(db, publicClient, maker, decoded.groups[groupIdx]!, nowSeconds, config.maxPriceStalenessSeconds),
+        await groupValueWad(db, tokenStates, decoded.groups[groupIdx]!, nowSeconds, config.maxPriceStalenessSeconds),
       );
     }
     return groupValueCache.get(groupIdx);
@@ -186,10 +189,8 @@ export async function evaluateStrategy(
     ]);
     if (!priceIn || !priceOut) continue; // one bad/missing feed skips only this leg
 
-    const [decimalsIn, decimalsOut] = await Promise.all([
-      tokenDecimals(publicClient, leg.tokenIn),
-      tokenDecimals(publicClient, leg.tokenOut),
-    ]);
+    const decimalsIn = tokenStates.get(leg.tokenIn)!.decimals;
+    const decimalsOut = tokenStates.get(leg.tokenOut)!.decimals;
 
     const amountIn = amountForUsdWad(clampedValueWad, priceIn.priceWad, decimalsIn);
     const quotedOut = await quoteExactIn(publicClient, account, config.arbitrageurAddress, order, leg.tokenIn, leg.tokenOut, amountIn);
@@ -220,7 +221,7 @@ export async function evaluateStrategy(
   // is denominated in the return token (ADR-0014's Price and slippage rules), not USD.
   const priceIn = await readUsablePrice(db, leg.feedIn, nowSeconds, config.maxPriceStalenessSeconds);
   if (!priceIn) return undefined; // the feed went stale between the pre-filter pass and here
-  const decimalsIn = await tokenDecimals(publicClient, leg.tokenIn);
+  const decimalsIn = tokenStates.get(leg.tokenIn)!.decimals;
   const profitFloorInTokenIn = (config.minProfitUsdWad * 10n ** BigInt(decimalsIn)) / priceIn.priceWad;
   const profitHeadroom = fyndQuote.expectedAmountOut - opportunity.amountIn - profitFloorInTokenIn;
   if (profitHeadroom <= 0n) return undefined;

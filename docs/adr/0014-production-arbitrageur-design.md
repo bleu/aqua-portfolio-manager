@@ -40,9 +40,8 @@ Envio and Fynd are local dependencies. They are not parts of the arbitrageur app
 | Domain | Responsibility | Services it uses |
 | --- | --- | --- |
 | Strategy Catalog | Store Shipped and Docked Strategies, raw program data, decoded data, and eligibility. | Envio and Postgres |
-| Balance State | Store supported-token balances for each Strategy Wallet. | Envio, Base RPC, and Postgres |
 | Price State | Store usable Chainlink Price Snapshots. | Envio and Postgres |
-| Candidate Evaluation | Screen a Strategy State, find a Fynd Route, solve the input size, and rank Candidates. | Fynd, Postgres, Redis, and shared math |
+| Candidate Evaluation | Screen a Strategy State (reading each Strategy Wallet's current token balances live via Base RPC), find a Fynd Route, solve the input size, and rank Candidates. | Fynd, Base RPC, Postgres, Redis, and shared math |
 | Transaction Simulation | Validate a Candidate against current Base state. | Base RPC, Uniswap V4 PoolManager, executor, and Postgres |
 | Execution | Serialize nonces, send transactions, track results, and retry. | Base RPC, Redis, Postgres, and Slack |
 | Operations API | Return authenticated, read-only operational data. | Postgres and health checks |
@@ -54,7 +53,6 @@ Envio and Fynd are local dependencies. They are not parts of the arbitrageur app
 flowchart TB
     subgraph App[Arbitrageur application]
         catalog[Strategy Catalog]
-        balance[Balance State]
         price[Price State]
         evaluate[Candidate Evaluation]
         simulate[Transaction Simulation]
@@ -64,22 +62,20 @@ flowchart TB
     end
 
     envio[Envio] --> catalog
-    envio --> balance
     envio --> price
     catalog --> evaluate
-    balance --> evaluate
+    rpc[Base RPC] --> evaluate
     price --> evaluate
     evaluate --> fynd[Local Fynd]
     evaluate --> redis[(BullMQ)]
     redis --> simulate
-    simulate --> rpc[Base RPC]
+    simulate --> rpc
     simulate --> redis
     redis --> execute
     execute --> rpc
     execute --> notice
     notice --> slack[Slack]
     catalog --> postgres[(Postgres)]
-    balance --> postgres
     price --> postgres
     evaluate --> postgres
     simulate --> postgres
@@ -94,12 +90,11 @@ Extend Envio with these records.
 | Record | Source | Required data |
 | --- | --- | --- |
 | Strategy Payload | `Shipped` and `Docked` | Raw program data, decoded trade data, active state, block, transaction, and log index. |
-| Wallet Balance Change | `Transfer` for allow-listed tokens and Strategy Wallets | Wallet, token, signed change, block, transaction, and log index. |
 | Oracle Price | `AnswerUpdated` at each feed's current aggregator | Feed, answer, decimals, time, block, transaction, and log index. |
 
 Each Chainlink feed address on the token allow list is a proxy (`EACAggregatorProxy`). It forwards `latestRoundData()` reads to an underlying aggregator, and it can swap that aggregator over time, but it never emits `AnswerUpdated` itself -- only the aggregator does. Indexing `AnswerUpdated` at the well-known feed address indexes nothing. The indexer tracks each proxy's `AggregatorConfirmed` event to learn its current aggregator address and index `AnswerUpdated` there instead, seeded with each feed's aggregator address at indexer setup so history is available before the first tracked swap.
 
-At Strategy discovery, the application reads supported token balances with one multicall. It then uses indexed transfers as the normal balance source. It uses one new multicall only for the selected Candidate before simulation.
+There is no indexed Balance State. Watching every `Transfer` of an allow-listed token just to catch the small fraction touching a Strategy Wallet grew the indexer's own raw sync cache without bound and took down a production deployment, so that record was removed. Candidate Evaluation reads each Strategy Wallet's current token balances live from Base RPC, with one multicall per evaluation tick covering every token its groups reference. Transaction Simulation needs no separate balance read of its own: simulating `executeFlashArbitrage` is itself one `eth_call` against the real contract, which reads the Strategy Wallet's balance on-chain as part of that same call.
 
 A malformed or unsupported Strategy stays in the catalog with an eligibility reason. It cannot create a Candidate.
 
@@ -220,7 +215,6 @@ The internal REST API requires bearer-token authentication. It has no write endp
 | --- | --- |
 | `GET /health` | Application and dependency health, including pause state. |
 | `GET /v1/strategies` | Strategies, Strategy State, and eligibility reasons. |
-| `GET /v1/strategy-wallets` | Supported-token balance snapshots. |
 | `GET /v1/candidates` | Candidates, estimates, rank, and rejection reason. |
 | `GET /v1/execution-attempts` | Simulations, transactions, retries, and outcomes. |
 | `GET /v1/config` | Safe read-only configuration. |
