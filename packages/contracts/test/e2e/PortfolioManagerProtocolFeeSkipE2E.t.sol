@@ -18,15 +18,16 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
 
     function test_ProtocolFeeSkipsWithoutBlockingTheSwap() public {
         ISwapVM.Order memory order = _buildOrder(FEE_SKIP_TEST_BPS);
-        // Fund the wallet but give neither the DAO nor the Bleu pull any tokenA ledger authorization.
+        // Fund the wallet but give none of the three fee pulls any tokenA ledger authorization.
         _fundAndShip(order, 0);
 
         uint256 protocolBalanceBefore = pmTokenA.balanceOf(router.PROTOCOL_TREASURY());
         uint256 bleuBalanceBefore = pmTokenA.balanceOf(router.operatorTreasury());
+        uint256 revenueShareBalanceBefore = pmTokenA.balanceOf(router.revenueShareTreasury());
 
         vm.recordLogs();
         (uint256 amountIn,) = _swapExactIn(order, address(pmTokenA), address(pmTokenB), TRADE_AMOUNT);
-        assertEq(amountIn, TRADE_AMOUNT, "swap still completes even though both fee pulls were skipped");
+        assertEq(amountIn, TRADE_AMOUNT, "swap still completes even though all three fee pulls were skipped");
 
         assertEq(
             pmTokenA.balanceOf(router.PROTOCOL_TREASURY()),
@@ -38,10 +39,16 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
             bleuBalanceBefore,
             "Bleu Treasury balance must be unchanged when its pull is skipped"
         );
+        assertEq(
+            pmTokenA.balanceOf(router.revenueShareTreasury()),
+            revenueShareBalanceBefore,
+            "1inch's revenue-share treasury balance must be unchanged when its pull is skipped"
+        );
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 protocolSkipped = 0;
         uint256 bleuSkipped = 0;
+        uint256 revenueShareSkipped = 0;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0 && logs[i].topics[0] == Fee.ProtocolFeeSkipped.selector) {
                 (, address token, address to, uint256 skippedAmount) =
@@ -52,10 +59,13 @@ contract PortfolioManagerProtocolFeeSkipE2ETest is PortfolioManagerE2EBase {
                     protocolSkipped++;
                 } else if (to == router.operatorTreasury()) {
                     bleuSkipped++;
+                } else if (to == router.revenueShareTreasury()) {
+                    revenueShareSkipped++;
                 }
             }
         }
-        assertEq(protocolSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's half");
-        assertEq(bleuSkipped, 1, "exactly one ProtocolFeeSkipped for Bleu's half");
+        assertEq(protocolSkipped, 1, "exactly one ProtocolFeeSkipped for the DAO's cut");
+        assertEq(bleuSkipped, 1, "exactly one ProtocolFeeSkipped for Bleu's cut");
+        assertEq(revenueShareSkipped, 1, "exactly one ProtocolFeeSkipped for 1inch's revenue-share cut");
     }
 }

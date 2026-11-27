@@ -41,6 +41,9 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
     address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
     address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
     address internal constant OPERATOR_TEST = address(0x7120);
+    address internal constant REVENUE_SHARE_ADMIN_TEST = address(0x7122);
+    address internal constant REVENUE_SHARE_TREASURY_TEST = address(0xDA2);
+    uint32 internal constant REVENUE_SHARE_RATE_BPS_TEST = 16_666_667;
     /// @dev WBTC on Base — https://basescan.org/token/0x1cea84203673764244e05693e42e6ace62be9ba5
     address internal constant WBTC_BASE = 0x1ceA84203673764244E05693e42E6Ace62bE9BA5;
     /// @dev DAI on Base — https://basescan.org/token/0x50c5725949a6f0c72e6c4a641f24049a917db0cb
@@ -121,7 +124,10 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
             OPERATOR_TREASURY_TEST,
             OPERATOR_TEST,
             FEE_RATE_BPS,
-            FEE_RATE_BPS
+            FEE_RATE_BPS,
+            REVENUE_SHARE_ADMIN_TEST,
+            REVENUE_SHARE_TREASURY_TEST,
+            REVENUE_SHARE_RATE_BPS_TEST
         );
         multiSendCallOnly = new MultiSendCallOnly();
         multiTokenSafe = _newSafe(2); // distinct salt nonce from the other E2E fixtures' Safes
@@ -372,10 +378,10 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         return (feed == wethFeed || feed == wbtcFeed) ? MAJOR_MAX_STALENESS : STABLE_MAX_STALENESS;
     }
 
-    /// @dev The real swap path skims the DAO and Trim fees off the full native amountIn first
-    ///      (independently of each other), then feeds the remainder into the curve (which applies
-    ///      its own feeWad cut). Reference PoolStates built with feeWad: 0 only capture the
-    ///      curve's cut, so this replicates all three stages.
+    /// @dev The real swap path skims the DAO, revenue-share, and Trim fees off the full native
+    ///      amountIn first (independently of each other), then feeds the remainder into the curve
+    ///      (which applies its own feeWad cut). Reference PoolStates built with feeWad: 0 only
+    ///      capture the curve's cut, so this replicates all four stages.
     function _expectedAmountOutWithFees(PortfolioManagerPricing.PoolState memory quote, uint256 fullAmountIn)
         internal
         pure
@@ -384,9 +390,12 @@ contract PortfolioManagerMultiTokenBasketE2ETest is AquaE2EBase {
         uint32 feePmBps = uint32(quote.feeWad * 1e9 / 1e18);
         uint32 protocolBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
         uint32 operatorBps = PortfolioManagerFee.shareBps(feePmBps, FEE_RATE_BPS);
+        uint32 revenueShareBps = PortfolioManagerFee.shareBps(feePmBps, REVENUE_SHARE_RATE_BPS_TEST);
         uint256 protocolAmount = fullAmountIn * protocolBps / 1e9;
         uint256 operatorAmount = fullAmountIn * operatorBps / 1e9;
-        return PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount);
+        uint256 revenueShareAmount = fullAmountIn * revenueShareBps / 1e9;
+        return
+            PortfolioManagerPricing.exactIn(quote, fullAmountIn - protocolAmount - operatorAmount - revenueShareAmount);
     }
 
     // ===== Tests =====

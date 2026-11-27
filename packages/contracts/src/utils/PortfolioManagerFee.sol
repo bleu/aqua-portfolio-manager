@@ -7,11 +7,11 @@ import {FixedPointMath} from "./FixedPointMath.sol";
 
 /// @title PortfolioManagerFee
 /// @notice Pure math for applying a PM_BPS-scaled rate to the LP fee. Rates and recipients
-///         themselves are no longer compiled into this library -- they're constructor-set
-///         immutables on `PortfolioManagerSwap`, since the DAO's rate, Bleu/Trim's rate, and
-///         either treasury address can differ per deployment (including launching at 0% and
-///         raising it later via a new Router deployment, and different treasury addresses per
-///         chain).
+///         themselves are not compiled into this library -- they're constructor-set state on
+///         `PortfolioManagerSwap` (the DAO's rate and treasury immutable; 1inch's revenue-share
+///         rate/treasury and Bleu/Trim's rate/treasury each mutable by their own admin), since
+///         all three can differ per deployment and change independently over the deployment's
+///         life.
 library PortfolioManagerFee {
     uint256 private constant PM_BPS = 1e9;
 

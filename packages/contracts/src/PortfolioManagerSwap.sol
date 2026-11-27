@@ -25,7 +25,7 @@ import {FixedPointMath} from "./utils/FixedPointMath.sol";
 ///      Members reference a token and a feed by registry index (BLEUDEV-412/ADR-0018) --
 ///      TOKEN_REGISTRY/FEED_REGISTRY are immutables so every helper below can resolve one
 ///      directly instead of carrying it as a parameter through the whole call chain.
-///      The DAO fee transfer is inside this opcode so programs cannot omit a separate fee instruction.
+///      All three fee transfers are inside this opcode so programs cannot omit a separate fee instruction.
 ///      Collection remains best-effort. Fee inheritance supplies the Aqua reference, scale, and skipped-fee event.
 ///      See docs/PRICING.md for formulas and units.
 abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
@@ -58,6 +58,20 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
     ///         PROTOCOL_FEE_RATE_BPS.
     uint32 public operatorFeeRateBps;
 
+    /// @notice The only address that may call `setRevenueShareTreasury`/`setRevenueShareRateBps`
+    ///         below. Set at construction; 1inch's own operational key for this cut -- unlike
+    ///         PROTOCOL_TREASURY/PROTOCOL_FEE_RATE_BPS, 1inch asked for this specific cut to stay
+    ///         adjustable by their own wallet without a new Router deployment.
+    address public immutable REVENUE_SHARE_ADMIN;
+    /// @notice 1inch's revenue-share treasury for this deployment. Mutable by REVENUE_SHARE_ADMIN.
+    ///         A separate, independently-tracked cut from PROTOCOL_TREASURY's, even though both
+    ///         currently pay the same address.
+    address public revenueShareTreasury;
+    /// @notice 1inch's revenue-share rate, PM_BPS-scaled. Mutable by REVENUE_SHARE_ADMIN, unlike
+    ///         PROTOCOL_FEE_RATE_BPS. Launches at 1/60 of the LP fee (10% of the existing 1/6
+    ///         protocol fee), on top of -- not instead of -- that protocol fee.
+    uint32 public revenueShareRateBps;
+
     constructor(
         address aqua,
         address strategyValidator,
@@ -68,12 +82,16 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         address operatorTreasury_,
         address operator,
         uint32 protocolFeeRateBps,
-        uint32 operatorFeeRateBps_
+        uint32 operatorFeeRateBps_,
+        address revenueShareAdmin,
+        address revenueShareTreasury_,
+        uint32 revenueShareRateBps_
     ) Fee(aqua) {
         require(
             aqua != address(0) && strategyValidator != address(0) && sequencerUptimeFeed != address(0)
                 && tokenRegistry != address(0) && feedRegistry != address(0) && protocolTreasury != address(0)
-                && operatorTreasury_ != address(0) && operator != address(0),
+                && operatorTreasury_ != address(0) && operator != address(0) && revenueShareAdmin != address(0)
+                && revenueShareTreasury_ != address(0),
             PortfolioManagerSwapZeroAddressDependency()
         );
         STRATEGY_VALIDATOR = IPortfolioManagerStrategyValidator(strategyValidator);
@@ -85,6 +103,20 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         OPERATOR = operator;
         operatorTreasury = operatorTreasury_;
         operatorFeeRateBps = operatorFeeRateBps_;
+        REVENUE_SHARE_ADMIN = revenueShareAdmin;
+        revenueShareTreasury = revenueShareTreasury_;
+        revenueShareRateBps = revenueShareRateBps_;
+        _requireCombinedFeeRateBelowCap(operatorFeeRateBps_, revenueShareRateBps_);
+    }
+
+    /// @dev Three independently-mutable-or-not rates share one `feeBps` budget. Nothing upstream
+    ///      stops their sum reaching or exceeding PM_BPS (100%) on its own -- that would underflow
+    ///      `netBps` in `_priceExactOut` and revert every exact-out swap for the strategy. Checked
+    ///      here, at construction and from every setter that can move one of the two mutable
+    ///      rates, instead of only bounding each rate in isolation.
+    function _requireCombinedFeeRateBelowCap(uint32 operatorFeeRateBps_, uint32 revenueShareRateBps_) private view {
+        uint256 combinedBps = uint256(PROTOCOL_FEE_RATE_BPS) + operatorFeeRateBps_ + revenueShareRateBps_;
+        require(combinedBps < PortfolioManagerArgsCodec.PM_BPS, PortfolioManagerSwapCombinedFeeRateTooHigh(combinedBps));
     }
 
     /// @notice Lets OPERATOR redirect Bleu/Trim's own fee to a new treasury, without a new
@@ -98,17 +130,41 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
     /// @notice Lets OPERATOR change Bleu/Trim's own fee rate, without a new Router deployment.
     ///         Does not affect PROTOCOL_FEE_RATE_BPS.
-    /// @dev Bounded below 100% as a sanity check against a fat-fingered rate -- does not by
-    ///      itself guarantee protocolBps + operatorBps stays below feeBps for every swap, since that also
-    ///      depends on the DAO's independently-set rate and each swap's own feeBps.
+    /// @dev Bounded below 100% as a sanity check against a fat-fingered rate, and bounded again,
+    ///      combined with the other two rates, against reaching feeBps's own 100% budget.
     function setOperatorFeeRateBps(uint32 newOperatorFeeRateBps) external {
         require(msg.sender == OPERATOR, PortfolioManagerSwapOnlyOperator());
         require(
             newOperatorFeeRateBps < PortfolioManagerArgsCodec.PM_BPS,
             PortfolioManagerSwapFeeRateTooHigh(newOperatorFeeRateBps)
         );
+        _requireCombinedFeeRateBelowCap(newOperatorFeeRateBps, revenueShareRateBps);
         emit OperatorFeeRateUpdated(operatorFeeRateBps, newOperatorFeeRateBps);
         operatorFeeRateBps = newOperatorFeeRateBps;
+    }
+
+    /// @notice Lets REVENUE_SHARE_ADMIN redirect 1inch's revenue-share cut to a new treasury,
+    ///         without a new Router deployment. Does not affect PROTOCOL_TREASURY.
+    function setRevenueShareTreasury(address newRevenueShareTreasury) external {
+        require(msg.sender == REVENUE_SHARE_ADMIN, PortfolioManagerSwapOnlyRevenueShareAdmin());
+        require(newRevenueShareTreasury != address(0), PortfolioManagerSwapZeroAddressDependency());
+        emit RevenueShareTreasuryUpdated(revenueShareTreasury, newRevenueShareTreasury);
+        revenueShareTreasury = newRevenueShareTreasury;
+    }
+
+    /// @notice Lets REVENUE_SHARE_ADMIN change 1inch's own revenue-share rate, without a new
+    ///         Router deployment -- 1inch asked to keep this one adjustable by their own wallet,
+    ///         unlike PROTOCOL_FEE_RATE_BPS. Does not affect PROTOCOL_FEE_RATE_BPS.
+    /// @dev Same two bounds as setOperatorFeeRateBps: below 100% alone, and below feeBps's budget combined.
+    function setRevenueShareRateBps(uint32 newRevenueShareRateBps) external {
+        require(msg.sender == REVENUE_SHARE_ADMIN, PortfolioManagerSwapOnlyRevenueShareAdmin());
+        require(
+            newRevenueShareRateBps < PortfolioManagerArgsCodec.PM_BPS,
+            PortfolioManagerSwapFeeRateTooHigh(newRevenueShareRateBps)
+        );
+        _requireCombinedFeeRateBelowCap(operatorFeeRateBps, newRevenueShareRateBps);
+        emit RevenueShareRateUpdated(revenueShareRateBps, newRevenueShareRateBps);
+        revenueShareRateBps = newRevenueShareRateBps;
     }
 
     /// @param args Group configuration, LP fee, and deviation limit encoded by PortfolioManagerArgsCodec.
@@ -149,14 +205,15 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
 
         uint256 protocolAmount;
         uint256 operatorAmount;
+        uint256 revenueShareAmount;
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, PortfolioManagerSwapRecomputeDetected());
-            (ctx.swap.amountOut, protocolAmount, operatorAmount) = _priceExactIn(
+            (ctx.swap.amountOut, protocolAmount, operatorAmount, revenueShareAmount) = _priceExactIn(
                 quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountIn, feeBps, maxDeviationBps
             );
         } else {
             require(ctx.swap.amountIn == 0, PortfolioManagerSwapRecomputeDetected());
-            (ctx.swap.amountIn, protocolAmount, operatorAmount) = _priceExactOut(
+            (ctx.swap.amountIn, protocolAmount, operatorAmount, revenueShareAmount) = _priceExactOut(
                 quote, rawIn, rawOut, tokenInDecimals, tokenOutDecimals, ctx.swap.amountOut, feeBps, maxDeviationBps
             );
         }
@@ -177,9 +234,10 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         );
 
         // Preserve swap availability when fee collection fails, matching Fee.sol (OpenZeppelin M-09, Theori #10).
-        // Quotes skip the transfer. The DAO's 1/6 cut and Bleu/Trim's own 1/10 cut are computed
-        // independently of each other (not split from one combined amount) and pulled
-        // independently, so one recipient's failure never blocks the other or the swap.
+        // Quotes skip the transfer. The DAO's 1/6 protocol cut, 1inch's own 1/60 revenue-share
+        // cut, and Bleu/Trim's own 1/6 cut are computed independently of each other (not split
+        // from one combined amount) and pulled independently, so one recipient's failure never
+        // blocks the others or the swap.
         if (!ctx.vm.isStaticContext) {
             if (protocolAmount != 0) {
                 try _AQUA.pull(
@@ -188,6 +246,18 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
                     ctx.swap.amountNetPulled += protocolAmount;
                 } catch {
                     emit ProtocolFeeSkipped(ctx.query.orderHash, ctx.query.tokenIn, PROTOCOL_TREASURY, protocolAmount);
+                }
+            }
+
+            if (revenueShareAmount != 0) {
+                try _AQUA.pull(
+                    ctx.query.maker, ctx.query.orderHash, ctx.query.tokenIn, revenueShareAmount, revenueShareTreasury
+                ) {
+                    ctx.swap.amountNetPulled += revenueShareAmount;
+                } catch {
+                    emit ProtocolFeeSkipped(
+                        ctx.query.orderHash, ctx.query.tokenIn, revenueShareTreasury, revenueShareAmount
+                    );
                 }
             }
 
@@ -256,18 +326,24 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 fullAmountIn,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private view returns (uint256 amountOut, uint256 protocolAmount, uint256 operatorAmount) {
+    )
+        private
+        view
+        returns (uint256 amountOut, uint256 protocolAmount, uint256 operatorAmount, uint256 revenueShareAmount)
+    {
         uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
         uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
-        // Price after both cuts; the caller keeps the full input for SwapVM settlement.
+        // Price after all three cuts; the caller keeps the full input for SwapVM settlement.
         uint32 protocolBps = PortfolioManagerFee.shareBps(feeBps, PROTOCOL_FEE_RATE_BPS);
         uint32 operatorBps = PortfolioManagerFee.shareBps(feeBps, operatorFeeRateBps);
+        uint32 revenueShareBps = PortfolioManagerFee.shareBps(feeBps, revenueShareRateBps);
         protocolAmount = FixedPointMath.mulDivDown(fullAmountIn, protocolBps, FEE_BPS);
         operatorAmount = FixedPointMath.mulDivDown(fullAmountIn, operatorBps, FEE_BPS);
-        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount;
+        revenueShareAmount = FixedPointMath.mulDivDown(fullAmountIn, revenueShareBps, FEE_BPS);
+        uint256 netAmountIn = fullAmountIn - protocolAmount - operatorAmount - revenueShareAmount;
 
         uint256 curveAmountInValueWad = FixedPointMath.mulDivDown(netAmountIn, tokenInPriceWad, tokenInUnit);
         uint256 curveAmountOutValueWad = PortfolioManagerPricing.exactIn(quote, curveAmountInValueWad);
@@ -289,13 +365,17 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 amountOut,
         uint32 feeBps,
         uint32 maxDeviationBps
-    ) private view returns (uint256 amountIn, uint256 protocolAmount, uint256 operatorAmount) {
+    )
+        private
+        view
+        returns (uint256 amountIn, uint256 protocolAmount, uint256 operatorAmount, uint256 revenueShareAmount)
+    {
         uint256 tokenInPriceWad = OracleAdapter.roundPrice(rawIn, OracleAdapter.Rounding.Down);
         uint256 tokenOutPriceWad = OracleAdapter.roundPrice(rawOut, OracleAdapter.Rounding.Up);
         uint256 tokenInUnit = FixedPointMath.scaleDown(1, 0, tokenInDecimals);
         uint256 tokenOutUnit = FixedPointMath.scaleDown(1, 0, tokenOutDecimals);
 
-        // The curve includes the LP fee. Add both independent cuts to its required input.
+        // The curve includes the LP fee. Add all three independent cuts to its required input.
         uint256 curveAmountOutValueWad = FixedPointMath.mulDivUp(amountOut, tokenOutPriceWad, tokenOutUnit);
         uint256 curveAmountInValueWad = PortfolioManagerPricing.exactOut(quote, curveAmountOutValueWad);
         if (maxDeviationBps != 0) {
@@ -304,10 +384,12 @@ abstract contract PortfolioManagerSwap is Fee, IPortfolioManagerSwap {
         uint256 cleanAmountIn = FixedPointMath.mulDivUp(curveAmountInValueWad, tokenInUnit, tokenInPriceWad);
         uint32 protocolBps = PortfolioManagerFee.shareBps(feeBps, PROTOCOL_FEE_RATE_BPS);
         uint32 operatorBps = PortfolioManagerFee.shareBps(feeBps, operatorFeeRateBps);
-        uint256 netBps = FEE_BPS - protocolBps - operatorBps;
+        uint32 revenueShareBps = PortfolioManagerFee.shareBps(feeBps, revenueShareRateBps);
+        uint256 netBps = FEE_BPS - protocolBps - operatorBps - revenueShareBps;
         protocolAmount = FixedPointMath.mulDivDown(cleanAmountIn, protocolBps, netBps);
         operatorAmount = FixedPointMath.mulDivDown(cleanAmountIn, operatorBps, netBps);
-        amountIn = cleanAmountIn + protocolAmount + operatorAmount;
+        revenueShareAmount = FixedPointMath.mulDivDown(cleanAmountIn, revenueShareBps, netBps);
+        amountIn = cleanAmountIn + protocolAmount + operatorAmount + revenueShareAmount;
     }
 
     /// @dev ADR-0016: caps how far this trade itself moves the pair, not the pair's starting

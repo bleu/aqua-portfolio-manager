@@ -67,6 +67,9 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
     address internal constant PROTOCOL_TREASURY_TEST = address(0xDA0);
     address internal constant OPERATOR_TREASURY_TEST = address(0x7121);
     address internal constant OPERATOR_TEST = address(0x7120);
+    address internal constant REVENUE_SHARE_ADMIN_TEST = address(0x7122);
+    address internal constant REVENUE_SHARE_TREASURY_TEST = address(0xDA2);
+    uint32 internal constant REVENUE_SHARE_RATE_BPS_TEST = 16_666_667;
 
     /// @dev Chainlink ETH/USD on Base — https://basescan.org/address/0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70
     address internal constant ETH_USD_FEED_BASE = 0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70;
@@ -142,7 +145,10 @@ contract ArbitrageurFlashE2ETest is AquaE2EBase {
             OPERATOR_TREASURY_TEST,
             OPERATOR_TEST,
             FEE_RATE_BPS,
-            FEE_RATE_BPS
+            FEE_RATE_BPS,
+            REVENUE_SHARE_ADMIN_TEST,
+            REVENUE_SHARE_TREASURY_TEST,
+            REVENUE_SHARE_RATE_BPS_TEST
         );
         multiSendCallOnly = new MultiSendCallOnly();
         pmSafe = _newSafe(3); // distinct salt nonce from the other E2E fixtures' Safes

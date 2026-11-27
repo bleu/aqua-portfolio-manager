@@ -30,7 +30,10 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
         address operatorTreasury,
         address operator,
         uint32 protocolFeeRateBps,
-        uint32 operatorFeeRateBps
+        uint32 operatorFeeRateBps,
+        address revenueShareAdmin,
+        address revenueShareTreasury,
+        uint32 revenueShareRateBps
     )
         PortfolioManagerSwap(
             aqua,
@@ -42,7 +45,10 @@ abstract contract PortfolioManagerOpcodes is PortfolioManagerSwap, Controls {
             operatorTreasury,
             operator,
             protocolFeeRateBps,
-            operatorFeeRateBps
+            operatorFeeRateBps,
+            revenueShareAdmin,
+            revenueShareTreasury,
+            revenueShareRateBps
         )
     {}
 

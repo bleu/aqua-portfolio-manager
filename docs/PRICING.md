@@ -63,21 +63,24 @@ Require `A_o < B_o`. Zero output requires zero input.
 
 ## Protocol fee
 
-Two fees are skimmed from the LP curve fee (`feeBps`), computed independently of each other, not split from one combined amount.
+Three fees are skimmed from the LP curve fee (`feeBps`), computed independently of each other, not split from one combined amount.
 [PortfolioManagerFee](../packages/contracts/src/utils/PortfolioManagerFee.sol) holds only the pure rate-application math; `PortfolioManagerSwap` holds the configured rates and recipients.
 
-- **DAO fee**: to `PROTOCOL_TREASURY`, at `PROTOCOL_FEE_RATE_BPS`. Both set once in `PortfolioManagerRouter`'s constructor and stored `immutable` -- changing either needs a new Router deployment. No setter exists for either, matching 1inch Operations' own request that their fee stay outside Bleu's control. Launches at a flat one sixth of `feeBps`.
+- **DAO fee (1inch's protocol fee)**: to `PROTOCOL_TREASURY`, at `PROTOCOL_FEE_RATE_BPS`. Both set once in `PortfolioManagerRouter`'s constructor and stored `immutable` -- changing either needs a new Router deployment. No setter exists for either, matching 1inch Operations' own request that their fee stay outside Bleu's control. Launches at a flat one sixth of `feeBps`.
+- **1inch revenue share**: to `revenueShareTreasury`, at `revenueShareRateBps`. Both are ordinary mutable state, settable at any time by `REVENUE_SHARE_ADMIN` (an address fixed at construction, 1inch's own operational key) via `setRevenueShareTreasury`/`setRevenueShareRateBps` -- no new Router deployment needed. `setRevenueShareRateBps` rejects a rate at or above 100% as a sanity check. A separate, independently-tracked cut from the DAO fee above, even though both currently pay the same treasury address. Launches at one tenth of the DAO fee's own rate -- a flat one sixtieth of `feeBps` -- per 1inch's own ask (Kene), on top of, not instead of, the DAO fee.
 - **Bleu/Trim fee**: to `operatorTreasury`, at `operatorFeeRateBps`. Both are ordinary mutable state, settable at any time by `OPERATOR` (an address fixed at construction) via `setOperatorTreasury`/`setOperatorFeeRateBps` -- no new Router deployment needed. `setOperatorFeeRateBps` rejects a rate at or above 100% as a sanity check. Launches at a flat one sixth of `feeBps` too, per the business decision recorded on BLEUDEV-457 (superseding an earlier 50/50-split arrangement and an earlier one-tenth figure).
 
-Both treasury addresses and both rates differ per deployment, not compiled constants -- including launching the DAO's side at 0% (a new Router) or Bleu/Trim's side at 0% (an `OPERATOR` call), and treasury addresses that aren't assumed to match across chains.
+All three treasury addresses and all three rates differ per deployment, not compiled constants -- including launching the DAO's side at 0% (a new Router) or the revenue-share or Bleu/Trim side at 0% (a setter call), and treasury addresses that aren't assumed to match across chains.
+
+Nothing bounds any one rate alone against the other two sharing the same `feeBps` budget. Every setter that can move a mutable rate (`setOperatorFeeRateBps`, `setRevenueShareRateBps`), and the constructor itself, additionally requires the sum of all three rates to stay below `PM_BPS` (100%) -- `PortfolioManagerSwapCombinedFeeRateTooHigh` otherwise. Without this, the three rates reaching or exceeding 100% of `feeBps` would underflow `netBps` in the exact-out path and revert every exact-out swap for the strategy.
 
 Rates use `PM_BPS = 1e9` for 100%, despite the `Bps` suffix. One conventional basis point equals `100_000` in this scale.
-The DAO's launch rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979); 1/6 isn't exactly representable at `PM_BPS` scale, so the deployed rate (`166_666_667`) is rounded to the nearest unit, not an exact 1/6.
+The DAO's launch rate matches the boundary cited by [1IP-103](https://gov.1inch.network/t/fast-track-1ip-103-aqua-launch-framework-aqua-interface-authorization-protocol-fee-activation/979); 1/6 isn't exactly representable at `PM_BPS` scale, so the deployed rate (`166_666_667`) is rounded to the nearest unit, not an exact 1/6. The revenue share's launch rate (`16_666_667`) is 1/60, rounded the same way.
 
-For exact-in, the curve prices input after both cuts.
-For exact-out, the instruction adds both fees after computing the curve's required input.
+For exact-in, the curve prices input after all three cuts.
+For exact-out, the instruction adds all three fees after computing the curve's required input.
 The contract attempts each transfer independently, without requiring it to succeed. A failed transfer emits `ProtocolFeeSkipped` for that recipient only, and the swap continues.
-Quotes compute the amounts but skip both transfers.
+Quotes compute the amounts but skip all three transfers.
 
 ## Rounding and limits
 
